@@ -3,7 +3,7 @@ import { Service, User, Coach } from './types';
 export const SYSTEM_USERS: User[] = [
   { id: 'admin1', name: '店長(主管)', role: 'manager', password: '1234' },
   { id: 'admin2', name: '副店(主管)', role: 'manager', password: '1234' },
-  { id: 'c1', name: '教練 Jason', role: 'coach', password: '1234', color: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-700' },
+  { id: 'jason0211lin', name: '教練 Jason', role: 'coach', password: '840211', color: 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-900 dark:text-blue-200 dark:border-blue-700' },
   { id: 'c2', name: '教練 Sarah', role: 'coach', password: '1234', color: 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900 dark:text-green-200 dark:border-green-700' },
   { id: 'c3', name: '教練 Mike', role: 'coach', password: '1234', color: 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-900 dark:text-purple-200 dark:border-purple-700' },
   { id: 'c4', name: '教練 Jessica', role: 'coach', password: '1234', color: 'bg-orange-100 text-orange-800 border-orange-300 dark:bg-orange-900 dark:text-orange-200 dark:border-orange-700' },
