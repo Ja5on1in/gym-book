@@ -106,7 +106,9 @@ export default function App() {
             const loaded = data as Coach[];
             setCoaches(INITIAL_COACHES.map(ic => {
                 const sc = loaded.find(c => c.id === ic.id);
-                return sc ? { ...ic, ...sc } : ic;
+                // Enforce system properties (Name, Role, Color) from constants to ensure updates (like Eric -> Jason) are reflected
+                // regardless of old database values, while preserving dynamic data like workDays from DB.
+                return sc ? { ...ic, ...sc, name: ic.name, color: ic.color, role: ic.role } : ic;
             }));
         } else {
             if (isFirebaseAvailable) {

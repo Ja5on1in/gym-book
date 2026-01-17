@@ -87,7 +87,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <span className="font-bold dark:text-white">{app.date} {app.time}</span>
                       <span className={`text-xs px-2 rounded ${app.status==='cancelled'?'bg-red-100 text-red-600':'bg-green-100 text-green-600'}`}>{app.status}</span>
                     </div>
-                    <div className="text-sm text-gray-500">{app.coachName} - {app.type==='client'?app?.customer?.name:app.reason}</div>
+                    <div className="text-sm text-gray-500">
+                        {coaches.find(c => c.id === app.coachId)?.name || app.coachName} - {app.type==='client'?app?.customer?.name:app.reason}
+                    </div>
                   </div>
                </div>
              ))}
