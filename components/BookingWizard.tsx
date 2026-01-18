@@ -8,7 +8,12 @@ import {
   Mail, 
   Dumbbell, 
   Briefcase,
-  FileText
+  FileText,
+  Sun,
+  Sunset,
+  Moon,
+  Calendar,
+  Clock
 } from 'lucide-react';
 import { Coach, Service, Customer } from '../types';
 import { SERVICES, ALL_TIME_SLOTS } from '../constants';
@@ -68,11 +73,11 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
           key={day} 
           onClick={() => { setSelectedDate(loopDate); setSelectedSlot(null); }} 
           disabled={isPast}
-          className={`h-10 w-full rounded-full flex items-center justify-center text-sm font-medium transition-all 
-            ${isSelected ? 'bg-blue-600 text-white shadow-md transform scale-105' : 
-              isToday ? 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-200 font-bold' : 
+          className={`h-10 w-10 mx-auto rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300
+            ${isSelected ? 'bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-lg shadow-indigo-500/30 scale-110' : 
+              isToday ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 font-bold' : 
               isPast ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 
-              'hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300'}`}
+              'text-gray-700 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-white/10'}`}
         >
           {day}
         </button>
@@ -80,64 +85,143 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
     }
 
     return (
-      <div className="bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-2xl shadow-sm p-4">
-        <div className="flex justify-between items-center mb-4">
-          <button onClick={handlePrevMonth} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400"><ChevronLeft size={20}/></button>
-          <h3 className="font-bold text-gray-800 dark:text-white text-lg">{year}年 {month + 1}月</h3>
-          <button onClick={handleNextMonth} className="p-1 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400"><ChevronRight size={20}/></button>
+      <div className="glass-card rounded-3xl p-6 mb-6 animate-slideUp">
+        <div className="flex justify-between items-center mb-6">
+          <button onClick={handlePrevMonth} className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-full text-gray-600 dark:text-gray-300 transition-colors"><ChevronLeft size={20}/></button>
+          <h3 className="font-bold text-gray-800 dark:text-white text-lg tracking-wide">{year}年 {month + 1}月</h3>
+          <button onClick={handleNextMonth} className="p-2 hover:bg-white/50 dark:hover:bg-gray-700/50 rounded-full text-gray-600 dark:text-gray-300 transition-colors"><ChevronRight size={20}/></button>
         </div>
-        <div className="grid grid-cols-7 gap-1 text-center mb-2">
-          {['日', '一', '二', '三', '四', '五', '六'].map(d => (<span key={d} className="text-xs text-gray-400 dark:text-gray-500 font-medium">{d}</span>))}
+        <div className="grid grid-cols-7 gap-1 text-center mb-3">
+          {['日', '一', '二', '三', '四', '五', '六'].map(d => (<span key={d} className="text-xs text-gray-400 dark:text-gray-500 font-bold uppercase">{d}</span>))}
         </div>
-        <div className="grid grid-cols-7 gap-1">{days}</div>
+        <div className="grid grid-cols-7 gap-y-2">{days}</div>
+      </div>
+    );
+  };
+
+  const renderTimeSlots = () => {
+    const morningSlots = ALL_TIME_SLOTS.filter(t => parseInt(t.split(':')[0]) < 12);
+    const afternoonSlots = ALL_TIME_SLOTS.filter(t => { const h = parseInt(t.split(':')[0]); return h >= 12 && h < 18; });
+    const eveningSlots = ALL_TIME_SLOTS.filter(t => parseInt(t.split(':')[0]) >= 18);
+
+    const renderSlotGroup = (title: string, icon: React.ReactNode, slots: string[]) => {
+      if (slots.length === 0) return null;
+      return (
+        <div className="mb-6 animate-slideUp">
+           <div className="flex items-center gap-2 mb-3 px-1 text-xs font-bold text-indigo-500 dark:text-indigo-400 uppercase tracking-widest">
+              {icon} {title}
+           </div>
+           <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+             {slots.map(time => {
+                const result = getSlotStatus(dateKey, time, selectedCoach, appointments);
+                const isPast = isPastTime(dateKey, time);
+                
+                if (result.status === 'unavailable') return null;
+
+                const isBooked = result.status === 'booked';
+                const isDisabled = isBooked || isPast;
+                const isSelected = selectedSlot === time;
+
+                return (
+                  <button 
+                    key={time} 
+                    disabled={isDisabled} 
+                    onClick={() => setSelectedSlot(time)} 
+                    className={`
+                      relative py-3 rounded-2xl text-sm font-medium transition-all duration-300 flex flex-col items-center justify-center
+                      ${isDisabled 
+                         ? 'bg-gray-100/50 dark:bg-gray-800/50 text-gray-300 dark:text-gray-600 cursor-not-allowed border border-transparent' 
+                         : isSelected 
+                           ? 'bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-lg shadow-indigo-500/40 transform scale-105 border border-transparent' 
+                           : 'glass-card text-gray-700 dark:text-gray-200 hover:border-indigo-300 dark:hover:border-indigo-500 hover:shadow-md hover:-translate-y-0.5'
+                      }
+                    `}
+                  >
+                    <span className="text-base font-bold tracking-tight">{time}</span>
+                    {isBooked && (<span className="text-[10px] text-red-400 mt-1 font-bold">{result.type === 'block' ? '暫停' : '額滿'}</span>)}
+                    {!isBooked && isPast && (<span className="text-[10px] text-gray-300 dark:text-gray-600 mt-1">已過</span>)}
+                  </button>
+                );
+             })}
+           </div>
+        </div>
+      );
+    };
+
+    return (
+      <div className="space-y-2">
+         {renderSlotGroup("上午時段", <Sun size={14}/>, morningSlots)}
+         {renderSlotGroup("下午時段", <Sunset size={14}/>, afternoonSlots)}
+         {renderSlotGroup("晚上時段", <Moon size={14}/>, eveningSlots)}
       </div>
     );
   };
 
   return (
-    <div className="max-w-md mx-auto">
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">線上預約系統</h1>
-        <p className="text-gray-500 dark:text-gray-400">
-          {step===1&&"第一步：請選擇服務項目"}
-          {step===2&&"第二步：請選擇您的專屬教練"}
-          {step===3&&"第三步：選擇日期與時段"}
-          {step===4&&"最後一步：填寫聯絡資料"}
+    <div className="max-w-md mx-auto pb-24">
+      {/* Header */}
+      <div className="mb-8 text-center animate-fadeIn">
+        <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-violet-400 dark:to-indigo-400 mb-2">
+          {step === 5 ? "預約完成" : "線上預約"}
+        </h1>
+        <div className="flex justify-center gap-2 mb-4">
+           {[1,2,3,4].map(i => (
+             <div key={i} className={`h-1 rounded-full transition-all duration-500 ${step >= i ? 'w-8 bg-indigo-500' : 'w-2 bg-gray-200 dark:bg-gray-700'}`}></div>
+           ))}
+        </div>
+        <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">
+          {step===1&&"選擇您想要的服務項目"}
+          {step===2&&"指定您的專屬教練"}
+          {step===3&&"挑選合適的日期與時間"}
+          {step===4&&"留下您的聯絡資訊"}
         </p>
       </div>
 
       {step === 1 && (
-        <div className="space-y-4 animate-fadeIn">
+        <div className="space-y-4 animate-slideUp">
           {SERVICES.map(service => (
-            <button key={service.id} onClick={() => { setSelectedService(service); setStep(2); }} className={`w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-5 rounded-2xl flex items-center justify-between hover:border-blue-500 dark:hover:border-blue-500 hover:shadow-md transition-all group`}>
-              <div className="flex items-center gap-4">
-                <div className={`p-3 rounded-xl ${service.color}`}><Dumbbell size={24} /></div>
+            <button key={service.id} onClick={() => { setSelectedService(service); setStep(2); }} 
+              className="w-full glass-card p-6 rounded-3xl flex items-center justify-between group hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 transform hover:-translate-y-1"
+            >
+              <div className="flex items-center gap-5">
+                <div className={`p-4 rounded-2xl ${service.color} shadow-inner bg-opacity-20 backdrop-blur-sm`}>
+                  <Dumbbell size={28} />
+                </div>
                 <div className="text-left">
-                  <h3 className="font-bold text-lg text-gray-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">{service.name}</h3>
-                  <p className="text-gray-500 dark:text-gray-400 text-sm">{service.duration}</p>
+                  <h3 className="font-bold text-xl text-gray-800 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">{service.name}</h3>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">{service.duration}</p>
                 </div>
               </div>
-              <ChevronRight className="text-gray-300 dark:text-gray-600 group-hover:text-blue-500 dark:group-hover:text-blue-400" />
+              <div className="w-10 h-10 rounded-full bg-gray-50 dark:bg-gray-700 flex items-center justify-center group-hover:bg-indigo-100 dark:group-hover:bg-indigo-900 transition-colors">
+                <ChevronRight className="text-gray-400 group-hover:text-indigo-600 transition-colors" size={20}/>
+              </div>
             </button>
           ))}
         </div>
       )}
 
       {step === 2 && (
-        <div className="space-y-4 animate-fadeIn">
-          <button onClick={() => setStep(1)} className="text-gray-400 flex items-center mb-2 hover:text-gray-600 dark:hover:text-white"><ChevronLeft size={16} /> 返回服務選擇</button>
-          <h2 className="text-lg font-bold text-gray-800 dark:text-white mb-4">請選擇 {selectedService?.name} 的指導教練</h2>
-          <div className="grid grid-cols-1 gap-3">
+        <div className="space-y-4 animate-slideUp">
+          <button onClick={() => setStep(1)} className="text-gray-400 flex items-center mb-4 hover:text-gray-600 dark:hover:text-white transition-colors text-sm font-medium"><ChevronLeft size={16} className="mr-1" /> 重選服務</button>
+          <div className="grid grid-cols-1 gap-4">
             {coaches.map(coach => (
-              <button key={coach.id} onClick={() => { setSelectedCoach(coach); setStep(3); }} className="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 p-4 rounded-xl flex items-center justify-between hover:border-orange-500 hover:shadow-md transition-all group">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold text-lg">{coach.name.charAt(0)}</div>
+              <button key={coach.id} onClick={() => { setSelectedCoach(coach); setStep(3); }} 
+                className="w-full glass-card p-4 rounded-3xl flex items-center justify-between group hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden"
+              >
+                <div className="flex items-center gap-5 relative z-10">
+                  <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 dark:from-gray-700 dark:to-gray-800 rounded-2xl flex items-center justify-center text-gray-600 dark:text-gray-300 font-bold text-2xl shadow-inner">
+                    {coach.name.charAt(0)}
+                  </div>
                   <div className="text-left">
-                    <h3 className="font-bold text-gray-800 dark:text-white">{coach.name}</h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1"><Briefcase size={12}/> 上班時間: 詳見班表</p>
+                    <h3 className="font-bold text-lg text-gray-800 dark:text-white">{coach.name}</h3>
+                    <div className="flex items-center gap-2 mt-1">
+                         <span className={`text-[10px] px-2 py-0.5 rounded-full border ${coach.color} bg-opacity-10`}>教練</span>
+                         <p className="text-xs text-gray-400 dark:text-gray-500 flex items-center gap-1"><Briefcase size={10}/> 查看班表</p>
+                    </div>
                   </div>
                 </div>
-                <span className="text-sm font-medium text-orange-600 dark:text-orange-400 opacity-0 group-hover:opacity-100 transition-opacity">選擇此教練</span>
+                <div className="absolute right-0 top-0 bottom-0 w-20 bg-gradient-to-l from-indigo-50 dark:from-indigo-900/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                <ChevronRight className="text-gray-300 dark:text-gray-600 group-hover:text-indigo-500 relative z-10 mr-2" />
               </button>
             ))}
           </div>
@@ -145,80 +229,140 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       )}
 
       {step === 3 && (
-        <div className="space-y-6 animate-fadeIn">
-          <button onClick={() => setStep(2)} className="text-gray-400 flex items-center mb-2 hover:text-gray-600 dark:hover:text-white"><ChevronLeft size={16} /> 返回教練選擇</button>
-          <div className="bg-orange-50 dark:bg-gray-800 p-4 rounded-xl border border-orange-100 dark:border-gray-700 flex items-center gap-3">
-            <div className="w-10 h-10 bg-white dark:bg-gray-700 rounded-full flex items-center justify-center font-bold text-orange-600 dark:text-orange-400 shadow-sm">{selectedCoach?.name.charAt(0)}</div>
+        <div className="space-y-6 animate-slideUp">
+          <button onClick={() => setStep(2)} className="text-gray-400 flex items-center mb-2 hover:text-gray-600 dark:hover:text-white transition-colors text-sm font-medium"><ChevronLeft size={16} className="mr-1"/> 重選教練</button>
+          
+          <div className="bg-gradient-to-r from-orange-50 to-amber-50 dark:from-gray-800 dark:to-gray-800/50 p-4 rounded-3xl border border-orange-100 dark:border-gray-700 flex items-center gap-4 shadow-sm">
+            <div className="w-12 h-12 bg-white dark:bg-gray-700 rounded-2xl flex items-center justify-center font-bold text-xl text-orange-500 dark:text-orange-400 shadow-md">
+                {selectedCoach?.name.charAt(0)}
+            </div>
             <div>
-              <div className="text-xs text-orange-800 dark:text-gray-400 opacity-75">目前選擇教練</div>
-              <div className="font-bold text-orange-900 dark:text-orange-400">{selectedCoach?.name}</div>
+              <div className="text-xs text-orange-400 dark:text-gray-400 font-medium uppercase tracking-wider">目前選擇教練</div>
+              <div className="font-bold text-lg text-gray-800 dark:text-white">{selectedCoach?.name}</div>
             </div>
           </div>
+
           <section>
-            <h2 className="text-sm font-bold text-gray-400 uppercase mb-3 tracking-wider">日期</h2>
+            <div className="flex items-center gap-2 mb-3 px-1">
+                <Calendar size={16} className="text-indigo-500"/>
+                <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">日期選擇</h2>
+            </div>
             {renderCalendar()}
           </section>
+
           <section>
-            <h2 className="text-sm font-bold text-gray-400 uppercase mb-3 tracking-wider">{selectedDate.getMonth() + 1}月{selectedDate.getDate()}日 可預約時段</h2>
+            <div className="flex items-center gap-2 mb-3 px-1">
+                <Clock size={16} className="text-indigo-500"/>
+                <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">
+                    {selectedDate.getMonth() + 1}月{selectedDate.getDate()}日 時段
+                </h2>
+            </div>
+            
             {isDayOff ? (
-              <div className="text-center py-8 text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">教練今日排休</div>
+              <div className="text-center py-10 glass-card rounded-3xl border-dashed border-2 border-gray-300 dark:border-gray-600 flex flex-col items-center gap-2 text-gray-400">
+                  <div className="p-3 bg-gray-100 dark:bg-gray-800 rounded-full"><Moon size={24}/></div>
+                  <span>教練今日排休</span>
+              </div>
             ) : (
-              <div className="grid grid-cols-4 gap-2">
-                {ALL_TIME_SLOTS.map(time => {
-                  const result = getSlotStatus(dateKey, time, selectedCoach, appointments);
-                  const isPast = isPastTime(dateKey, time);
-                  if (result.status === 'unavailable') return null;
-                  const isBooked = result.status === 'booked';
-                  const isDisabled = isBooked || isPast;
-                  return (
-                    <button key={time} disabled={isDisabled} onClick={() => setSelectedSlot(time)} className={`py-2 px-1 rounded-lg text-sm font-medium transition-all flex flex-col items-center justify-center ${isDisabled ? 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-600 cursor-not-allowed decoration-slice' : selectedSlot === time ? 'bg-blue-600 text-white shadow-md transform scale-105 border border-blue-600' : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:border-blue-300 hover:text-blue-600 dark:hover:text-blue-400'}`}>
-                      {time}
-                      {isBooked && (<span className="text-[10px] text-red-400">{result.type === 'block' ? '暫停' : '額滿'}</span>)}
-                      {!isBooked && isPast && (<span className="text-[10px] text-gray-400 dark:text-gray-500">過期</span>)}
-                    </button>
-                  );
-                })}
+              <div>
+                {renderTimeSlots()}
               </div>
             )}
+            
             {!isDayOff && ALL_TIME_SLOTS.every(t => getSlotStatus(dateKey, t, selectedCoach, appointments).status !== 'available' || isPastTime(dateKey, t)) && (
-              <div className="text-center py-8 text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-800 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">此教練今日已無可預約時段或非上班日</div>
+               <div className="text-center py-10 glass-card rounded-3xl border-dashed border-2 border-gray-300 dark:border-gray-600 flex flex-col items-center gap-2 text-gray-400">
+                  <span>今日已無可預約時段</span>
+               </div>
             )}
           </section>
-          <div className="pt-4 pb-20">
-            <button disabled={!selectedSlot} onClick={() => setStep(4)} className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${selectedSlot ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white hover:shadow-xl transform hover:-translate-y-0.5' : 'bg-gray-200 dark:bg-gray-700 text-gray-400 dark:text-gray-500 cursor-not-allowed'}`}>下一步：填寫資料</button>
+          
+          <div className="pt-4">
+            <button 
+                disabled={!selectedSlot} 
+                onClick={() => setStep(4)} 
+                className={`w-full py-4 rounded-2xl font-bold text-lg shadow-xl transition-all duration-300
+                    ${selectedSlot 
+                        ? 'bg-gradient-to-r from-violet-600 to-indigo-600 text-white hover:shadow-indigo-500/50 hover:scale-[1.02]' 
+                        : 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                    }`}
+            >
+                下一步：填寫資料
+            </button>
           </div>
         </div>
       )}
 
       {step === 4 && (
-        <div className="animate-fadeIn pb-20">
-          <button onClick={() => setStep(3)} className="mb-4 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-white"><ChevronLeft size={16} /> 返回時段選擇</button>
-          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-lg border border-gray-100 dark:border-gray-700 overflow-hidden">
-            <div className="bg-gray-50 dark:bg-gray-900 p-4 border-b border-gray-100 dark:border-gray-700">
-              <h3 className="font-bold text-gray-800 dark:text-white flex items-center gap-2"><FileText size={18} className="text-blue-500 dark:text-blue-400"/> 確認預約詳情</h3>
+        <div className="animate-slideUp">
+          <button onClick={() => setStep(3)} className="mb-6 flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-white text-sm font-medium"><ChevronLeft size={16} className="mr-1"/> 重選時段</button>
+          
+          <div className="glass-panel rounded-3xl overflow-hidden shadow-2xl">
+            <div className="bg-indigo-50/50 dark:bg-gray-800/50 p-6 border-b border-white/20 dark:border-gray-700">
+              <h3 className="font-bold text-xl text-gray-800 dark:text-white flex items-center gap-2">
+                  <FileText size={20} className="text-indigo-500"/> 確認預約詳情
+              </h3>
             </div>
-            <div className="p-6 space-y-4">
-              <div className="bg-blue-50 dark:bg-gray-900 p-4 rounded-xl space-y-2">
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400 text-sm">服務</span><span className="font-bold text-blue-900 dark:text-blue-400">{selectedService?.name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400 text-sm">教練</span><span className="font-bold text-blue-900 dark:text-blue-400">{selectedCoach?.name}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500 dark:text-gray-400 text-sm">時間</span><span className="font-bold text-blue-900 dark:text-blue-400">{selectedDate.getMonth() + 1}/{selectedDate.getDate()} {selectedSlot}</span></div>
+            
+            <div className="p-6 md:p-8 space-y-6">
+              <div className="bg-white/60 dark:bg-gray-900/60 p-5 rounded-2xl space-y-3 border border-white/40 dark:border-gray-700">
+                <div className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-gray-700">
+                    <span className="text-gray-500 dark:text-gray-400 text-sm">服務項目</span>
+                    <span className="font-bold text-indigo-900 dark:text-indigo-300">{selectedService?.name}</span>
+                </div>
+                <div className="flex justify-between items-center pb-2 border-b border-gray-200 dark:border-gray-700">
+                    <span className="text-gray-500 dark:text-gray-400 text-sm">指導教練</span>
+                    <span className="font-bold text-indigo-900 dark:text-indigo-300">{selectedCoach?.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                    <span className="text-gray-500 dark:text-gray-400 text-sm">預約時間</span>
+                    <span className="font-bold text-indigo-900 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/50 px-2 py-1 rounded-lg">
+                        {selectedDate.getMonth() + 1}/{selectedDate.getDate()} {selectedSlot}
+                    </span>
+                </div>
               </div>
-              <form onSubmit={onSubmit} className="space-y-5 mt-4">
+              
+              <form onSubmit={onSubmit} className="space-y-5">
                 <div className="space-y-4">
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">姓名 <span className="text-red-500">*</span></label>
-                    <div className="relative"><User className="absolute left-3 top-3 text-gray-400" size={18} /><input type="text" required className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="請輸入您的姓名" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} /></div>
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 ml-1">姓名 <span className="text-red-400">*</span></label>
+                    <div className="relative group">
+                        <User className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
+                        <input type="text" required 
+                            className="w-full pl-12 pr-4 py-3.5 glass-input rounded-2xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all dark:text-white text-gray-900 placeholder-gray-400" 
+                            placeholder="請輸入您的姓名" 
+                            value={formData.name} 
+                            onChange={e => setFormData({...formData, name: e.target.value})} 
+                        />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">電話 <span className="text-red-500">*</span></label>
-                    <div className="relative"><Phone className="absolute left-3 top-3 text-gray-400" size={18} /><input type="tel" required className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="請輸入您的電話" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} /></div>
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 ml-1">電話 <span className="text-red-400">*</span></label>
+                    <div className="relative group">
+                        <Phone className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
+                        <input type="tel" required 
+                            className="w-full pl-12 pr-4 py-3.5 glass-input rounded-2xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all dark:text-white text-gray-900 placeholder-gray-400" 
+                            placeholder="請輸入您的電話" 
+                            value={formData.phone} 
+                            onChange={e => setFormData({...formData, phone: e.target.value})} 
+                        />
+                    </div>
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">E-mail (選填)</label>
-                    <div className="relative"><Mail className="absolute left-3 top-3 text-gray-400" size={18} /><input type="email" className="w-full pl-10 pr-4 py-2.5 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all" placeholder="接收預約確認信" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} /></div>
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 ml-1">E-mail (選填)</label>
+                    <div className="relative group">
+                        <Mail className="absolute left-4 top-3.5 text-gray-400 group-focus-within:text-indigo-500 transition-colors" size={18} />
+                        <input type="email" 
+                            className="w-full pl-12 pr-4 py-3.5 glass-input rounded-2xl focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-500 outline-none transition-all dark:text-white text-gray-900 placeholder-gray-400" 
+                            placeholder="接收預約確認信" 
+                            value={formData.email} 
+                            onChange={e => setFormData({...formData, email: e.target.value})} 
+                        />
+                    </div>
                   </div>
                 </div>
-                <button type="submit" className="w-full py-3.5 bg-blue-600 text-white rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all mt-6">確認預約</button>
+                <button type="submit" className="w-full py-4 bg-gradient-to-r from-violet-600 to-indigo-600 text-white rounded-2xl font-bold text-lg shadow-xl shadow-indigo-500/30 hover:shadow-indigo-500/50 hover:scale-[1.02] transition-all duration-300 mt-4">
+                    確認送出
+                </button>
               </form>
             </div>
           </div>
@@ -226,13 +370,24 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       )}
 
       {step === 5 && (
-        <div className="text-center py-10 animate-fadeIn">
-          <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6"><CheckCircle className="text-green-500 dark:text-green-400 w-10 h-10" /></div>
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-2">預約成功！</h2>
-          <p className="text-gray-500 dark:text-gray-400 mb-4">我們已通知 {selectedCoach?.name}。</p>
-          {formData.email && (<p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 py-2 px-4 rounded-full inline-block mb-8"><Mail size={14} className="inline mr-1"/> 確認信已發送至 {formData.email}</p>)}
-          {/* Changed button color from gray-900 to blue-600 to avoid "black block" look */}
-          <button onClick={reset} className="px-8 py-3 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 transition-all shadow-lg">返回首頁</button>
+        <div className="text-center py-12 animate-slideUp">
+          <div className="w-24 h-24 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-8 animate-bounce">
+              <CheckCircle className="text-green-500 dark:text-green-400 w-12 h-12" />
+          </div>
+          <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-3">預約成功！</h2>
+          <p className="text-gray-500 dark:text-gray-400 mb-8 text-lg">我們已通知 {selectedCoach?.name}。</p>
+          
+          {formData.email && (
+              <div className="glass-card inline-flex items-center gap-2 px-6 py-3 rounded-2xl mb-10 text-indigo-600 dark:text-indigo-300">
+                  <Mail size={16}/> <span>確認信已發送至 {formData.email}</span>
+              </div>
+          )}
+          
+          <div className="block">
+              <button onClick={reset} className="px-10 py-4 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-white rounded-2xl font-bold hover:shadow-lg transition-all transform hover:-translate-y-1">
+                返回首頁
+              </button>
+          </div>
         </div>
       )}
     </div>
