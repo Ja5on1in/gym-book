@@ -1,6 +1,16 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInAnonymously } from 'firebase/auth';
-import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot } from 'firebase/firestore';
+import { initializeApp, getApp, getApps } from 'firebase/app';
+import { 
+  getAuth, 
+  signInWithEmailAndPassword,
+  signInWithPopup, 
+  createUserWithEmailAndPassword,
+  GoogleAuthProvider,
+  signOut, 
+  onAuthStateChanged,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, getDoc, updateDoc } from 'firebase/firestore';
+import { User } from '../types';
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
@@ -14,8 +24,9 @@ const firebaseConfig = {
 
 let auth: any = null;
 let db: any = null;
-let appId = 'gympohai-app'; // Default ID, no longer used for pathing but kept for compatibility
+let appId = 'gympohai-app';
 let isFirebaseAvailable = false;
+const googleProvider = new GoogleAuthProvider();
 
 // Mock listener system for local storage events (Fallback)
 const mockListeners: Record<string, ((data: any[]) => void)[]> = {};
@@ -29,7 +40,8 @@ const notifyMockListeners = (colName: string) => {
 };
 
 try {
-  const app = initializeApp(firebaseConfig);
+  // Main App Instance
+  const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
   auth = getAuth(app);
   db = getFirestore(app);
   isFirebaseAvailable = true;
@@ -41,21 +53,89 @@ try {
 
 export { auth, db, appId, isFirebaseAvailable };
 
-// --- Wrappers ---
+// --- Auth Functions ---
+
+export const loginWithEmail = async (email: string, pass: string) => {
+  if (!isFirebaseAvailable) return null;
+  try {
+    const result = await signInWithEmailAndPassword(auth, email, pass);
+    return result.user;
+  } catch (error) {
+    console.error("Email Login failed", error);
+    throw error;
+  }
+};
+
+export const loginWithGoogle = async () => {
+  if (!isFirebaseAvailable) return null;
+  try {
+    const result = await signInWithPopup(auth, googleProvider);
+    return result.user;
+  } catch (error) {
+    console.error("Google Login failed", error);
+    throw error;
+  }
+};
+
+export const logout = async () => {
+  if (!isFirebaseAvailable) return;
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.error("Logout failed", error);
+  }
+};
+
+/**
+ * Creates a new user in Firebase Auth using a Secondary App instance.
+ * This prevents the current Admin from being logged out when creating a new user.
+ */
+export const createAuthUser = async (email: string, pass: string) => {
+    if (!isFirebaseAvailable) return `mock-uid-${Date.now()}`;
+    
+    // Initialize a secondary app with a unique name
+    const secondaryAppName = "secondaryAuthApp";
+    let secondaryApp;
+    
+    try {
+        secondaryApp = getApp(secondaryAppName);
+    } catch (e) {
+        secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
+    }
+
+    const secondaryAuth = getAuth(secondaryApp);
+
+    try {
+        const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
+        const uid = userCredential.user.uid;
+        // Sign out from the secondary app immediately to avoid side effects
+        await signOut(secondaryAuth);
+        return uid;
+    } catch (error) {
+        console.error("Failed to create auth user", error);
+        throw error;
+    }
+};
+
+// Fetch user profile from 'users' collection using UID
+export const getUserProfile = async (uid: string): Promise<User | null> => {
+  if (!isFirebaseAvailable || !db) return null;
+  try {
+    const userDocRef = doc(db, 'users', uid);
+    const userDoc = await getDoc(userDocRef);
+    if (userDoc.exists()) {
+      return { id: userDoc.id, ...userDoc.data() } as User;
+    }
+    return null;
+  } catch (error) {
+    console.error("Error fetching user profile", error);
+    return null;
+  }
+};
+
+// --- wrappers ---
 export const initAuth = async () => {
-  if (!isFirebaseAvailable || !auth) {
-      console.log("Running in offline mode (Auth mocked)");
-      return;
-  }
-  try { 
-      // Simple anonymous auth to allow reading/writing if rules allow
-      await signInAnonymously(auth); 
-  } 
-  catch (error) { 
-    console.error("Auth Failed", error); 
-    // Don't throw, just let it fail gracefully to offline mode if possible
-    // isFirebaseAvailable = false; 
-  }
+  if (!isFirebaseAvailable || !auth) return;
 };
 
 export const subscribeToCollection = (
@@ -66,18 +146,14 @@ export const subscribeToCollection = (
     if (!isFirebaseAvailable || !db) {
         // Fallback to LocalStorage
         const key = `mock_db_${colName}`;
-        
-        // Initial fetch
         setTimeout(() => {
             const current = JSON.parse(localStorage.getItem(key) || '[]');
             callback(current);
         }, 0);
 
-        // Register listener
         if (!mockListeners[colName]) mockListeners[colName] = [];
         mockListeners[colName].push(callback);
 
-        // Unsubscribe function
         return () => {
              if (mockListeners[colName]) {
                  mockListeners[colName] = mockListeners[colName].filter(cb => cb !== callback);
@@ -85,36 +161,28 @@ export const subscribeToCollection = (
         };
     }
     
-    // Subscribe to root collection
     return onSnapshot(collection(db, colName), (s: any) => {
         const docs = s.docs.map((d: any) => d.data());
         callback(docs);
     }, (e: any) => {
-        console.warn("Firestore subscription failed, switching to offline mode", e);
+        console.warn(`Firestore subscription to ${colName} failed`, e);
         errorCallback(e);
     });
 };
 
 export const saveToFirestore = async (col: string, id: string, data: any) => {
     if (!isFirebaseAvailable || !db) {
-        // Mock Save
         const key = `mock_db_${col}`;
         const current = JSON.parse(localStorage.getItem(key) || '[]');
         const idx = current.findIndex((item: any) => item.id === id);
-        
-        if (idx >= 0) {
-            current[idx] = data;
-        } else {
-            current.push(data);
-        }
-        
+        if (idx >= 0) current[idx] = data;
+        else current.push(data);
         localStorage.setItem(key, JSON.stringify(current));
         notifyMockListeners(col);
         return;
     }
     try {
-        // Save to root collection
-        await setDoc(doc(db, col, id), data);
+        await setDoc(doc(db, col, id), data, { merge: true });
     } catch (e) {
         console.error("Firestore save failed", e);
     }
@@ -122,19 +190,26 @@ export const saveToFirestore = async (col: string, id: string, data: any) => {
 
 export const deleteFromFirestore = async (col: string, id: string) => {
     if (!isFirebaseAvailable || !db) {
-        // Mock Delete
         const key = `mock_db_${col}`;
         const current = JSON.parse(localStorage.getItem(key) || '[]');
         const filtered = current.filter((item: any) => item.id !== id);
-        
         localStorage.setItem(key, JSON.stringify(filtered));
         notifyMockListeners(col);
         return;
     }
     try {
-        // Delete from root collection
         await deleteDoc(doc(db, col, id));
     } catch (e) {
         console.error("Firestore delete failed", e);
+    }
+};
+
+// Soft delete / Update status
+export const disableUserInFirestore = async (uid: string) => {
+    if (!isFirebaseAvailable || !db) return;
+    try {
+        await updateDoc(doc(db, 'users', uid), { status: 'disabled' });
+    } catch (e) {
+        console.error("Disable user failed", e);
     }
 };

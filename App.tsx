@@ -11,15 +11,29 @@ import {
   Trash2,
   Repeat,
   Key,
-  WifiOff,
   Database,
-  Wifi
+  Mail,
+  Lock as LockIcon
 } from 'lucide-react';
 
-import { initAuth, subscribeToCollection, saveToFirestore, deleteFromFirestore, isFirebaseAvailable, appId } from './services/firebase';
-import { SYSTEM_USERS, INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL, SERVICES } from './constants';
+import { 
+    initAuth, 
+    subscribeToCollection, 
+    saveToFirestore, 
+    deleteFromFirestore, 
+    disableUserInFirestore,
+    isFirebaseAvailable, 
+    loginWithEmail, 
+    logout,
+    auth,
+    getUserProfile,
+    createAuthUser
+} from './services/firebase';
+import { onAuthStateChanged } from 'firebase/auth';
+
+import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
 import { User, Appointment, Coach, Log, Service, Customer, BlockFormState } from './types';
-import { formatDateKey, getStartOfWeek, addDays, getSlotStatus, isPastTime, isCoachDayOff } from './utils';
+import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff } from './utils';
 
 import BookingWizard from './components/BookingWizard';
 import AdminDashboard from './components/AdminDashboard';
@@ -34,10 +48,14 @@ export default function App() {
 
   const [dbStatus, setDbStatus] = useState('connecting');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(true);
+  
+  // Login State
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   
   // Data
   const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [coaches, setCoaches] = useState<Coach[]>(INITIAL_COACHES);
+  const [coaches, setCoaches] = useState<Coach[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
 
   // Dates
@@ -53,16 +71,13 @@ export default function App() {
   const [formData, setFormData] = useState<Customer>({ name: '', phone: '', email: '' });
 
   // Modals & Forms
-  const [loginForm, setLoginForm] = useState({ username: '', password: '' });
-  const [loginError, setLoginError] = useState('');
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [blockForm, setBlockForm] = useState<BlockFormState>({
-    id: null, type: 'block', coachId: INITIAL_COACHES[0].id, date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', reason: '1v1教練課', customer: null, repeatWeeks: 1
+    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', reason: '1v1教練課', customer: null, repeatWeeks: 1
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, message: string, onConfirm: ((reason?: string) => void) | null, isDanger: boolean, showInput: boolean}>({ isOpen: false, message: '', onConfirm: null, isDanger: false, showInput: false });
-  const [recoveryModal, setRecoveryModal] = useState({ isOpen: false, count: 0 });
   const [cancelReason, setCancelReason] = useState('');
 
   // --- EFFECTS ---
@@ -75,16 +90,48 @@ export default function App() {
 
   useEffect(() => {
     const start = async () => {
-        try {
-            await initAuth();
-            if (!isFirebaseAvailable) {
-                // If firebase is not available, we are in local mode
-            }
-        } catch(e) {
-            console.error(e);
-        }
+        await initAuth();
     };
     start();
+  }, []);
+
+  // Listen to Auth State
+  useEffect(() => {
+      if (!auth) {
+          setIsAuthLoading(false);
+          return;
+      }
+      const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
+          setIsAuthLoading(true);
+          if (firebaseUser) {
+              // Fetch user role from DB
+              const userProfile = await getUserProfile(firebaseUser.uid);
+              if (userProfile) {
+                  // Check if account is disabled
+                  if (userProfile.status === 'disabled') {
+                      showNotification("此帳號已被停用，請聯繫管理員", "error");
+                      await logout();
+                      setCurrentUser(null);
+                  } else {
+                      setCurrentUser(userProfile);
+                      addLog('系統登入', `${userProfile.name} (${userProfile.role}) 登入成功`);
+                      // Only set coachId default if user is a coach
+                      if (userProfile.role === 'coach') {
+                        setBlockForm(prev => ({...prev, coachId: userProfile.id})); 
+                      }
+                  }
+              } else {
+                  console.warn("User has no profile in DB");
+                  showNotification("您的帳號尚未設定權限，請聯繫管理員", "error");
+                  await logout();
+                  setCurrentUser(null);
+              }
+          } else {
+              setCurrentUser(null);
+          }
+          setIsAuthLoading(false);
+      });
+      return () => unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -99,15 +146,9 @@ export default function App() {
 
     const unsubCoaches = subscribeToCollection('coaches', (data) => {
         if (data.length > 0) {
-            const loaded = data as Coach[];
-            setCoaches(INITIAL_COACHES.map(ic => {
-                const sc = loaded.find(c => c.id === ic.id);
-                return sc ? { ...ic, ...sc, name: ic.name, color: ic.color, role: ic.role } : ic;
-            }));
+            setCoaches(data as Coach[]);
         } else {
-            if (isFirebaseAvailable) {
-                INITIAL_COACHES.forEach(c => saveToFirestore('coaches', c.id, c));
-            }
+             if (!isFirebaseAvailable && coaches.length === 0) setCoaches(INITIAL_COACHES);
         }
     }, () => {});
 
@@ -149,18 +190,26 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // Auth
-  const handleLogin = (e: React.FormEvent) => {
-    e.preventDefault();
-    const user = SYSTEM_USERS.find(u => u.id === loginForm.username && u.password === loginForm.password);
-    if (user) { 
-        setCurrentUser(user); 
-        setLoginError(''); 
-        addLog('系統登入', `${user.name} 登入`); 
-        if (user.role === 'coach') setBlockForm(p => ({...p, coachId: user.id})); 
-    } else { 
-        setLoginError('失敗'); 
-    }
+  // Auth Actions
+  const handleEmailLogin = async (e: React.FormEvent) => {
+      e.preventDefault();
+      try {
+          await loginWithEmail(loginForm.email, loginForm.password);
+      } catch (e: any) {
+          if (e.code === 'auth/wrong-password' || e.code === 'auth/user-not-found' || e.code === 'auth/invalid-credential') {
+              showNotification("帳號或密碼錯誤", "error");
+          } else {
+              showNotification("登入失敗: " + e.message, "error");
+          }
+      }
+  };
+
+  const handleLogout = async () => {
+      await logout();
+      setView('booking');
+      setAdminTab('calendar');
+      setLoginForm({ email: '', password: '' });
+      showNotification("已登出", "info");
   };
 
   // Booking
@@ -259,7 +308,9 @@ export default function App() {
 
   const handleSlotClick = (date: string, time: string) => {
       if (!currentUser) return;
-      const targetCoachId = currentUser.role === 'manager' ? (blockForm.coachId || coaches[0].id) : currentUser.id;
+      const targetCoachId = currentUser.role === 'manager' ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
+      if (!targetCoachId) { showNotification('無教練資料', 'error'); return; }
+
       const coach = coaches.find(c => c.id === targetCoachId);
       if (coach && isCoachDayOff(date, coach)) { showNotification('排休日無法新增', 'error'); return; }
       
@@ -276,367 +327,424 @@ export default function App() {
       setIsBlockModalOpen(true);
   };
 
-  const handleToggleComplete = (app: Appointment) => {
-      if (app.isCompleted) {
-        saveToFirestore('appointments', app.id, { ...app, isCompleted: false });
-        showNotification('已取消完成狀態', 'info');
-      } else {
-        setConfirmModal({
-            isOpen: true,
-            message: `確認將 ${app.date} ${app.time} 的課程標記為完成？`,
-            isDanger: false,
-            showInput: false,
-            onConfirm: () => {
-                saveToFirestore('appointments', app.id, { ...app, isCompleted: true });
-                addLog('課程完成', `結課: ${app.coachName} - ${app.date} ${app.time}`);
-                showNotification('課程已完成', 'success');
-            }
+  const handleToggleComplete = async (app: Appointment) => {
+    const newVal = !app.isCompleted;
+    await saveToFirestore('appointments', app.id, { ...app, isCompleted: newVal });
+    addLog('課程狀態', `${app.customer?.name || app.reason} - ${newVal ? '已結課' : '未結課'}`);
+  };
+
+  // --- STAFF & COACH MANAGEMENT ---
+
+  const handleSaveCoach = async (coachData: Coach, email?: string, password?: string) => {
+    let uid = coachData.id;
+    try {
+        if (!uid && email && password) {
+            // New Coach: Create in Auth first
+            uid = await createAuthUser(email, password);
+        }
+
+        if (!uid) {
+            showNotification("無法建立使用者 ID", "error");
+            return;
+        }
+
+        const commonData = {
+            name: coachData.name,
+            role: coachData.role,
+            email: email || coachData.email || '', // Keep existing if editing
+            status: 'active'
+        };
+
+        // 1. Update/Create in 'users' collection (for Auth/Role check)
+        await saveToFirestore('users', uid, {
+            id: uid,
+            ...commonData
         });
-      }
+
+        // 2. Update/Create in 'coaches' collection (for Booking logic)
+        // Ensure ID is set in the data
+        await saveToFirestore('coaches', uid, {
+            ...coachData,
+            id: uid,
+            status: 'active' // Ensure active status
+        });
+
+        addLog('員工管理', `更新/新增員工：${coachData.name}`);
+        showNotification("員工資料已儲存", "success");
+    } catch (error: any) {
+        console.error(error);
+        showNotification(`儲存失敗: ${error.message}`, "error");
+    }
   };
 
-  const handleBatchDelete = async () => {
-    if (selectedBatch.size === 0) return;
-    if (!window.confirm(`刪除 ${selectedBatch.size} 筆紀錄？`)) return;
-    await Promise.all(Array.from(selectedBatch).map(id => deleteFromFirestore('appointments', id)));
-    addLog('批次刪除', `刪除 ${selectedBatch.size} 筆`);
-    setSelectedBatch(new Set());
+  const handleDeleteCoach = async (id: string, name: string) => {
+    if (!window.confirm(`確定要刪除 ${name} 嗎？\n\n注意：\n1. 該員工將無法登入\n2. 該員工將從預約選單中移除`)) return;
+
+    try {
+        // 1. Soft delete in 'users' (disable login)
+        await disableUserInFirestore(id);
+
+        // 2. Hard delete in 'coaches' (remove from booking list)
+        // This ensures the coach disappears from the filtered lists immediately
+        await deleteFromFirestore('coaches', id);
+
+        addLog('員工管理', `刪除員工：${name}`);
+        showNotification(`${name} 已刪除`, "success");
+    } catch (error: any) {
+        console.error(error);
+        showNotification(`刪除失敗: ${error.message}`, "error");
+    }
   };
 
-  const updateCoachWorkDays = (coach: Coach) => {
-      saveToFirestore('coaches', coach.id, coach);
+  const updateCoachWorkDays = async (coach: Coach) => {
+      await saveToFirestore('coaches', coach.id, coach);
+      showNotification('班表設定已更新', 'success');
   };
 
-  const getAnalysisData = () => {
-    const valid = appointments.filter(a => a.status !== 'cancelled');
-    const classApps = valid.filter(a => a.type === 'client' || a.reason === '1v1教練課' || a.reason === '團課');
-    const timeCounts: Record<string, number> = {};
-    classApps.forEach(a => { timeCounts[a.time] = (timeCounts[a.time] || 0) + 1; });
-    const topTimeSlots = Object.entries(timeCounts).sort((a,b)=>b[1]-a[1]).slice(0,3).map(([time,c])=>({time, count:c}));
+  // --- STATS ---
+  const getAnalysis = () => {
+    const totalActive = appointments.filter(a => a.status === 'confirmed').length;
+    const totalCancelled = appointments.filter(a => a.status === 'cancelled').length;
+    
+    // Top slots
+    const slotCounts: Record<string, number> = {};
+    appointments.filter(a => a.status === 'confirmed').forEach(a => {
+        slotCounts[a.time] = (slotCounts[a.time] || 0) + 1;
+    });
+    const topTimeSlots = Object.entries(slotCounts)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3)
+        .map(([time, count]) => ({ time, count }));
 
-    const coachStats = coaches.map(c => { 
-        const myApps = valid.filter(a => a.coachId === c.id);
-        const personal = myApps.filter(a => a.type === 'client' || a.reason === '1v1教練課' || a.reason === '評估').length;
-        const group = myApps.filter(a => a.reason === '團課').length;
-        return { id: c.id, name: c.name, personal, group, total: personal + group };
-    }).sort((a,b)=>b.total-a.total);
+    // Coach Stats (Current Month)
+    const now = new Date();
+    const currentMonthPrefix = formatDateKey(now.getFullYear(), now.getMonth(), 1).substring(0, 7); // "YYYY-MM"
+    
+    const coachStats = coaches.map(c => {
+        const apps = appointments.filter(a => 
+            a.coachId === c.id && 
+            a.status === 'confirmed' && 
+            a.date.startsWith(currentMonthPrefix)
+        );
+        return {
+            id: c.id,
+            name: c.name,
+            personal: apps.filter(a => a.type === 'client').length,
+            group: apps.filter(a => a.type === 'block').length,
+            total: apps.length
+        };
+    });
 
-    return { topTimeSlots, coachStats, totalActive: valid.length, totalCancelled: appointments.filter(a => a.status === 'cancelled').length };
+    return { totalActive, totalCancelled, topTimeSlots, coachStats };
   };
 
-  const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(appointments, null, 2)], { type: "application/json" });
-    const link = document.createElement('a');
-    link.download = `backup_${new Date().toISOString().slice(0,10)}.json`;
-    link.href = URL.createObjectURL(blob); link.click();
+  const handleExportStatsCsv = () => {
+      const stats = getAnalysis();
+      const rows = [
+          ["統計項目", "數值"],
+          ["總預約數", stats.totalActive + stats.totalCancelled],
+          ["有效預約", stats.totalActive],
+          ["已取消", stats.totalCancelled],
+          [],
+          ["教練", "個人課", "團課/其他", "總計"],
+          ...stats.coachStats.map(c => [c.name, c.personal, c.group, c.total])
+      ];
+      const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `stats_${new Date().toISOString().slice(0,10)}.csv`;
+      link.click();
   };
   
-  const handleExportStatsCsv = () => {
-      const analysis = getAnalysisData();
-      const statsToExport = currentUser?.role === 'manager' ? analysis.coachStats : analysis.coachStats.filter(s => s.id === currentUser?.id);
-      const csv = "\uFEFF" + ["教練,個人課,團課,總計", ...statsToExport.map(s => `${s.name},${s.personal},${s.group},${s.total}`)].join("\n");
+  const handleExportJson = () => {
+      const data = { appointments, coaches, logs, users: [] };
+      const blob = new Blob([JSON.stringify(data, null, 2)], {type : 'application/json'});
       const link = document.createElement('a');
-      link.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
-      link.download = "report.csv";
+      link.href = URL.createObjectURL(blob);
+      link.download = `backup_${new Date().toISOString().slice(0,10)}.json`;
       link.click();
   };
 
   const handleFileImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async () => {
-        try {
-            const result = reader.result;
-            if (typeof result !== 'string') return;
-            const data = JSON.parse(result);
-            if (Array.isArray(data) && window.confirm(`匯入 ${data.length} 筆資料？`)) {
-                await Promise.all(data.map((item: any) => saveToFirestore('appointments', item.id, item)));
-                showNotification('匯入成功');
-            }
-        } catch(e) { showNotification('格式錯誤', 'error'); }
-    };
-    reader.readAsText(file);
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+          try {
+              const data = JSON.parse(evt.target?.result as string);
+              if (data.appointments) {
+                  await Promise.all(data.appointments.map((a: any) => saveToFirestore('appointments', a.id, a)));
+              }
+              if (data.coaches) {
+                  await Promise.all(data.coaches.map((c: any) => saveToFirestore('coaches', c.id, c)));
+              }
+              showNotification("資料匯入成功", "success");
+          } catch (error) {
+              showNotification("匯入失敗：格式錯誤", "error");
+          }
+      };
+      reader.readAsText(file);
   };
 
+  // --- RENDER ---
   return (
-    <div className={`min-h-screen font-sans ${isDarkMode ? 'dark' : ''}`}>
-      {/* Theme Toggle */}
-      <button onClick={() => setIsDarkMode(!isDarkMode)} className="fixed top-5 right-5 z-50 p-3 rounded-full bg-white/50 dark:bg-gray-800/50 backdrop-blur-md shadow-lg border border-white/20 transition-all hover:scale-110">
-        {isDarkMode ? <Sun size={20} className="text-amber-400" /> : <Moon size={20} className="text-indigo-600" />}
-      </button>
-
-      {/* Notifications */}
-      {notification && (
-          <div className={`fixed top-6 left-1/2 -translate-x-1/2 px-6 py-3 rounded-2xl z-[100] text-sm font-bold shadow-2xl animate-slideUp backdrop-blur-md border border-white/10
-            ${notification.type === 'success' ? 'bg-emerald-500/90 text-white' : 
-              notification.type === 'error' ? 'bg-red-500/90 text-white' : 'bg-gray-800/90 text-white'}`}>
-             {notification.msg}
-          </div>
-      )}
-
-      {/* Main Content */}
-      <div className="md:pl-24 pt-6 px-4 md:px-8 max-w-7xl mx-auto h-full pb-20 md:pb-0">
-        {view === 'booking' ? (
-           <BookingWizard 
-             step={bookingStep} setStep={setBookingStep}
-             selectedService={selectedService} setSelectedService={setSelectedService}
-             selectedCoach={selectedCoach} setSelectedCoach={setSelectedCoach}
-             selectedDate={selectedDate} setSelectedDate={setSelectedDate}
-             selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot}
-             formData={formData} setFormData={setFormData}
-             coaches={coaches} appointments={appointments}
-             onSubmit={handleSubmitBooking} reset={resetBooking}
-             currentDate={currentDate}
-             handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
-             handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
-           />
-        ) : !currentUser ? (
-           <div className="max-w-md mx-auto py-20 px-4 animate-fadeIn">
-              <div className="text-center mb-10">
-                  <div className="w-20 h-20 bg-gradient-to-tr from-indigo-500 to-purple-500 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl shadow-indigo-500/30 transform rotate-3">
-                      <Key size={40} className="text-white" />
-                  </div>
-                  <h2 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-gray-800 to-gray-600 dark:from-white dark:to-gray-400">後台登入</h2>
-              </div>
-              <div className="glass-panel p-8 rounded-3xl shadow-2xl">
-                 <form onSubmit={handleLogin} className="space-y-6">
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 ml-1">帳號</label>
-                        <input 
-                            type="text" 
-                            className="w-full glass-input rounded-2xl px-5 py-4 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white" 
-                            value={loginForm.username} 
-                            onChange={e=>setLoginForm({...loginForm, username: e.target.value})} 
-                            placeholder="輸入帳號"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2 ml-1">密碼</label>
-                        <input 
-                            type="password" 
-                            className="w-full glass-input rounded-2xl px-5 py-4 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white" 
-                            value={loginForm.password} 
-                            onChange={e=>setLoginForm({...loginForm, password: e.target.value})} 
-                            placeholder="輸入密碼"
-                        />
-                    </div>
-                    {loginError && <div className="text-red-500 text-sm font-bold text-center bg-red-50 dark:bg-red-900/20 py-2 rounded-lg">{loginError}</div>}
-                    
-                    <button type="submit" className="w-full py-4 bg-gradient-to-r from-indigo-600 to-purple-600 text-white rounded-2xl font-bold text-lg shadow-xl shadow-indigo-500/30 hover:scale-[1.02] transition-all">
-                        進入系統
-                    </button>
-
-                    <div className="flex justify-center mt-4">
-                       <div className="px-3 py-1 rounded-full bg-gray-100 dark:bg-gray-800 text-xs text-gray-500">
-                           System: {
-                                dbStatus === 'connected' ? <span className="text-green-500 font-bold">Online</span> : 
-                                dbStatus === 'local' ? <span className="text-orange-500 font-bold">Local</span> :
-                                <span className="text-red-500 font-bold">Error</span>
-                            }
-                       </div>
-                    </div>
-                 </form>
-              </div>
-           </div>
-        ) : (
-           <AdminDashboard 
-             currentUser={currentUser} 
-             onLogout={() => { setCurrentUser(null); setAdminTab('calendar'); }}
-             adminTab={adminTab} setAdminTab={setAdminTab}
-             appointments={appointments}
-             selectedBatch={selectedBatch}
-             toggleBatchSelect={(id) => { const s = new Set(selectedBatch); if(s.has(id)) s.delete(id); else s.add(id); setSelectedBatch(s); }}
-             handleBatchDelete={handleBatchDelete}
-             analysis={getAnalysisData()}
-             handleExportStatsCsv={handleExportStatsCsv}
-             handleExportJson={handleExportJson}
-             triggerImport={() => {}}
-             handleFileImport={handleFileImport}
-             coaches={coaches}
-             updateCoachWorkDays={updateCoachWorkDays}
-             logs={logs}
-             renderWeeklyCalendar={() => (
-                <WeeklyCalendar 
-                    currentWeekStart={currentWeekStart}
-                    setCurrentWeekStart={setCurrentWeekStart}
-                    currentUser={currentUser}
-                    coaches={coaches}
-                    appointments={appointments}
-                    onSlotClick={handleSlotClick}
-                    onAppointmentClick={handleAppointmentClick}
-                    onToggleComplete={handleToggleComplete}
-                />
-             )}
-           />
-        )}
+    <div className="min-h-screen text-gray-800 dark:text-gray-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Background Blobs */}
+      <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-purple-300/30 dark:bg-purple-900/20 rounded-full blur-3xl animate-float"></div>
+          <div className="absolute top-1/2 -right-20 w-80 h-80 bg-blue-300/30 dark:bg-blue-900/20 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
+          <div className="absolute -bottom-20 left-1/3 w-96 h-96 bg-indigo-300/30 dark:bg-indigo-900/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
       </div>
 
-      {/* Glass Navigation Sidebar */}
-      <div className="hidden md:flex fixed left-4 top-1/2 -translate-y-1/2 h-[80vh] w-20 glass-panel rounded-full flex-col items-center py-10 z-40 justify-between border border-white/30 shadow-2xl">
-        <div className="w-12 h-12 bg-indigo-600 rounded-full flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-indigo-500/40">G</div>
-        <nav className="flex flex-col gap-8 w-full px-2 items-center">
-          <button onClick={() => setView('booking')} className={`p-4 rounded-2xl transition-all duration-300 ${view === 'booking' ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-white shadow-inner' : 'text-gray-400 hover:text-indigo-500'}`}>
-              <CalendarIcon size={24} />
-          </button>
-          <button onClick={() => setView('admin')} className={`p-4 rounded-2xl transition-all duration-300 ${view === 'admin' ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-white shadow-inner' : 'text-gray-400 hover:text-indigo-500'}`}>
-              <Settings size={24} />
-          </button>
-        </nav>
-        <div className="w-12 h-12"></div>
-      </div>
-      
-      {/* Mobile Nav */}
-      <div className="md:hidden fixed bottom-6 left-6 right-6 h-20 glass-panel rounded-3xl flex justify-around items-center px-6 z-40 shadow-2xl border border-white/40">
-        <button onClick={() => setView('booking')} className={`flex items-center gap-2 px-6 py-3 rounded-2xl transition-all ${view === 'booking' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40' : 'text-gray-500'}`}>
-            <CalendarIcon size={20} /><span className={view === 'booking' ? 'block font-bold' : 'hidden'}>預約</span>
-        </button>
-        <button onClick={() => setView('admin')} className={`flex items-center gap-2 px-6 py-3 rounded-2xl transition-all ${view === 'admin' ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-500/40' : 'text-gray-500'}`}>
-            <Settings size={20} /><span className={view === 'admin' ? 'block font-bold' : 'hidden'}>後台</span>
-        </button>
-      </div>
-
-      {/* Recovery Modal */}
-      {recoveryModal.isOpen && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="glass-panel rounded-3xl shadow-2xl p-8 max-w-sm w-full m-4 animate-slideUp">
-            <div className="flex flex-col items-center text-center">
-              <div className="w-16 h-16 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 flex items-center justify-center mb-6 animate-pulse"><RefreshCw size={32}/></div>
-              <h3 className="text-xl font-bold dark:text-white mb-2">發現歷史紀錄</h3>
-              <p className="text-gray-500 dark:text-gray-300 mb-8">系統偵測到本地端有 {recoveryModal.count} 筆未同步的資料。</p>
-              <div className="flex gap-4 w-full">
-                <button onClick={() => setRecoveryModal({ isOpen: false, count: 0 })} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 rounded-xl font-bold text-gray-500">忽略</button>
-                <button onClick={async () => {
-                    const local = localStorage.getItem('gym_backup_local');
-                    if(local) {
-                        const parsed = JSON.parse(local);
-                        await Promise.all(parsed.map((a: any) => saveToFirestore('appointments', a.id, a)));
-                        setRecoveryModal({isOpen: false, count:0});
-                        showNotification('已還原');
-                    }
-                }} className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold shadow-lg shadow-blue-500/30">還原</button>
+      {/* Navbar */}
+      <nav className="fixed w-full z-50 glass-panel border-b border-white/20 dark:border-gray-800 shadow-sm backdrop-blur-md">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('booking'); resetBooking(); }}>
+              <div className="w-10 h-10 bg-gradient-to-tr from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                 <CalendarIcon size={22} className="stroke-[2.5px]"/>
               </div>
+              <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-white dark:to-gray-300">
+                GymBooker <span className="font-black">Pro</span>
+              </span>
+            </div>
+            <div className="flex items-center gap-4">
+               {dbStatus !== 'connected' && (
+                   <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-full animate-pulse">
+                      <AlertTriangle size={12}/> {dbStatus === 'connecting' ? '連線中...' : '離線模式'}
+                   </span>
+               )}
+               <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-gray-500 dark:text-gray-300">
+                  {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+               </button>
+               {currentUser ? (
+                  <button onClick={() => setView('admin')} className="hidden md:flex items-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 px-4 py-2 rounded-xl transition-all font-bold text-sm text-gray-700 dark:text-white">
+                      <Settings size={16}/> 管理後台
+                  </button>
+               ) : (
+                  <button onClick={() => setView('admin')} className="hidden md:flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-indigo-600 transition-colors">
+                      <Lock size={16}/> 員工登入
+                  </button>
+               )}
             </div>
           </div>
         </div>
-      )}
+      </nav>
+
+      <main className="pt-24 px-4 pb-12">
+        {notification && (
+          <div className={`fixed top-20 right-4 z-[60] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-slideUp backdrop-blur-md border 
+            ${notification.type === 'success' ? 'bg-green-500/90 text-white border-green-400' : notification.type === 'error' ? 'bg-red-500/90 text-white border-red-400' : 'bg-blue-500/90 text-white border-blue-400'}`}>
+            {notification.type === 'success' ? <RefreshCw className="animate-spin" size={20}/> : <Info size={20}/>}
+            <span className="font-bold tracking-wide">{notification.msg}</span>
+          </div>
+        )}
+
+        {view === 'booking' ? (
+          <BookingWizard 
+            step={bookingStep} setStep={setBookingStep}
+            selectedService={selectedService} setSelectedService={setSelectedService}
+            selectedCoach={selectedCoach} setSelectedCoach={setSelectedCoach}
+            selectedDate={selectedDate} setSelectedDate={setSelectedDate}
+            selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot}
+            formData={formData} setFormData={setFormData}
+            coaches={coaches} appointments={appointments}
+            onSubmit={handleSubmitBooking} reset={resetBooking}
+            currentDate={currentDate} 
+            handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
+            handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
+          />
+        ) : (
+          !currentUser ? (
+             <div className="max-w-md mx-auto mt-10">
+                <div className="glass-panel p-8 rounded-3xl shadow-2xl">
+                   <div className="text-center mb-8">
+                      <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600 dark:text-indigo-400">
+                          <LockIcon size={32}/>
+                      </div>
+                      <h2 className="text-2xl font-bold dark:text-white">員工登入</h2>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">請使用您的員工帳號密碼登入系統</p>
+                   </div>
+                   <form onSubmit={handleEmailLogin} className="space-y-4">
+                      <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Email</label>
+                          <input type="email" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})} placeholder="name@gym.com"/>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Password</label>
+                          <input type="password" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} placeholder="••••••••"/>
+                      </div>
+                      <button type="submit" disabled={isAuthLoading} className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-[1.02] mt-2">
+                          {isAuthLoading ? '驗證中...' : '登入系統'}
+                      </button>
+                   </form>
+                </div>
+             </div>
+          ) : (
+             <AdminDashboard 
+                currentUser={currentUser}
+                onLogout={handleLogout}
+                adminTab={adminTab}
+                setAdminTab={setAdminTab}
+                appointments={appointments}
+                coaches={coaches}
+                updateCoachWorkDays={updateCoachWorkDays}
+                logs={logs}
+                onSaveCoach={handleSaveCoach}
+                onDeleteCoach={handleDeleteCoach}
+                analysis={getAnalysis()}
+                handleExportStatsCsv={handleExportStatsCsv}
+                handleExportJson={handleExportJson}
+                triggerImport={() => {}}
+                handleFileImport={handleFileImport}
+                selectedBatch={selectedBatch}
+                toggleBatchSelect={(id) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
+                handleBatchDelete={async () => {
+                    if(!window.confirm(`刪除 ${selectedBatch.size} 筆?`)) return;
+                    await Promise.all(Array.from(selectedBatch).map(id => deleteFromFirestore('appointments', id)));
+                    setSelectedBatch(new Set());
+                    showNotification('批量刪除成功', 'success');
+                }}
+                renderWeeklyCalendar={() => (
+                   <WeeklyCalendar 
+                      currentWeekStart={currentWeekStart}
+                      setCurrentWeekStart={setCurrentWeekStart}
+                      currentUser={currentUser}
+                      coaches={coaches}
+                      appointments={appointments}
+                      onSlotClick={handleSlotClick}
+                      onAppointmentClick={handleAppointmentClick}
+                      onToggleComplete={handleToggleComplete}
+                   />
+                )}
+             />
+          )
+        )}
+      </main>
+
+      {/* Mobile Bottom Nav */}
+      <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-gray-800 flex justify-around p-3 z-50 backdrop-blur-xl">
+         <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
+            <CalendarIcon size={24}/>
+            <span className="text-[10px] font-bold">預約</span>
+         </button>
+         <button onClick={() => setView('admin')} className={`flex flex-col items-center gap-1 ${view === 'admin' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
+            <Settings size={24}/>
+            <span className="text-[10px] font-bold">後台</span>
+         </button>
+      </div>
 
       {/* Block/Event Modal */}
       {isBlockModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
-          <div className="glass-panel w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
-            <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center backdrop-blur-md">
-                <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Lock size={20} className="text-indigo-500"/> {blockForm.id ? "編輯項目" : "新增項目"}</h3>
-                <button onClick={() => setIsBlockModalOpen(false)} className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-gray-500">✕</button>
-            </div>
-            <div className="p-6 md:p-8">
-              <form onSubmit={handleSaveBlock} className="space-y-5">
-                {!blockForm.id && (
-                  <div className="mb-4 p-4 glass-card rounded-2xl border border-indigo-100 dark:border-indigo-900">
-                    <label className="flex items-center gap-2 font-bold text-sm cursor-pointer dark:text-white text-indigo-900"><Repeat size={16}/> 重複預約設定</label>
-                    <select className="mt-2 w-full p-3 rounded-xl border-none bg-white/60 dark:bg-gray-800/60 dark:text-white outline-none focus:ring-2 focus:ring-indigo-400" value={blockForm.repeatWeeks || 1} onChange={e => setBlockForm({...blockForm, repeatWeeks: parseInt(e.target.value)})}>
-                      <option value="1">僅此一次</option><option value="4">重複 4 週</option><option value="8">重複 8 週</option><option value="12">重複 12 週</option>
-                    </select>
-                  </div>
-                )}
-                
-                <div>
-                    <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block ml-1">教練</label>
-                    <select value={currentUser?.role === 'coach' ? currentUser.id : blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})} disabled={currentUser?.role === 'coach'} className="w-full glass-input rounded-xl p-3 dark:text-white outline-none">
-                        {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                    </select>
+         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
+            <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
+                <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                    <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
+                        {blockForm.id ? <Settings size={20}/> : <CalendarIcon size={20}/>}
+                        {blockForm.id ? '管理行程' : '新增行程'}
+                    </h3>
+                    {blockForm.id && (
+                        <button onClick={() => setDeleteConfirm(true)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={20}/></button>
+                    )}
                 </div>
                 
-                <div className="grid grid-cols-2 gap-4">
-                    <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block ml-1">日期</label>
-                        <input type="date" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} className="w-full glass-input rounded-xl p-3 dark:text-white outline-none"/>
-                    </div>
-                    <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block ml-1">時段</label>
-                        <select value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})} className="w-full glass-input rounded-xl p-3 dark:text-white outline-none text-center">
-                            {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                        </select>
-                    </div>
-                </div>
-                
-                {blockForm.type === 'client' ? (
-                    <div className="bg-indigo-50 dark:bg-indigo-900/30 p-4 rounded-2xl border border-indigo-100 dark:border-indigo-800">
-                        <label className="text-xs text-indigo-500 mb-1 block font-bold uppercase tracking-wider">客戶資料</label>
-                        <div className="text-lg font-bold dark:text-white">{blockForm.customer?.name}</div>
-                        <div className="text-sm text-gray-500">{blockForm.customer?.phone}</div>
+                {deleteConfirm ? (
+                    <div className="p-8 text-center">
+                        <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><AlertTriangle size={32}/></div>
+                        <h4 className="font-bold text-lg mb-2 text-gray-800 dark:text-white">確定要刪除嗎？</h4>
+                        <p className="text-gray-500 text-sm mb-6">此動作無法復原</p>
+                        <div className="flex gap-3">
+                            <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
+                            <button onClick={handleActualDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">確認刪除</button>
+                        </div>
                     </div>
                 ) : (
-                    <div>
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider mb-1 block ml-1">項目類別</label>
-                        <select value={blockForm.reason} onChange={e => setBlockForm({...blockForm, reason: e.target.value})} className="w-full glass-input rounded-xl p-3 dark:text-white outline-none">
-                            {BLOCK_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
-                        </select>
-                    </div>
+                    <form onSubmit={handleSaveBlock} className="p-6 space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                           <div>
+                               <label className="text-xs font-bold text-gray-500 uppercase">類型</label>
+                               <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => setBlockForm({...blockForm, type: e.target.value as any})}>
+                                   <option value="block">內部事務</option>
+                                   <option value="client">客戶預約</option>
+                               </select>
+                           </div>
+                           {currentUser?.role === 'manager' && (
+                               <div>
+                                   <label className="text-xs font-bold text-gray-500 uppercase">指定教練</label>
+                                   <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})}>
+                                       {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                   </select>
+                               </div>
+                           )}
+                        </div>
+
+                        {blockForm.type === 'block' ? (
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase">事項</label>
+                                <div className="flex flex-wrap gap-2 mt-2">
+                                    {BLOCK_REASONS.map(r => (
+                                        <button type="button" key={r} onClick={() => setBlockForm({...blockForm, reason: r})}
+                                            className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${blockForm.reason === r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                            {r}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800">
+                                <div>
+                                    <label className="text-xs font-bold text-indigo-500 uppercase">客戶姓名</label>
+                                    <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-indigo-500 uppercase">聯絡電話</label>
+                                    <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.phone || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, phone: e.target.value }})} />
+                                </div>
+                            </div>
+                        )}
+                        
+                        {!blockForm.id && (
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
+                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})}>
+                                    <option value={1}>單次事件</option>
+                                    <option value={4}>重複 4 週</option>
+                                    <option value={8}>重複 8 週</option>
+                                    <option value={12}>重複 12 週</option>
+                                </select>
+                            </div>
+                        )}
+
+                        <div className="pt-2">
+                            <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-colors">
+                                {blockForm.id ? '儲存變更' : '確認新增'}
+                            </button>
+                        </div>
+                    </form>
                 )}
-                
-                <div className="flex gap-3 mt-8 pt-4 border-t border-gray-100 dark:border-gray-700">
-                  {blockForm.id && (
-                    deleteConfirm ? (
-                      <button type="button" onClick={handleActualDelete} className="flex-1 bg-red-500 text-white py-3 rounded-xl font-bold flex items-center justify-center gap-2 shadow-lg hover:bg-red-600 transition-all"><AlertTriangle size={18}/> 確定執行</button>
-                    ) : (
-                      <button type="button" onClick={() => setDeleteConfirm(true)} className="flex-1 bg-red-50 text-red-500 border border-red-100 py-3 rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-red-100 transition-all"><Trash2 size={18}/> {blockForm.type === 'client' ? '取消預約' : '刪除'}</button>
-                    )
-                  )}
-                  {!deleteConfirm && <button type="button" onClick={() => setIsBlockModalOpen(false)} className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 py-3 rounded-xl font-bold hover:bg-gray-200">取消</button>}
-                  {!deleteConfirm && <button type="submit" className="flex-1 bg-indigo-600 text-white py-3 rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">儲存變更</button>}
-                  {deleteConfirm && <button type="button" onClick={() => setDeleteConfirm(false)} className="flex-1 bg-gray-100 text-gray-600 py-3 rounded-xl font-bold">返回</button>}
-                </div>
-              </form>
             </div>
-          </div>
-        </div>
-      )}
-      
-      {/* Universal Confirm Modal with Enhanced Input */}
-      {confirmModal.isOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-md p-4" onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })}>
-          <div className="glass-panel w-full max-w-sm rounded-3xl shadow-2xl p-8 animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col items-center text-center">
-              <div className={`w-16 h-16 rounded-full flex items-center justify-center mb-6 shadow-lg ${confirmModal.isDanger ? 'bg-red-100 text-red-500' : 'bg-indigo-100 text-indigo-600'}`}>
-                {confirmModal.isDanger ? <AlertTriangle size={32}/> : <Info size={32}/>}
-              </div>
-              <h3 className="text-xl font-bold mb-3 dark:text-white">確認操作</h3>
-              <p className="text-gray-500 dark:text-gray-300 mb-6">{confirmModal.message}</p>
-              
-              {confirmModal.showInput && (
-                <div className="w-full mb-6">
-                    <label className="text-left block text-xs font-bold text-gray-400 mb-2 ml-1">取消原因 (必填)</label>
-                    <textarea 
-                        autoFocus
-                        className="w-full p-4 glass-input rounded-2xl text-gray-800 dark:text-white placeholder-gray-400 outline-none focus:ring-2 focus:ring-red-400 transition-all min-h-[100px] resize-none" 
-                        placeholder="請輸入原因..." 
-                        value={cancelReason} 
-                        onChange={e => setCancelReason(e.target.value)}
-                    />
-                </div>
-              )}
-              
-              <div className="flex gap-4 w-full">
-                <button onClick={() => setConfirmModal({ ...confirmModal, isOpen: false })} className="flex-1 py-3 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold hover:bg-gray-200 transition-all">取消</button>
-                <button 
-                    disabled={confirmModal.showInput && !cancelReason.trim()}
-                    onClick={() => { if(confirmModal.onConfirm) confirmModal.onConfirm(cancelReason); setConfirmModal({...confirmModal, isOpen: false}); setCancelReason(''); }} 
-                    className={`flex-1 py-3 text-white rounded-xl font-bold shadow-lg transition-all ${confirmModal.isDanger ? 'bg-red-500 shadow-red-500/30 hover:bg-red-600' : 'bg-indigo-600 shadow-indigo-500/30 hover:bg-indigo-700'} ${confirmModal.showInput && !cancelReason.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
-                >
-                    確定
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+         </div>
       )}
 
-      <style>{`
-        .bg-stripes-gray { background-image: linear-gradient(45deg, rgba(0,0,0,0.05) 25%, transparent 25%, transparent 50%, rgba(0,0,0,0.05) 50%, rgba(0,0,0,0.05) 75%, transparent 75%, transparent); background-size: 20px 20px; }
-        .dark .bg-stripes-gray { background-image: linear-gradient(45deg, rgba(255,255,255,0.05) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.05) 50%, rgba(255,255,255,0.05) 75%, transparent 75%, transparent); }
-        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
-      `}</style>
+      {/* Confirm Modal */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+             <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">
+                 <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white">{confirmModal.message}</h3>
+                 {confirmModal.showInput && (
+                     <textarea className="w-full glass-input p-3 rounded-xl mb-4 h-24 dark:text-white" placeholder="請輸入原因..." value={cancelReason} onChange={e => setCancelReason(e.target.value)}></textarea>
+                 )}
+                 <div className="flex gap-3">
+                     <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
+                     <button onClick={() => { if(confirmModal.onConfirm) confirmModal.onConfirm(confirmModal.showInput ? cancelReason : undefined); setConfirmModal({...confirmModal, isOpen: false}); setCancelReason(''); }} 
+                        className={`flex-1 py-2.5 text-white rounded-xl font-bold shadow-lg ${confirmModal.isDanger ? 'bg-red-500 shadow-red-500/30' : 'bg-indigo-600 shadow-indigo-500/30'}`}>
+                        確認
+                     </button>
+                 </div>
+             </div>
+        </div>
+      )}
     </div>
   );
 }

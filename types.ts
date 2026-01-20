@@ -1,13 +1,15 @@
 export interface User {
   id: string;
   name: string;
-  role: 'manager' | 'coach';
-  password?: string;
+  role: 'manager' | 'coach' | 'staff'; // Added staff for flexibility
+  email?: string;
+  photoURL?: string;
   color?: string;
   workStart?: string;
   workEnd?: string;
   workDays?: number[];
-  dailyWorkHours?: Record<string, { start: string; end: string }>; // Key is day index "0"-"6"
+  dailyWorkHours?: Record<string, { start: string; end: string }>;
+  status?: 'active' | 'disabled'; // New field for access control
 }
 
 export interface Customer {

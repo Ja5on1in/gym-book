@@ -204,7 +204,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
         <div className="space-y-4 animate-slideUp">
           <button onClick={() => setStep(1)} className="text-gray-400 flex items-center mb-4 hover:text-gray-600 dark:hover:text-white transition-colors text-sm font-medium"><ChevronLeft size={16} className="mr-1" /> 重選服務</button>
           <div className="grid grid-cols-1 gap-4">
-            {coaches.map(coach => (
+            {coaches.filter(c => c.status !== 'disabled').map(coach => (
               <button key={coach.id} onClick={() => { setSelectedCoach(coach); setStep(3); }} 
                 className="w-full glass-card p-4 rounded-3xl flex items-center justify-between group hover:shadow-xl hover:shadow-indigo-500/10 transition-all duration-300 transform hover:-translate-y-1 relative overflow-hidden"
               >
