@@ -10,6 +10,7 @@ export interface User {
   workDays?: number[];
   dailyWorkHours?: Record<string, { start: string; end: string }>;
   status?: 'active' | 'disabled'; // New field for access control
+  title?: string; // Added title for coach/therapist distinction
 }
 
 export interface Customer {
@@ -27,7 +28,7 @@ export interface Service {
 
 export interface Appointment {
   id: string;
-  type: 'client' | 'block';
+  type: 'client' | 'block' | 'private' | 'group';
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   coachId: string;
@@ -48,6 +49,7 @@ export interface Coach extends User {
   color: string;
   dailyWorkHours?: Record<string, { start: string; end: string }>;
   offDates?: string[]; // Specific dates off (YYYY-MM-DD)
+  title?: string; // Added title field
 }
 
 export interface Log {
@@ -60,14 +62,14 @@ export interface Log {
 
 export interface SlotStatus {
   status: 'available' | 'booked' | 'unavailable';
-  type?: 'client' | 'block' | 'off';
+  type?: 'client' | 'block' | 'off' | 'private' | 'group';
   reason?: string;
   record?: Appointment;
 }
 
 export interface BlockFormState {
   id: string | null;
-  type: 'block' | 'client';
+  type: 'block' | 'client' | 'private' | 'group';
   coachId: string;
   date: string;
   time: string;

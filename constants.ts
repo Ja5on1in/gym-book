@@ -3,8 +3,8 @@ import { Service, Coach } from './types';
 
 // Default initial coaches if DB is empty
 export const INITIAL_COACHES: Coach[] = [
-  { id: 'c1', name: '教練 Jason', role: 'coach', workStart: '09:00', workEnd: '21:00', workDays: [0,1,2,3,4,5,6], color: 'bg-blue-100 text-blue-900 border-blue-200 dark:bg-blue-900 dark:text-blue-100 dark:border-blue-700' },
-  { id: 'c2', name: '教練 Sarah', role: 'coach', workStart: '09:00', workEnd: '21:00', workDays: [0,1,2,3,4,5,6], color: 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900 dark:text-green-200 dark:border-green-700' },
+  { id: 'c1', name: '教練 Jason', role: 'coach', workStart: '09:00', workEnd: '21:00', workDays: [0,1,2,3,4,5,6], color: 'bg-blue-100 text-blue-900 border-blue-200 dark:bg-blue-900 dark:text-blue-100 dark:border-blue-700', title: '教練' },
+  { id: 'c2', name: '教練 Sarah', role: 'coach', workStart: '09:00', workEnd: '21:00', workDays: [0,1,2,3,4,5,6], color: 'bg-green-100 text-green-800 border-green-300 dark:bg-green-900 dark:text-green-200 dark:border-green-700', title: '物理治療師' },
 ];
 
 const generateTimeSlots = () => {

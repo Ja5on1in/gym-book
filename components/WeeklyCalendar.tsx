@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
@@ -39,7 +40,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
         <div className="min-w-[900px] relative">
           {/* Header Row */}
           <div className="grid grid-cols-8 border-b border-gray-200/50 dark:border-gray-700/50 bg-white/80 dark:bg-gray-900/90 sticky top-0 z-30 backdrop-blur-sm">
-            <div className="p-4 text-center text-xs font-bold text-gray-400 uppercase tracking-widest border-r border-gray-100 dark:border-gray-700/50">時間</div>
+            <div className="p-4 text-center text-xs font-bold text-gray-400 uppercase tracking-widest border-r border-gray-100 dark:border-gray-700/50 sticky left-0 z-40 bg-white dark:bg-gray-900 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">時間</div>
             {weekDays.map((d, i) => (
               <div key={i} className={`p-3 text-center border-r border-gray-100 dark:border-gray-700/50 ${d.toDateString()===new Date().toDateString()?'bg-indigo-50/50 dark:bg-indigo-900/20':''}`}>
                 <div className="text-xs text-gray-500 font-medium mb-1">{['週日','週一','週二','週三','週四','週五','週六'][d.getDay()]}</div>
@@ -51,7 +52,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
           {/* Time Slots */}
           {ALL_TIME_SLOTS.map(time => (
             <div key={time} className="grid grid-cols-8 border-b border-gray-100/50 dark:border-gray-700/50 min-h-[90px]">
-              <div className="p-2 text-center text-xs font-medium text-gray-400 border-r border-gray-100/50 dark:border-gray-700/50 flex items-center justify-center bg-white/20 dark:bg-gray-800/20">{time}</div>
+              <div className="p-2 text-center text-xs font-medium text-gray-400 border-r border-gray-100/50 dark:border-gray-700/50 flex items-center justify-center bg-white dark:bg-gray-900 sticky left-0 z-20 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">{time}</div>
               {weekDays.map((day) => {
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
                 const myCoach = currentUser.role === 'manager' ? null : coaches.find(c => c.id === currentUser.id);

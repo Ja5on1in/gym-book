@@ -23,7 +23,7 @@ import {
     subscribeToCollection, 
     saveToFirestore, 
     deleteFromFirestore, 
-    disableUserInFirestore,
+    disableUserInFirestore, 
     isFirebaseAvailable, 
     loginWithEmail, 
     logout,
@@ -298,7 +298,7 @@ export default function App() {
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
-     if (target.type === 'client') {
+     if (target.type === 'client' || target.type === 'private') {
          setConfirmModal({
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: (reason) => {
@@ -380,7 +380,8 @@ export default function App() {
             name: coachData.name,
             role: coachData.role,
             email: email || coachData.email || '', 
-            status: 'active'
+            status: 'active',
+            title: coachData.title // Ensure title is saved
         };
 
         await saveToFirestore('users', uid, { id: uid, ...commonData });
@@ -435,12 +436,20 @@ export default function App() {
             a.status === 'confirmed' && 
             a.date.startsWith(currentMonthPrefix)
         );
+        
+        // Corrected Logic: 
+        // Personal = 'client' (Frontend Booking) OR 'private' (Admin Private Lesson)
+        // Group = 'group' (Admin Group Lesson)
+        // 'block' is Internal Affairs and not counted in course stats
+        const personalCount = apps.filter(a => a.type === 'client' || a.type === 'private').length;
+        const groupCount = apps.filter(a => a.type === 'group').length;
+
         return {
             id: c.id,
             name: c.name,
-            personal: apps.filter(a => a.type === 'client').length,
-            group: apps.filter(a => a.type === 'block').length,
-            total: apps.length
+            personal: personalCount,
+            group: groupCount,
+            total: personalCount + groupCount
         };
     });
 
@@ -605,10 +614,10 @@ export default function App() {
                 triggerImport={() => {}}
                 handleFileImport={handleFileImport}
                 selectedBatch={selectedBatch}
-                toggleBatchSelect={(id) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
+                toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
                 handleBatchDelete={async () => {
                     if(!window.confirm(`刪除 ${selectedBatch.size} 筆?`)) return;
-                    await Promise.all(Array.from(selectedBatch).map(id => deleteFromFirestore('appointments', id)));
+                    await Promise.all(Array.from(selectedBatch).map((id: string) => deleteFromFirestore('appointments', id)));
                     setSelectedBatch(new Set());
                     showNotification('批量刪除成功', 'success');
                 }}
@@ -677,8 +686,10 @@ export default function App() {
                            <div>
                                <label className="text-xs font-bold text-gray-500 uppercase">類型</label>
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => setBlockForm({...blockForm, type: e.target.value as any})}>
-                                   <option value="block">內部事務</option>
-                                   {!isBatchMode && <option value="client">客戶預約</option>}
+                                   <option value="block">內部事務 (Block)</option>
+                                   <option value="client">客戶預約 (Client)</option>
+                                   <option value="private">私人課程 (Private)</option>
+                                   <option value="group">團體課程 (Group)</option>
                                </select>
                            </div>
                            {currentUser?.role === 'manager' && (
@@ -718,9 +729,9 @@ export default function App() {
                             </div>
                         )}
 
-                        {blockForm.type === 'block' ? (
+                        {['block', 'group'].includes(blockForm.type) ? (
                             <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase">事項</label>
+                                <label className="text-xs font-bold text-gray-500 uppercase">事項 / 課程名稱</label>
                                 <div className="flex flex-wrap gap-2 mt-2">
                                     {BLOCK_REASONS.map(r => (
                                         <button type="button" key={r} onClick={() => setBlockForm({...blockForm, reason: r})}
@@ -762,7 +773,7 @@ export default function App() {
                                     onClick={() => setDeleteConfirm(true)} 
                                     className="flex-1 py-3 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-xl font-bold transition-colors"
                                 >
-                                    {blockForm.type === 'client' ? '取消預約' : '刪除'}
+                                    {blockForm.type === 'client' || blockForm.type === 'private' ? '取消預約' : '刪除'}
                                 </button>
                             )}
                             <button type="submit" className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-colors">

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, Check } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers } from 'lucide-react';
 import { User, Appointment, Coach, Log } from '../types';
 import WeeklyCalendar from './WeeklyCalendar';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
@@ -90,6 +90,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setEditingCoach({
             name: '',
             role: 'coach',
+            title: 'coach', // Default title
             color: COLOR_OPTIONS[0].value,
             workStart: '09:00',
             workEnd: '21:00',
@@ -192,7 +193,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300
                         ${selectedBatch.has(app.id) ? 'bg-indigo-600 border-indigo-600 scale-110' : 'border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600 group-hover:border-indigo-400'}
                   `}>
-                      {selectedBatch.has(app.id) && <Check size={14} className="text-white" strokeWidth={4} />}
+                      {selectedBatch.has(app.id) && <X size={14} className="text-white rotate-45" strokeWidth={3} />}
                   </div>
                   
                   <div className="flex-1 pointer-events-none">
@@ -420,6 +421,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="text-xs font-bold text-gray-500 uppercase">姓名</label>
                             <input type="text" required value={editingCoach.name || ''} onChange={e => setEditingCoach({...editingCoach, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                         </div>
+                        
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">職稱</label>
+                            <select value={editingCoach.title || 'coach'} onChange={e => setEditingCoach({...editingCoach, title: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
+                                <option value="coach">教練 (Coach)</option>
+                                <option value="therapist">治療師 (Therapist)</option>
+                            </select>
+                        </div>
+
                         <div>
                             <label className="text-xs font-bold text-gray-500 uppercase">職位</label>
                             <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
