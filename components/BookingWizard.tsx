@@ -58,7 +58,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
     const days = [];
 
     for (let i = 0; i < firstDay; i++) {
-        days.push(<div key={`empty-${i}`} className="h-10 w-full"></div>);
+        days.push(<div key={`empty-${year}-${month}-${i}`} className="h-10 w-full"></div>);
     }
     
     for (let day = 1; day <= daysInMonth; day++) {
@@ -70,7 +70,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       
       days.push(
         <button 
-          key={day} 
+          key={loopDateKey} 
           onClick={() => { setSelectedDate(loopDate); setSelectedSlot(null); }} 
           disabled={isPast}
           className={`h-10 w-10 mx-auto rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300
@@ -247,6 +247,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                 <Calendar size={16} className="text-indigo-500"/>
                 <h2 className="text-sm font-bold text-gray-500 dark:text-gray-400 uppercase tracking-widest">日期選擇</h2>
             </div>
+            {/* Restored Date Picker Calendar */}
             {renderCalendar()}
           </section>
 

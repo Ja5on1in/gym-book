@@ -716,8 +716,18 @@ export default function App() {
                             </div>
                         )}
 
-                        <div className="pt-2">
-                            <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-colors">
+                        <div className="pt-2 flex gap-3">
+                            {/* Restore Cancel/Delete Button in Footer */}
+                            {blockForm.id && (
+                                <button 
+                                    type="button" 
+                                    onClick={() => setDeleteConfirm(true)} 
+                                    className="flex-1 py-3 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-xl font-bold transition-colors"
+                                >
+                                    {blockForm.type === 'client' ? '取消預約' : '刪除'}
+                                </button>
+                            )}
+                            <button type="submit" className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-colors">
                                 {blockForm.id ? '儲存變更' : '確認新增'}
                             </button>
                         </div>
