@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -14,7 +14,8 @@ import {
   Moon,
   Calendar,
   Clock,
-  ArrowRight
+  ArrowRight,
+  MessageCircle
 } from 'lucide-react';
 import { Coach, Service, Customer } from '../types';
 import { SERVICES, ALL_TIME_SLOTS } from '../constants';
@@ -35,7 +36,7 @@ interface BookingWizardProps {
   setFormData: (c: Customer) => void;
   coaches: Coach[];
   appointments: any[];
-  onSubmit: (e: React.FormEvent) => void;
+  onSubmit: (e: React.FormEvent, lineProfile?: {userId: string, displayName: string}) => void;
   reset: () => void;
   currentDate: Date;
   handlePrevMonth: () => void;
@@ -48,8 +49,35 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
   selectedSlot, setSelectedSlot, formData, setFormData,
   coaches, appointments, onSubmit, reset, currentDate, handlePrevMonth, handleNextMonth
 }) => {
+  const [isVerifying, setIsVerifying] = useState(false);
   const dateKey = formatDateKey(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
   const isDayOff = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
+
+  const handleLineSubmit = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setIsVerifying(true);
+      const liff = (window as any).liff;
+
+      if (liff) {
+          try {
+              if (!liff.isLoggedIn()) {
+                  // Standard login with redirect to current page
+                  liff.login({ redirectUri: window.location.href });
+                  return; 
+              }
+              const profile = await liff.getProfile();
+              onSubmit(e, { userId: profile.userId, displayName: profile.displayName });
+          } catch (err) {
+              console.error("LIFF Error", err);
+              // Fallback to normal submit if LIFF fails
+              onSubmit(e);
+          }
+      } else {
+          // No LIFF detected, normal submit
+          onSubmit(e);
+      }
+      setIsVerifying(false);
+  };
 
   const renderCalendar = () => {
     const year = currentDate.getFullYear();
@@ -272,7 +300,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
             </div>
           </div>
 
-          <form onSubmit={onSubmit} className="space-y-4">
+          <form onSubmit={handleLineSubmit} className="space-y-4">
              <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-500 uppercase ml-1 flex items-center gap-1"><User size={12}/> 姓名</label>
                 <input required type="text" className="w-full glass-input rounded-xl p-3.5 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" 
@@ -292,8 +320,8 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                        value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
              </div>
              
-             <button type="submit" className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-[1.02] mt-4 flex items-center justify-center gap-2">
-                確認預約 <CheckCircle size={18}/>
+             <button type="submit" disabled={isVerifying} className="w-full py-4 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold shadow-lg shadow-green-500/30 transition-all transform hover:scale-[1.02] mt-4 flex items-center justify-center gap-2">
+                {isVerifying ? '驗證中...' : '確認預約'} <MessageCircle size={18}/>
              </button>
           </form>
         </div>

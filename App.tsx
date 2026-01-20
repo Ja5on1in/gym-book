@@ -15,7 +15,9 @@ import {
   Mail,
   Lock as LockIcon,
   Layers,
-  ArrowRight
+  ArrowRight,
+  User as UserIcon,
+  List
 } from 'lucide-react';
 
 import { 
@@ -40,10 +42,14 @@ import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff } from './u
 import BookingWizard from './components/BookingWizard';
 import AdminDashboard from './components/AdminDashboard';
 import WeeklyCalendar from './components/WeeklyCalendar';
+import MyBookings from './components/MyBookings';
+
+// Updated LIFF ID
+const LIFF_ID = '2008923061-bPeQysat';
 
 export default function App() {
   // --- STATE ---
-  const [view, setView] = useState<'booking' | 'admin'>('booking');
+  const [view, setView] = useState<'booking' | 'admin' | 'my-bookings'>('booking');
   const [adminTab, setAdminTab] = useState('calendar');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [notification, setNotification] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
@@ -72,6 +78,9 @@ export default function App() {
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [formData, setFormData] = useState<Customer>({ name: '', phone: '', email: '' });
 
+  // LIFF State
+  const [liffProfile, setLiffProfile] = useState<{ userId: string; displayName: string } | null>(null);
+
   // Modals & Forms
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -94,6 +103,31 @@ export default function App() {
   useEffect(() => {
     const start = async () => {
         await initAuth();
+        
+        // Initialize LIFF
+        const liff = (window as any).liff;
+        if (liff) {
+            try {
+                await liff.init({ liffId: LIFF_ID });
+                console.log('LIFF initialized with ID:', LIFF_ID);
+                
+                // Check URL mode for specific views
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('mode') === 'my-bookings') {
+                    setView('my-bookings');
+                    if (!liff.isLoggedIn()) {
+                        liff.login(); // Force login for my-bookings view
+                    }
+                }
+
+                if (liff.isLoggedIn()) {
+                    const profile = await liff.getProfile();
+                    setLiffProfile(profile);
+                }
+            } catch (err) {
+                console.error('LIFF Init failed', err);
+            }
+        }
     };
     start();
   }, []);
@@ -211,7 +245,7 @@ export default function App() {
       showNotification("已登出", "info");
   };
 
-  const handleSubmitBooking = (e: React.FormEvent) => {
+  const handleSubmitBooking = (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
         showNotification('請填寫完整資訊', 'error'); return; 
@@ -227,14 +261,46 @@ export default function App() {
     const newApp: Appointment = { 
         id, type: 'client', date: dateKey, time: selectedSlot, 
         service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
-        customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString() 
+        customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString(),
+        lineUserId: lineProfile?.userId, 
+        lineName: lineProfile?.displayName 
     };
     
     saveToFirestore('appointments', id, newApp);
-    addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name}`);
-    sendToGoogleScript({ action: 'create_booking', ...newApp });
+    addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
+    
+    // Construct Webhook Payload with all required fields
+    const webhookPayload = {
+        action: 'create_booking',
+        ...newApp,
+        lineUserId: lineProfile?.userId || '',
+        coachName: selectedCoach.name,
+        title: selectedCoach.title || '教練', // Pass the Coach Title
+        type: 'client', // Explicitly set type for frontend booking
+    };
+    sendToGoogleScript(webhookPayload);
+    
     setBookingStep(5);
     showNotification('預約成功！', 'success');
+  };
+
+  const handleCustomerCancel = async (app: Appointment, reason: string) => {
+      const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
+      await saveToFirestore('appointments', app.id, updated);
+      addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
+      
+      const coach = coaches.find(c => c.id === app.coachId);
+      sendToGoogleScript({ 
+          action: 'cancel_booking', 
+          id: app.id, 
+          reason, 
+          lineUserId: app.lineUserId,
+          coachName: app.coachName,
+          title: coach?.title || '教練',
+          date: app.date,
+          time: app.time
+      });
+      showNotification('已取消預約', 'info');
   };
 
   const resetBooking = () => {
@@ -437,10 +503,10 @@ export default function App() {
             a.date.startsWith(currentMonthPrefix)
         );
         
-        // Corrected Logic: 
-        // Personal = 'client' (Frontend Booking) OR 'private' (Admin Private Lesson)
-        // Group = 'group' (Admin Group Lesson)
-        // 'block' is Internal Affairs and not counted in course stats
+        // Strict Separation Logic:
+        // Personal = 'client' (Frontend) OR 'private' (Admin)
+        // Group = 'group' (Admin)
+        // Block is excluded.
         const personalCount = apps.filter(a => a.type === 'client' || a.type === 'private').length;
         const groupCount = apps.filter(a => a.type === 'group').length;
 
@@ -505,6 +571,108 @@ export default function App() {
       reader.readAsText(file);
   };
 
+  const renderContent = () => {
+      if (view === 'my-bookings') {
+          return (
+              <MyBookings 
+                  liffProfile={liffProfile}
+                  appointments={appointments}
+                  coaches={coaches}
+                  onCancel={handleCustomerCancel}
+              />
+          );
+      }
+
+      if (view === 'booking') {
+          return (
+              <BookingWizard 
+                step={bookingStep} setStep={setBookingStep}
+                selectedService={selectedService} setSelectedService={setSelectedService}
+                selectedCoach={selectedCoach} setSelectedCoach={setSelectedCoach}
+                selectedDate={selectedDate} setSelectedDate={setSelectedDate}
+                selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot}
+                formData={formData} setFormData={setFormData}
+                coaches={coaches} appointments={appointments}
+                onSubmit={handleSubmitBooking} reset={resetBooking}
+                currentDate={currentDate} 
+                handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
+                handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
+              />
+          );
+      }
+
+      // Admin View
+      if (!currentUser) {
+          return (
+             <div className="max-w-md mx-auto mt-10">
+                <div className="glass-panel p-8 rounded-3xl shadow-2xl">
+                   <div className="text-center mb-8">
+                      <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600 dark:text-indigo-400">
+                          <LockIcon size={32}/>
+                      </div>
+                      <h2 className="text-2xl font-bold dark:text-white">員工登入</h2>
+                      <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">請使用您的員工帳號密碼登入系統</p>
+                   </div>
+                   <form onSubmit={handleEmailLogin} className="space-y-4">
+                      <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Email</label>
+                          <input type="email" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})} placeholder="name@gym.com"/>
+                      </div>
+                      <div className="space-y-1">
+                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Password</label>
+                          <input type="password" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} placeholder="••••••••"/>
+                      </div>
+                      <button type="submit" disabled={isAuthLoading} className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-[1.02] mt-2">
+                          {isAuthLoading ? '驗證中...' : '登入系統'}
+                      </button>
+                   </form>
+                </div>
+             </div>
+          );
+      }
+
+      return (
+         <AdminDashboard 
+            currentUser={currentUser}
+            onLogout={handleLogout}
+            adminTab={adminTab}
+            setAdminTab={setAdminTab}
+            appointments={appointments}
+            coaches={coaches}
+            updateCoachWorkDays={updateCoachWorkDays}
+            logs={logs}
+            onSaveCoach={handleSaveCoach}
+            onDeleteCoach={handleDeleteCoach}
+            analysis={getAnalysis()}
+            handleExportStatsCsv={handleExportStatsCsv}
+            handleExportJson={handleExportJson}
+            triggerImport={() => {}}
+            handleFileImport={handleFileImport}
+            selectedBatch={selectedBatch}
+            toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
+            handleBatchDelete={async () => {
+                if(!window.confirm(`刪除 ${selectedBatch.size} 筆?`)) return;
+                await Promise.all(Array.from(selectedBatch).map((id: string) => deleteFromFirestore('appointments', id)));
+                setSelectedBatch(new Set());
+                showNotification('批量刪除成功', 'success');
+            }}
+            onOpenBatchBlock={handleOpenBatchBlock}
+            renderWeeklyCalendar={() => (
+               <WeeklyCalendar 
+                  currentWeekStart={currentWeekStart}
+                  setCurrentWeekStart={setCurrentWeekStart}
+                  currentUser={currentUser}
+                  coaches={coaches}
+                  appointments={appointments}
+                  onSlotClick={handleSlotClick}
+                  onAppointmentClick={handleAppointmentClick}
+                  onToggleComplete={handleToggleComplete}
+               />
+            )}
+         />
+      );
+  };
+
   return (
     <div className="min-h-screen text-gray-800 dark:text-gray-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
@@ -556,93 +724,18 @@ export default function App() {
           </div>
         )}
 
-        {view === 'booking' ? (
-          <BookingWizard 
-            step={bookingStep} setStep={setBookingStep}
-            selectedService={selectedService} setSelectedService={setSelectedService}
-            selectedCoach={selectedCoach} setSelectedCoach={setSelectedCoach}
-            selectedDate={selectedDate} setSelectedDate={setSelectedDate}
-            selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot}
-            formData={formData} setFormData={setFormData}
-            coaches={coaches} appointments={appointments}
-            onSubmit={handleSubmitBooking} reset={resetBooking}
-            currentDate={currentDate} 
-            handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
-            handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
-          />
-        ) : (
-          !currentUser ? (
-             <div className="max-w-md mx-auto mt-10">
-                <div className="glass-panel p-8 rounded-3xl shadow-2xl">
-                   <div className="text-center mb-8">
-                      <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600 dark:text-indigo-400">
-                          <LockIcon size={32}/>
-                      </div>
-                      <h2 className="text-2xl font-bold dark:text-white">員工登入</h2>
-                      <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">請使用您的員工帳號密碼登入系統</p>
-                   </div>
-                   <form onSubmit={handleEmailLogin} className="space-y-4">
-                      <div className="space-y-1">
-                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Email</label>
-                          <input type="email" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})} placeholder="name@gym.com"/>
-                      </div>
-                      <div className="space-y-1">
-                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Password</label>
-                          <input type="password" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} placeholder="••••••••"/>
-                      </div>
-                      <button type="submit" disabled={isAuthLoading} className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-[1.02] mt-2">
-                          {isAuthLoading ? '驗證中...' : '登入系統'}
-                      </button>
-                   </form>
-                </div>
-             </div>
-          ) : (
-             <AdminDashboard 
-                currentUser={currentUser}
-                onLogout={handleLogout}
-                adminTab={adminTab}
-                setAdminTab={setAdminTab}
-                appointments={appointments}
-                coaches={coaches}
-                updateCoachWorkDays={updateCoachWorkDays}
-                logs={logs}
-                onSaveCoach={handleSaveCoach}
-                onDeleteCoach={handleDeleteCoach}
-                analysis={getAnalysis()}
-                handleExportStatsCsv={handleExportStatsCsv}
-                handleExportJson={handleExportJson}
-                triggerImport={() => {}}
-                handleFileImport={handleFileImport}
-                selectedBatch={selectedBatch}
-                toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
-                handleBatchDelete={async () => {
-                    if(!window.confirm(`刪除 ${selectedBatch.size} 筆?`)) return;
-                    await Promise.all(Array.from(selectedBatch).map((id: string) => deleteFromFirestore('appointments', id)));
-                    setSelectedBatch(new Set());
-                    showNotification('批量刪除成功', 'success');
-                }}
-                onOpenBatchBlock={handleOpenBatchBlock}
-                renderWeeklyCalendar={() => (
-                   <WeeklyCalendar 
-                      currentWeekStart={currentWeekStart}
-                      setCurrentWeekStart={setCurrentWeekStart}
-                      currentUser={currentUser}
-                      coaches={coaches}
-                      appointments={appointments}
-                      onSlotClick={handleSlotClick}
-                      onAppointmentClick={handleAppointmentClick}
-                      onToggleComplete={handleToggleComplete}
-                   />
-                )}
-             />
-          )
-        )}
+        {renderContent()}
+
       </main>
 
       <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-gray-800 flex justify-around p-3 z-50 backdrop-blur-xl">
          <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
             <CalendarIcon size={24}/>
             <span className="text-[10px] font-bold">預約</span>
+         </button>
+         <button onClick={() => setView('my-bookings')} className={`flex flex-col items-center gap-1 ${view === 'my-bookings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
+            <UserIcon size={24}/>
+            <span className="text-[10px] font-bold">我的</span>
          </button>
          <button onClick={() => setView('admin')} className={`flex flex-col items-center gap-1 ${view === 'admin' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
             <Settings size={24}/>

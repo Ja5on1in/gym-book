@@ -40,6 +40,8 @@ export interface Appointment {
   createdAt: string;
   isCompleted?: boolean;
   cancelReason?: string;
+  lineUserId?: string; // LINE LIFF Integration
+  lineName?: string;   // LINE LIFF Integration
 }
 
 export interface Coach extends User {
