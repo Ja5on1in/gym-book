@@ -13,7 +13,9 @@ import {
   Key,
   Database,
   Mail,
-  Lock as LockIcon
+  Lock as LockIcon,
+  Layers,
+  ArrowRight
 } from 'lucide-react';
 
 import { 
@@ -73,8 +75,10 @@ export default function App() {
   // Modals & Forms
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [isBatchMode, setIsBatchMode] = useState(false);
+
   const [blockForm, setBlockForm] = useState<BlockFormState>({
-    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', reason: '1v1教練課', customer: null, repeatWeeks: 1
+    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '1v1教練課', customer: null, repeatWeeks: 1
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, message: string, onConfirm: ((reason?: string) => void) | null, isDanger: boolean, showInput: boolean}>({ isOpen: false, message: '', onConfirm: null, isDanger: false, showInput: false });
@@ -83,7 +87,6 @@ export default function App() {
   // --- EFFECTS ---
 
   useEffect(() => {
-    // Theme toggle
     if (isDarkMode) document.documentElement.classList.add('dark');
     else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
@@ -104,10 +107,8 @@ export default function App() {
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
           setIsAuthLoading(true);
           if (firebaseUser) {
-              // Fetch user role from DB
               const userProfile = await getUserProfile(firebaseUser.uid);
               if (userProfile) {
-                  // Check if account is disabled
                   if (userProfile.status === 'disabled') {
                       showNotification("此帳號已被停用，請聯繫管理員", "error");
                       await logout();
@@ -115,7 +116,6 @@ export default function App() {
                   } else {
                       setCurrentUser(userProfile);
                       addLog('系統登入', `${userProfile.name} (${userProfile.role}) 登入成功`);
-                      // Only set coachId default if user is a coach
                       if (userProfile.role === 'coach') {
                         setBlockForm(prev => ({...prev, coachId: userProfile.id})); 
                       }
@@ -190,7 +190,6 @@ export default function App() {
     } catch (e) { console.error(e); }
   };
 
-  // Auth Actions
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault();
       try {
@@ -212,7 +211,6 @@ export default function App() {
       showNotification("已登出", "info");
   };
 
-  // Booking
   const handleSubmitBooking = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -255,28 +253,42 @@ export default function App() {
     const [y, m, d] = blockForm.date.split('-').map(Number);
     const startDate = new Date(y, m - 1, d); 
 
-    for (let i = 0; i < repeat; i++) {
-        const targetDate = new Date(startDate);
-        targetDate.setDate(startDate.getDate() + (i * 7));
-        
-        const dKey = formatDateKey(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
-        const status = getSlotStatus(dKey, blockForm.time, coach, appointments, blockForm.id);
-        
-        if (status.status === 'available') {
-            const id = (i === 0 && blockForm.id) ? blockForm.id : Date.now().toString() + i;
-            batchOps.push({ 
-                id, type: blockForm.type, date: dKey, time: blockForm.time, 
-                coachId: coach.id, coachName: coach.name, reason: blockForm.reason, 
-                status: 'confirmed', customer: blockForm.type === 'client' ? blockForm.customer : null, 
-                createdAt: new Date().toISOString() 
-            });
+    let targetSlots = [blockForm.time];
+
+    if (isBatchMode && blockForm.endTime) {
+        const startIndex = ALL_TIME_SLOTS.indexOf(blockForm.time);
+        const endIndex = ALL_TIME_SLOTS.indexOf(blockForm.endTime);
+        if (startIndex !== -1 && endIndex !== -1 && endIndex > startIndex) {
+            targetSlots = ALL_TIME_SLOTS.slice(startIndex, endIndex);
         }
     }
 
-    if (batchOps.length === 0) { showNotification('時段已被占用或無法新增', 'error'); return; }
+    for (let i = 0; i < repeat; i++) {
+        const targetDate = new Date(startDate);
+        targetDate.setDate(startDate.getDate() + (i * 7));
+        const dKey = formatDateKey(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+
+        for (const slot of targetSlots) {
+             const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
+             
+             if (status.status === 'available') {
+                 const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
+                 const id = isEditSingle ? blockForm.id! : `${Date.now()}-${i}-${slot.replace(':','')}`;
+                 
+                 batchOps.push({ 
+                     id, type: blockForm.type, date: dKey, time: slot, 
+                     coachId: coach.id, coachName: coach.name, reason: blockForm.reason, 
+                     status: 'confirmed', customer: blockForm.type === 'client' ? blockForm.customer : null, 
+                     createdAt: new Date().toISOString() 
+                 });
+             }
+        }
+    }
+
+    if (batchOps.length === 0) { showNotification('選定時段已被占用或無效', 'error'); return; }
     
     await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
-    addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆`);
+    addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
     showNotification('儲存成功', 'success');
     setIsBlockModalOpen(false);
   };
@@ -314,16 +326,35 @@ export default function App() {
       const coach = coaches.find(c => c.id === targetCoachId);
       if (coach && isCoachDayOff(date, coach)) { showNotification('排休日無法新增', 'error'); return; }
       
-      setBlockForm({ id: null, type: 'block', coachId: targetCoachId, date, time, reason: '1v1教練課', customer: null, repeatWeeks: 1 });
+      setBlockForm({ id: null, type: 'block', coachId: targetCoachId, date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, reason: '1v1教練課', customer: null, repeatWeeks: 1 });
       setDeleteConfirm(false); 
+      setIsBatchMode(false);
+      setIsBlockModalOpen(true);
+  };
+
+  const handleOpenBatchBlock = () => {
+      if (!currentUser) return;
+      const targetCoachId = currentUser.role === 'manager' ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
+      const today = new Date();
+      const dateStr = formatDateKey(today.getFullYear(), today.getMonth(), today.getDate());
+      
+      setBlockForm({ 
+          id: null, type: 'block', coachId: targetCoachId, 
+          date: dateStr, 
+          time: '09:00', endTime: '12:00',
+          reason: '內部事務', customer: null, repeatWeeks: 1 
+      });
+      setDeleteConfirm(false); 
+      setIsBatchMode(true);
       setIsBlockModalOpen(true);
   };
 
   const handleAppointmentClick = (app: Appointment) => {
       if (!currentUser) return;
       if (currentUser.role === 'coach' && app.coachId !== currentUser.id) { showNotification('權限不足', 'info'); return; }
-      setBlockForm({ id: app.id, type: app.type, coachId: app.coachId, date: app.date, time: app.time, reason: app.reason || '', customer: app.customer || null });
+      setBlockForm({ id: app.id, type: app.type, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
       setDeleteConfirm(false); 
+      setIsBatchMode(false);
       setIsBlockModalOpen(true);
   };
 
@@ -333,13 +364,10 @@ export default function App() {
     addLog('課程狀態', `${app.customer?.name || app.reason} - ${newVal ? '已結課' : '未結課'}`);
   };
 
-  // --- STAFF & COACH MANAGEMENT ---
-
   const handleSaveCoach = async (coachData: Coach, email?: string, password?: string) => {
     let uid = coachData.id;
     try {
         if (!uid && email && password) {
-            // New Coach: Create in Auth first
             uid = await createAuthUser(email, password);
         }
 
@@ -351,23 +379,12 @@ export default function App() {
         const commonData = {
             name: coachData.name,
             role: coachData.role,
-            email: email || coachData.email || '', // Keep existing if editing
+            email: email || coachData.email || '', 
             status: 'active'
         };
 
-        // 1. Update/Create in 'users' collection (for Auth/Role check)
-        await saveToFirestore('users', uid, {
-            id: uid,
-            ...commonData
-        });
-
-        // 2. Update/Create in 'coaches' collection (for Booking logic)
-        // Ensure ID is set in the data
-        await saveToFirestore('coaches', uid, {
-            ...coachData,
-            id: uid,
-            status: 'active' // Ensure active status
-        });
+        await saveToFirestore('users', uid, { id: uid, ...commonData });
+        await saveToFirestore('coaches', uid, { ...coachData, id: uid, status: 'active' });
 
         addLog('員工管理', `更新/新增員工：${coachData.name}`);
         showNotification("員工資料已儲存", "success");
@@ -381,13 +398,8 @@ export default function App() {
     if (!window.confirm(`確定要刪除 ${name} 嗎？\n\n注意：\n1. 該員工將無法登入\n2. 該員工將從預約選單中移除`)) return;
 
     try {
-        // 1. Soft delete in 'users' (disable login)
         await disableUserInFirestore(id);
-
-        // 2. Hard delete in 'coaches' (remove from booking list)
-        // This ensures the coach disappears from the filtered lists immediately
         await deleteFromFirestore('coaches', id);
-
         addLog('員工管理', `刪除員工：${name}`);
         showNotification(`${name} 已刪除`, "success");
     } catch (error: any) {
@@ -401,12 +413,10 @@ export default function App() {
       showNotification('班表設定已更新', 'success');
   };
 
-  // --- STATS ---
   const getAnalysis = () => {
     const totalActive = appointments.filter(a => a.status === 'confirmed').length;
     const totalCancelled = appointments.filter(a => a.status === 'cancelled').length;
     
-    // Top slots
     const slotCounts: Record<string, number> = {};
     appointments.filter(a => a.status === 'confirmed').forEach(a => {
         slotCounts[a.time] = (slotCounts[a.time] || 0) + 1;
@@ -416,9 +426,8 @@ export default function App() {
         .slice(0, 3)
         .map(([time, count]) => ({ time, count }));
 
-    // Coach Stats (Current Month)
     const now = new Date();
-    const currentMonthPrefix = formatDateKey(now.getFullYear(), now.getMonth(), 1).substring(0, 7); // "YYYY-MM"
+    const currentMonthPrefix = formatDateKey(now.getFullYear(), now.getMonth(), 1).substring(0, 7);
     
     const coachStats = coaches.map(c => {
         const apps = appointments.filter(a => 
@@ -487,17 +496,14 @@ export default function App() {
       reader.readAsText(file);
   };
 
-  // --- RENDER ---
   return (
     <div className="min-h-screen text-gray-800 dark:text-gray-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
-      {/* Background Blobs */}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
           <div className="absolute -top-40 -left-40 w-96 h-96 bg-purple-300/30 dark:bg-purple-900/20 rounded-full blur-3xl animate-float"></div>
           <div className="absolute top-1/2 -right-20 w-80 h-80 bg-blue-300/30 dark:bg-blue-900/20 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
           <div className="absolute -bottom-20 left-1/3 w-96 h-96 bg-indigo-300/30 dark:bg-indigo-900/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
       </div>
 
-      {/* Navbar */}
       <nav className="fixed w-full z-50 glass-panel border-b border-white/20 dark:border-gray-800 shadow-sm backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -606,6 +612,7 @@ export default function App() {
                     setSelectedBatch(new Set());
                     showNotification('批量刪除成功', 'success');
                 }}
+                onOpenBatchBlock={handleOpenBatchBlock}
                 renderWeeklyCalendar={() => (
                    <WeeklyCalendar 
                       currentWeekStart={currentWeekStart}
@@ -623,7 +630,6 @@ export default function App() {
         )}
       </main>
 
-      {/* Mobile Bottom Nav */}
       <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-gray-800 flex justify-around p-3 z-50 backdrop-blur-xl">
          <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
             <CalendarIcon size={24}/>
@@ -635,18 +641,24 @@ export default function App() {
          </button>
       </div>
 
-      {/* Block/Event Modal */}
       {isBlockModalOpen && (
          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
             <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
                 <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
                         {blockForm.id ? <Settings size={20}/> : <CalendarIcon size={20}/>}
-                        {blockForm.id ? '管理行程' : '新增行程'}
+                        {blockForm.id ? '管理行程' : (isBatchMode ? '批次封鎖時段' : '新增行程')}
                     </h3>
-                    {blockForm.id && (
-                        <button onClick={() => setDeleteConfirm(true)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={20}/></button>
-                    )}
+                    <div className="flex gap-2">
+                        {blockForm.id && (
+                            <button onClick={() => setDeleteConfirm(true)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={20}/></button>
+                        )}
+                        {!blockForm.id && (
+                           <button onClick={() => setIsBatchMode(!isBatchMode)} className={`p-2 rounded-lg transition-colors ${isBatchMode ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`} title="切換批次模式">
+                              <Layers size={20}/>
+                           </button>
+                        )}
+                    </div>
                 </div>
                 
                 {deleteConfirm ? (
@@ -666,7 +678,7 @@ export default function App() {
                                <label className="text-xs font-bold text-gray-500 uppercase">類型</label>
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => setBlockForm({...blockForm, type: e.target.value as any})}>
                                    <option value="block">內部事務</option>
-                                   <option value="client">客戶預約</option>
+                                   {!isBatchMode && <option value="client">客戶預約</option>}
                                </select>
                            </div>
                            {currentUser?.role === 'manager' && (
@@ -678,6 +690,33 @@ export default function App() {
                                </div>
                            )}
                         </div>
+
+                        <div>
+                             <label className="text-xs font-bold text-gray-500 uppercase">日期</label>
+                             <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} />
+                        </div>
+
+                        <div className="grid grid-cols-2 gap-4 items-end">
+                             <div className="w-full">
+                                 <label className="text-xs font-bold text-gray-500 uppercase">開始時間</label>
+                                 <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})}>
+                                     {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                 </select>
+                             </div>
+                             {isBatchMode && (
+                                 <div className="w-full">
+                                     <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1">結束時間 (不含)</label>
+                                     <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})}>
+                                         {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                     </select>
+                                 </div>
+                             )}
+                        </div>
+                        {isBatchMode && (
+                            <div className="text-xs text-indigo-500 flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 p-2 rounded-lg">
+                                <Info size={12}/> 將批次建立 {blockForm.time} 至 {blockForm.endTime} 的所有時段
+                            </div>
+                        )}
 
                         {blockForm.type === 'block' ? (
                             <div>
@@ -717,7 +756,6 @@ export default function App() {
                         )}
 
                         <div className="pt-2 flex gap-3">
-                            {/* Restore Cancel/Delete Button in Footer */}
                             {blockForm.id && (
                                 <button 
                                     type="button" 
@@ -737,7 +775,6 @@ export default function App() {
          </div>
       )}
 
-      {/* Confirm Modal */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
              <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">

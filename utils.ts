@@ -34,7 +34,15 @@ export const isPastTime = (dateKey: string, time: string) => {
 };
 
 export const isCoachDayOff = (dateKey: string, coach: Coach) => {
-  if (!coach || !coach.workDays) return false;
+  if (!coach) return false;
+  
+  // 1. Check Specific Date Off (New Feature)
+  if (coach.offDates && coach.offDates.includes(dateKey)) {
+      return true;
+  }
+
+  // 2. Check Weekly Schedule
+  if (!coach.workDays) return false;
   const dayOfWeek = new Date(dateKey).getDay();
   return !coach.workDays.includes(dayOfWeek);
 };

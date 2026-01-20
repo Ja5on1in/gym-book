@@ -47,6 +47,7 @@ export interface Coach extends User {
   workDays: number[];
   color: string;
   dailyWorkHours?: Record<string, { start: string; end: string }>;
+  offDates?: string[]; // Specific dates off (YYYY-MM-DD)
 }
 
 export interface Log {
@@ -70,6 +71,7 @@ export interface BlockFormState {
   coachId: string;
   date: string;
   time: string;
+  endTime?: string; // For batch blocking
   reason: string;
   customer: Customer | null;
   repeatWeeks?: number;
