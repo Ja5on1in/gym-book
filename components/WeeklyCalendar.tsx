@@ -38,7 +38,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
       </div>
       <div className="overflow-x-auto relative h-[650px] overflow-y-auto custom-scrollbar bg-white/30 dark:bg-gray-900/30">
         <div className="min-w-[900px] relative">
-          {/* Header Row */}
           <div className="grid grid-cols-8 border-b border-gray-200/50 dark:border-gray-700/50 bg-white/80 dark:bg-gray-900/90 sticky top-0 z-30 backdrop-blur-sm">
             <div className="p-4 text-center text-xs font-bold text-gray-400 uppercase tracking-widest border-r border-gray-100 dark:border-gray-700/50 sticky left-0 z-40 bg-white dark:bg-gray-900 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">時間</div>
             {weekDays.map((d, i) => (
@@ -49,7 +48,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
             ))}
           </div>
           
-          {/* Time Slots */}
           {ALL_TIME_SLOTS.map(time => (
             <div key={time} className="grid grid-cols-8 border-b border-gray-100/50 dark:border-gray-700/50 min-h-[90px]">
               <div className="p-2 text-center text-xs font-medium text-gray-400 border-r border-gray-100/50 dark:border-gray-700/50 flex items-center justify-center bg-white dark:bg-gray-900 sticky left-0 z-20 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">{time}</div>
@@ -78,6 +76,11 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                             const colorClass = coach?.color || 'bg-gray-100 text-gray-800 border-gray-200';
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             
+                            // Determine display text: Prefer customer name for private/client bookings
+                            const displayText = (app.type === 'private' || app.type === 'client') 
+                              ? (app.customer?.name || app.reason || '私人課') 
+                              : (app.reason || '預約');
+
                             return (
                               <div key={app.id} 
                                    onClick={(e) => { e.stopPropagation(); if(isMine) onAppointmentClick(app); }}
@@ -100,7 +103,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     )}
                                     {isMine && app.isCompleted && <CheckCircle size={12} className="text-green-800"/>}
                                   </div>
-                                  <div className="truncate font-medium opacity-90">{app.type === 'client' ? app?.customer?.name : app.reason}</div>
+                                  <div className="truncate font-medium opacity-90">{displayText}</div>
                               </div>
                             );
                         })}

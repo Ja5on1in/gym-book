@@ -1,4 +1,5 @@
-import { initializeApp, getApp, getApps } from 'firebase/app';
+
+import { initializeApp, getApp, getApps, deleteApp } from 'firebase/app';
 import { 
   getAuth, 
   signInWithEmailAndPassword,
@@ -88,31 +89,23 @@ export const logout = async () => {
 
 /**
  * Creates a new user in Firebase Auth using a Secondary App instance.
- * This prevents the current Admin from being logged out when creating a new user.
  */
 export const createAuthUser = async (email: string, pass: string) => {
     if (!isFirebaseAvailable) return `mock-uid-${Date.now()}`;
     
-    // Initialize a secondary app with a unique name
-    const secondaryAppName = "secondaryAuthApp";
-    let secondaryApp;
-    
-    try {
-        secondaryApp = getApp(secondaryAppName);
-    } catch (e) {
-        secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
-    }
-
+    const secondaryAppName = `secondaryAuthApp-${Date.now()}`;
+    const secondaryApp = initializeApp(firebaseConfig, secondaryAppName);
     const secondaryAuth = getAuth(secondaryApp);
 
     try {
         const userCredential = await createUserWithEmailAndPassword(secondaryAuth, email, pass);
         const uid = userCredential.user.uid;
-        // Sign out from the secondary app immediately to avoid side effects
         await signOut(secondaryAuth);
+        await deleteApp(secondaryApp);
         return uid;
     } catch (error) {
         console.error("Failed to create auth user", error);
+        try { await deleteApp(secondaryApp); } catch(e) {}
         throw error;
     }
 };
@@ -175,8 +168,8 @@ export const saveToFirestore = async (col: string, id: string, data: any) => {
         const key = `mock_db_${col}`;
         const current = JSON.parse(localStorage.getItem(key) || '[]');
         const idx = current.findIndex((item: any) => item.id === id);
-        if (idx >= 0) current[idx] = data;
-        else current.push(data);
+        if (idx >= 0) current[idx] = { ...current[idx], ...data, id };
+        else current.push({ ...data, id });
         localStorage.setItem(key, JSON.stringify(current));
         notifyMockListeners(col);
         return;
@@ -184,7 +177,8 @@ export const saveToFirestore = async (col: string, id: string, data: any) => {
     try {
         await setDoc(doc(db, col, id), data, { merge: true });
     } catch (e) {
-        console.error("Firestore save failed", e);
+        console.error(`Firestore save failed to ${col}/${id}`, e);
+        throw e; // Throw so UI can show failure
     }
 };
 
@@ -201,6 +195,7 @@ export const deleteFromFirestore = async (col: string, id: string) => {
         await deleteDoc(doc(db, col, id));
     } catch (e) {
         console.error("Firestore delete failed", e);
+        throw e;
     }
 };
 
@@ -211,5 +206,6 @@ export const disableUserInFirestore = async (uid: string) => {
         await updateDoc(doc(db, 'users', uid), { status: 'disabled' });
     } catch (e) {
         console.error("Disable user failed", e);
+        throw e;
     }
 };

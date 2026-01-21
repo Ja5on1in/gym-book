@@ -1,3 +1,4 @@
+
 import { Coach, Appointment, SlotStatus } from './types';
 
 export const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
@@ -75,7 +76,9 @@ export const getSlotStatus = (
   const startWork = parseInt(start.split(':')[0]);
   const endWork = parseInt(end.split(':')[0]);
 
-  if (slotTime < startWork || slotTime > endWork) return { status: 'unavailable' };
+  // Fix: slotTime should be strictly less than endWork. 
+  // e.g. If endWork is 21:00, the 21:00 slot is unavailable (as it ends at 22:00)
+  if (slotTime < startWork || slotTime >= endWork) return { status: 'unavailable' };
   
   const rec = appointments.find(a => 
     a.date === date && 

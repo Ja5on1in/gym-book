@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
   ChevronLeft, 
@@ -70,43 +71,24 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       if (liff) {
           try {
               if (!liff.isLoggedIn()) {
-                  // Standard login
                   liff.login({ redirectUri: window.location.href });
                   return; 
               }
               const profile = await liff.getProfile();
-              
-              // --- INVENTORY PRE-CHECK LOGIC ---
               const userInv = inventories.find(i => i.lineUserId === profile.userId);
               
               if (!userInv) {
-                  // Case 1: New User - Auto Create Record (0 points) & Block
                   await onRegisterUser({ userId: profile.userId, displayName: profile.displayName });
-                  setAuthError(`歡迎新學員 ${profile.displayName}！目前點數為 0，請洽管理員儲值後再進行預約。`);
-                  setIsVerifying(false);
-                  return;
               }
 
-              if (userInv.credits.private <= 0) {
-                  // Case 2: Existing User but 0 points - Block
-                   setAuthError(`親愛的 ${profile.displayName}，您的個人課點數不足 (剩餘: ${userInv.credits.private})。請洽管理員儲值。`);
-                   setIsVerifying(false);
-                   return;
-              }
-              // ---------------------------------
-
-              onSubmit(e, { userId: profile.userId, displayName: profile.displayName });
+              // Await the actual submission to Firebase
+              await onSubmit(e, { userId: profile.userId, displayName: profile.displayName });
           } catch (err) {
               console.error("LIFF Error", err);
-              // If LIFF fails completely, maybe allow fallback or show error
-              // For now, allow fallback to normal submit but without points deduction logic potentially?
-              // Ideally, if strictly for LINE users, we should block. 
-              // Assuming hybrid:
-              onSubmit(e); 
+              await onSubmit(e); 
           }
       } else {
-          // No LIFF detected, normal submit (No point deduction checks for non-LINE web users unless we implement other auth)
-          onSubmit(e);
+          await onSubmit(e);
       }
       setIsVerifying(false);
   };
@@ -166,7 +148,6 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
   return (
     <div className="max-w-2xl mx-auto">
-      {/* Progress Bar */}
       <div className="mb-8">
         <div className="flex justify-between text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-2 px-2">
           <span className={step >= 1 ? 'text-indigo-600 dark:text-indigo-400' : ''}>服務</span>
@@ -209,7 +190,6 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {coaches.filter(c => {
-                // Feature Update: Filter out coaches with title 'Coach'/'教練' if service is 'assessment'
                 if (selectedService?.id === 'assessment') {
                     const title = (c.title || '').toLowerCase();
                     return title !== 'coach' && title !== '教練';
@@ -305,34 +285,34 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
             <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex-1 text-center pr-10">填寫聯絡資料</h2>
           </div>
 
-          <div className="glass-card p-6 rounded-3xl mb-6 border border-indigo-100 dark:border-indigo-900/30 bg-indigo-50/50 dark:bg-indigo-900/10">
-            <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-4">預約確認</h3>
-            <div className="space-y-3">
-               <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center text-indigo-500 shadow-sm"><Dumbbell size={18}/></div>
-                  <div>
-                    <div className="text-xs text-gray-400">課程項目</div>
-                    <div className="font-bold text-gray-800 dark:text-white">{selectedService?.name}</div>
-                  </div>
-               </div>
-               <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center text-indigo-500 shadow-sm"><Briefcase size={18}/></div>
-                  <div>
-                    <div className="text-xs text-gray-400">指導教練</div>
-                    <div className="font-bold text-gray-800 dark:text-white">{selectedCoach?.name}</div>
-                  </div>
-               </div>
-               <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center text-indigo-500 shadow-sm"><Clock size={18}/></div>
-                  <div>
-                    <div className="text-xs text-gray-400">預約時間</div>
-                    <div className="font-bold text-gray-800 dark:text-white">{selectedDate.toLocaleDateString()} {selectedSlot}</div>
-                  </div>
-               </div>
-            </div>
-          </div>
-
           <form onSubmit={handleLineSubmit} className="space-y-4">
+             <div className="glass-card p-6 rounded-3xl mb-6 border border-indigo-100 dark:border-indigo-900/30 bg-indigo-50/50 dark:bg-indigo-900/10">
+                <h3 className="text-xs font-bold text-indigo-500 uppercase tracking-widest mb-4">預約確認</h3>
+                <div className="space-y-3">
+                   <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center text-indigo-500 shadow-sm"><Dumbbell size={18}/></div>
+                      <div>
+                        <div className="text-xs text-gray-400">課程項目</div>
+                        <div className="font-bold text-gray-800 dark:text-white">{selectedService?.name}</div>
+                      </div>
+                   </div>
+                   <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center text-indigo-500 shadow-sm"><Briefcase size={18}/></div>
+                      <div>
+                        <div className="text-xs text-gray-400">指導教練</div>
+                        <div className="font-bold text-gray-800 dark:text-white">{selectedCoach?.name}</div>
+                      </div>
+                   </div>
+                   <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center text-indigo-500 shadow-sm"><Clock size={18}/></div>
+                      <div>
+                        <div className="text-xs text-gray-400">預約時間</div>
+                        <div className="font-bold text-gray-800 dark:text-white">{selectedDate.toLocaleDateString()} {selectedSlot}</div>
+                      </div>
+                   </div>
+                </div>
+             </div>
+
              <div className="space-y-1">
                 <label className="text-xs font-bold text-gray-500 uppercase ml-1 flex items-center gap-1"><User size={12}/> 姓名</label>
                 <input required type="text" className="w-full glass-input rounded-xl p-3.5 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" 

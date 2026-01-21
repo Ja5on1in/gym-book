@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -159,7 +160,8 @@ export default function App() {
               } else {
                   console.warn("User has no profile in DB");
                   showNotification("您的帳號尚未設定權限，請聯繫管理員", "error");
-                  await logout();
+                  // Do not logout immediately to avoid race condition on user creation
+                  // Allow a manual refresh or try one more time if it just logged in
                   setCurrentUser(null);
               }
           } else {
@@ -193,7 +195,6 @@ export default function App() {
         setLogs(loaded.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()));
     }, () => {});
     
-    // Inventory Subscription
     const unsubInventory = subscribeToCollection('user_inventory', (data) => {
         setInventories(data as UserInventory[]);
     }, () => {});
@@ -234,6 +235,7 @@ export default function App() {
 
   const handleEmailLogin = async (e: React.FormEvent) => {
       e.preventDefault();
+      setIsAuthLoading(true);
       try {
           await loginWithEmail(loginForm.email, loginForm.password);
       } catch (e: any) {
@@ -242,6 +244,8 @@ export default function App() {
           } else {
               showNotification("登入失敗: " + e.message, "error");
           }
+      } finally {
+          setIsAuthLoading(false);
       }
   };
 
@@ -253,7 +257,6 @@ export default function App() {
       showNotification("已登出", "info");
   };
 
-  // Inventory Management
   const handleUpdateInventory = async (inventory: UserInventory) => {
       await saveToFirestore('user_inventory', inventory.id, {
           ...inventory,
@@ -263,10 +266,9 @@ export default function App() {
       showNotification('學員點數已更新', 'success');
   };
 
-  // Auto-register function for new LINE users (Used as fallback now)
   const handleRegisterInventory = async (profile: { userId: string, displayName: string }) => {
       const newInventory: UserInventory = {
-          id: profile.userId, // Use LINE UserID as document ID
+          id: profile.userId,
           lineUserId: profile.userId,
           name: profile.displayName,
           credits: { private: 0, group: 0 },
@@ -276,9 +278,8 @@ export default function App() {
       addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
   };
 
-  // Frontend Booking - Enhanced with Phone Binding Logic
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
         showNotification('請填寫完整資訊', 'error'); return; 
     }
@@ -289,38 +290,25 @@ export default function App() {
         showNotification('該時段已被預約', 'error'); setBookingStep(3); return; 
     }
 
-    // --- Inventory & Binding Logic ---
-    let targetInventoryId: string | null = null;
     let inventory = null;
 
     if (lineProfile) {
-        // 1. Try to find by LINE ID
         inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
-
-        // 2. If not found, try to bind by Phone
         if (!inventory) {
             inventory = inventories.find(i => i.phone === formData.phone);
-            
             if (inventory) {
-                // Binding!
-                targetInventoryId = inventory.id;
                 await saveToFirestore('user_inventory', inventory.id, {
                     ...inventory,
                     lineUserId: lineProfile.userId,
                     lastUpdated: new Date().toISOString()
                 });
                 addLog('帳號綁定', `綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
-                inventory = { ...inventory, lineUserId: lineProfile.userId }; // Update local ref
+                inventory = { ...inventory, lineUserId: lineProfile.userId };
             }
         }
 
-        // 3. Process Credits
         if (inventory) {
              const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
-             if (inventory.credits.private <= 0) {
-                 showNotification('點數不足，無法預約。請洽管理員。', 'error');
-                 return;
-             }
              await saveToFirestore('user_inventory', inventory.id, {
                 ...inventory,
                 credits: { ...inventory.credits, private: newPrivateCredits },
@@ -328,32 +316,21 @@ export default function App() {
             });
             addLog('系統扣點', `學員 ${inventory.name} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
         } else {
-             // New User (No ID match, No Phone match)
-             // Create empty record and BLOCK
              await handleRegisterInventory(lineProfile);
-             // Update the newly created inventory with phone number so future binds work if needed? 
-             // Or just stick to the ID created. 
-             // We need to update the phone number for the new record.
              const newId = lineProfile.userId;
-             const existing = inventories.find(i => i.id === newId); // wait for state? might be race condition. 
-             // Safer to just use saveToFirestore again directly
              await saveToFirestore('user_inventory', newId, {
                  id: newId, lineUserId: newId, name: lineProfile.displayName,
-                 phone: formData.phone, // SAVE PHONE
+                 phone: formData.phone,
                  credits: { private: 0, group: 0 },
                  lastUpdated: new Date().toISOString()
              });
-
-             showNotification('歡迎新學員！請洽管理員儲值後再進行預約。', 'info');
-             return;
         }
     }
-    // --------------------------------
 
     const id = Date.now().toString();
     const newApp: Appointment = { 
         id, 
-        type: 'private', // FORCE PRIVATE TYPE for analytics
+        type: 'private',
         date: dateKey, time: selectedSlot, 
         service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
         customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString(),
@@ -382,7 +359,6 @@ export default function App() {
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
       
-      // Refund Logic (Client Side)
       if (app.lineUserId && (app.type === 'private' || app.type === 'client')) {
           const inventory = inventories.find(i => i.lineUserId === app.lineUserId);
           if (inventory) {
@@ -415,14 +391,12 @@ export default function App() {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
   };
 
-  // Admin Actions - Enhanced with Deduction
   const handleSaveBlock = async (e: React.FormEvent, force: boolean = false) => {
     if(e) e.preventDefault();
     if (!currentUser) return;
     const coach = coaches.find(c => c.id === (currentUser.role === 'manager' ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
-    // --- Admin Deduction Logic ---
     let targetInventory = null;
     const isPrivate = blockForm.type === 'private' || blockForm.type === 'client';
 
@@ -431,20 +405,15 @@ export default function App() {
 
         if (targetInventory) {
              if (targetInventory.credits.private <= 0 && !force) {
-                 // Trigger Confirmation
                  setConfirmModal({
                      isOpen: true,
                      message: `學員 ${targetInventory.name} 點數不足 (剩餘: ${targetInventory.credits.private})。是否強制預約？`,
                      isDanger: false,
                      showInput: false,
-                     onConfirm: () => handleSaveBlock(null as any, true) // Call recursively with force=true
+                     onConfirm: () => handleSaveBlock(null as any, true)
                  });
-                 return; // Stop execution
+                 return;
              }
-
-             // If force is true, we proceed. If credits > 0, we deduct.
-             // If force is true and credits <=0, we DO NOT deduct (stay at 0? or go negative? Requirement says "Warning... force". Assuming just book.)
-             // Let's implement: Deduct if > 0. If force=true and <=0, assume Admin handles it manually or it's a cash payment.
              
              if (targetInventory.credits.private > 0) {
                  const newCredits = targetInventory.credits.private - 1;
@@ -457,7 +426,6 @@ export default function App() {
              }
         }
     }
-    // ----------------------------
 
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Appointment[] = [];
@@ -485,7 +453,6 @@ export default function App() {
              if (status.status === 'available') {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}-${i}-${slot.replace(':','')}`;
-                 
                  const finalType = blockForm.type === 'client' ? 'private' : blockForm.type;
 
                  batchOps.push({ 
@@ -493,7 +460,6 @@ export default function App() {
                      coachId: coach.id, coachName: coach.name, reason: blockForm.reason, 
                      status: 'confirmed', customer: (finalType === 'private') ? blockForm.customer : null, 
                      createdAt: new Date().toISOString(),
-                     // Bind inventory ID if found
                      lineUserId: targetInventory?.lineUserId 
                  });
              }
@@ -520,8 +486,6 @@ export default function App() {
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
                  await saveToFirestore('appointments', target.id, updated);
                  
-                 // Refund Logic (Admin Side)
-                 // Try to match by lineUserId OR Phone
                  let inv = null;
                  if (target.lineUserId) inv = inventories.find(i => i.lineUserId === target.lineUserId);
                  if (!inv && target.customer?.phone) inv = inventories.find(i => i.phone === target.customer?.phone);
@@ -611,20 +575,33 @@ export default function App() {
         }
 
         const commonData = {
+            id: uid,
             name: coachData.name,
-            role: coachData.role,
+            role: coachData.role || 'coach',
             email: email || coachData.email || '', 
-            status: 'active',
-            title: coachData.title 
+            status: 'active' as const,
+            title: coachData.title || '教練'
         };
 
-        await saveToFirestore('users', uid, { id: uid, ...commonData });
-        await saveToFirestore('coaches', uid, { ...coachData, id: uid, status: 'active' });
+        // Important: Use await to ensure writes finish before proceeding
+        await saveToFirestore('users', uid, commonData);
+        
+        const fullCoachData: Coach = {
+            ...coachData,
+            id: uid,
+            role: coachData.role || 'coach',
+            status: 'active' as const,
+            workStart: coachData.workStart || '09:00',
+            workEnd: coachData.workEnd || '21:00',
+            workDays: coachData.workDays || [0,1,2,3,4,5,6],
+            color: coachData.color || INITIAL_COACHES[0].color
+        };
+        await saveToFirestore('coaches', uid, fullCoachData);
 
         addLog('員工管理', `更新/新增員工：${coachData.name}`);
         showNotification("員工資料已儲存", "success");
     } catch (error: any) {
-        console.error(error);
+        console.error("Save coach failed", error);
         showNotification(`儲存失敗: ${error.message}`, "error");
     }
   };
@@ -761,7 +738,6 @@ export default function App() {
                 currentDate={currentDate} 
                 handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
                 handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
-                // Pass Inventory Data
                 inventories={inventories}
                 onRegisterUser={handleRegisterInventory}
               />
@@ -769,7 +745,6 @@ export default function App() {
       }
 
       if (!currentUser) {
-          // ... Login Form (Unchanged)
           return (
              <div className="max-w-md mx-auto mt-10">
                 <div className="glass-panel p-8 rounded-3xl shadow-2xl">
@@ -862,7 +837,6 @@ export default function App() {
               </span>
             </div>
             <div className="flex items-center gap-4">
-               {/* Desktop My Bookings Button */}
                <button onClick={() => setView('my-bookings')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
                   <UserIcon size={18}/> 我的預約
                </button>
@@ -1028,7 +1002,6 @@ export default function App() {
                                                             }
                                                         });
                                                     } else {
-                                                        // Fallback for custom name
                                                         setBlockForm({
                                                             ...blockForm,
                                                             customer: { ...blockForm.customer!, name: e.target.value }
@@ -1092,7 +1065,7 @@ export default function App() {
 
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-             <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">
+             <div className="glass-panel w-full max-sm rounded-3xl p-6 animate-slideUp">
                  <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white">{confirmModal.message}</h3>
                  {confirmModal.showInput && (
                      <textarea className="w-full glass-input p-3 rounded-xl mb-4 h-24 dark:text-white" placeholder="請輸入原因..." value={cancelReason} onChange={e => setCancelReason(e.target.value)}></textarea>
