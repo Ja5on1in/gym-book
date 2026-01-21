@@ -1,3 +1,4 @@
+
 import React, { useRef, useState } from 'react';
 import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, MessageCircle, Phone } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
@@ -270,7 +271,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-               <div className="glass-panel p-6 rounded-3xl relative overflow-hidden">
+               <div className="glass-panel p-6 rounded-3xl relative overflow-hidden min-w-0">
                   <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div>
                   <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 Top 3</h4>
                   <div className="space-y-3 relative z-10">
@@ -283,7 +284,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                </div>
                
-               <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center">
+               <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center min-w-0">
                   <h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">預約狀態總覽</h4>
                   <div className="flex justify-around items-center">
                      <div className="text-center">
@@ -298,7 +299,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                </div>
 
-               <div className="glass-panel p-6 rounded-3xl md:col-span-1">
+               <div className="glass-panel p-6 rounded-3xl md:col-span-1 min-w-0">
                   <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計 (本月)</h4>
                   <div className="overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
                       <div className="grid grid-cols-4 gap-2 text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">

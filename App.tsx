@@ -45,7 +45,7 @@ import AdminDashboard from './components/AdminDashboard';
 import WeeklyCalendar from './components/WeeklyCalendar';
 import MyBookings from './components/MyBookings';
 
-// Updated LIFF ID - Kept as requested
+// Updated LIFF ID
 const LIFF_ID = '2008923061-bPeQysat';
 
 export default function App() {
@@ -88,7 +88,7 @@ export default function App() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
 
-  // Cleaned up initial state (Removed 'client' default, use 'block')
+  // Cleaned up initial state
   const [blockForm, setBlockForm] = useState<BlockFormState>({
     id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '1v1教練課', customer: null, repeatWeeks: 1
   });
@@ -112,14 +112,13 @@ export default function App() {
         if (liff) {
             try {
                 await liff.init({ liffId: LIFF_ID });
-                console.log('LIFF initialized with ID:', LIFF_ID);
+                console.log('LIFF initialized');
                 
-                // Check URL mode for specific views
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('mode') === 'my-bookings') {
                     setView('my-bookings');
                     if (!liff.isLoggedIn()) {
-                        liff.login(); // Force login for my-bookings view
+                        liff.login(); 
                     }
                 }
 
@@ -135,7 +134,7 @@ export default function App() {
     start();
   }, []);
 
-  // Listen to Auth State
+  // Listen to Auth State with RETRY Logic
   useEffect(() => {
       if (!auth) {
           setIsAuthLoading(false);
@@ -144,7 +143,14 @@ export default function App() {
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
           setIsAuthLoading(true);
           if (firebaseUser) {
-              const userProfile = await getUserProfile(firebaseUser.uid);
+              let userProfile = await getUserProfile(firebaseUser.uid);
+              
+              // Retry mechanism: If profile doesn't exist yet (race condition with creation), wait and try once more
+              if (!userProfile) {
+                  await new Promise(resolve => setTimeout(resolve, 1500));
+                  userProfile = await getUserProfile(firebaseUser.uid);
+              }
+
               if (userProfile) {
                   if (userProfile.status === 'disabled') {
                       showNotification("此帳號已被停用，請聯繫管理員", "error");
@@ -152,16 +158,15 @@ export default function App() {
                       setCurrentUser(null);
                   } else {
                       setCurrentUser(userProfile);
-                      addLog('系統登入', `${userProfile.name} (${userProfile.role}) 登入成功`);
+                      // Only set default coach ID if the loaded user is a coach
                       if (userProfile.role === 'coach') {
                         setBlockForm(prev => ({...prev, coachId: userProfile.id})); 
                       }
                   }
               } else {
-                  console.warn("User has no profile in DB");
-                  showNotification("您的帳號尚未設定權限，請聯繫管理員", "error");
-                  // Do not logout immediately to avoid race condition on user creation
-                  // Allow a manual refresh or try one more time if it just logged in
+                  console.warn("User has no profile in DB after retry");
+                  // Do not force logout immediately to allow manual refresh if needed, but show error
+                  showNotification("無法取得使用者權限，請重新登入或聯繫管理員", "error");
                   setCurrentUser(null);
               }
           } else {
@@ -225,12 +230,13 @@ export default function App() {
 
   const sendToGoogleScript = async (data: any) => {
     if (!GOOGLE_SCRIPT_URL) return;
+    // We swallow errors here so UI doesn't break if Webhook fails
     try {
         const fd = new FormData();
         fd.append('data', JSON.stringify(data));
         fd.append('timestamp', new Date().toISOString());
         await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: fd });
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("Webhook Error (Non-blocking):", e); }
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
@@ -278,6 +284,7 @@ export default function App() {
       addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
   };
 
+  // --- CRITICAL FIX: Safe Booking Submission ---
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -290,69 +297,84 @@ export default function App() {
         showNotification('該時段已被預約', 'error'); setBookingStep(3); return; 
     }
 
-    let inventory = null;
+    // Wrap critical DB operations in try-catch to prevent UI freeze
+    try {
+        let inventory = null;
 
-    if (lineProfile) {
-        inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
-        if (!inventory) {
-            inventory = inventories.find(i => i.phone === formData.phone);
+        if (lineProfile) {
+            inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
+            if (!inventory) {
+                // Try finding by phone if LINE ID not match
+                inventory = inventories.find(i => i.phone === formData.phone);
+                if (inventory) {
+                    // Link Line ID
+                    await saveToFirestore('user_inventory', inventory.id, {
+                        ...inventory,
+                        lineUserId: lineProfile.userId,
+                        lastUpdated: new Date().toISOString()
+                    });
+                    addLog('帳號綁定', `綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
+                    inventory = { ...inventory, lineUserId: lineProfile.userId };
+                }
+            }
+
             if (inventory) {
+                const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
                 await saveToFirestore('user_inventory', inventory.id, {
                     ...inventory,
-                    lineUserId: lineProfile.userId,
+                    credits: { ...inventory.credits, private: newPrivateCredits },
                     lastUpdated: new Date().toISOString()
                 });
-                addLog('帳號綁定', `綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
-                inventory = { ...inventory, lineUserId: lineProfile.userId };
+                addLog('系統扣點', `學員 ${inventory.name} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
+            } else {
+                // Auto register
+                await handleRegisterInventory(lineProfile);
+                const newId = lineProfile.userId;
+                // Add phone to the new inventory
+                await saveToFirestore('user_inventory', newId, {
+                    id: newId, lineUserId: newId, name: lineProfile.displayName,
+                    phone: formData.phone,
+                    credits: { private: 0, group: 0 },
+                    lastUpdated: new Date().toISOString()
+                });
             }
         }
 
-        if (inventory) {
-             const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
-             await saveToFirestore('user_inventory', inventory.id, {
-                ...inventory,
-                credits: { ...inventory.credits, private: newPrivateCredits },
-                lastUpdated: new Date().toISOString()
-            });
-            addLog('系統扣點', `學員 ${inventory.name} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
-        } else {
-             await handleRegisterInventory(lineProfile);
-             const newId = lineProfile.userId;
-             await saveToFirestore('user_inventory', newId, {
-                 id: newId, lineUserId: newId, name: lineProfile.displayName,
-                 phone: formData.phone,
-                 credits: { private: 0, group: 0 },
-                 lastUpdated: new Date().toISOString()
-             });
-        }
+        const id = Date.now().toString();
+        // Force type to 'private' for client bookings
+        const newApp: Appointment = { 
+            id, 
+            type: 'private', 
+            date: dateKey, time: selectedSlot, 
+            service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
+            customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString(),
+            lineUserId: lineProfile?.userId, 
+            lineName: lineProfile?.displayName 
+        };
+        
+        await saveToFirestore('appointments', id, newApp);
+        addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
+        
+        // Execute Webhook (Fire and forget, or non-blocking)
+        const webhookPayload = {
+            action: 'create_booking',
+            ...newApp,
+            lineUserId: lineProfile?.userId || '',
+            coachName: selectedCoach.name,
+            title: selectedCoach.title || '教練', 
+            type: 'private',
+        };
+        
+        // Don't await strictly for UI transition
+        sendToGoogleScript(webhookPayload);
+        
+        setBookingStep(5);
+        showNotification('預約成功！', 'success');
+        
+    } catch (error: any) {
+        console.error("Booking Error:", error);
+        showNotification('預約系統忙碌中，請稍後再試: ' + error.message, 'error');
     }
-
-    const id = Date.now().toString();
-    const newApp: Appointment = { 
-        id, 
-        type: 'private',
-        date: dateKey, time: selectedSlot, 
-        service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
-        customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString(),
-        lineUserId: lineProfile?.userId, 
-        lineName: lineProfile?.displayName 
-    };
-    
-    await saveToFirestore('appointments', id, newApp);
-    addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
-    
-    const webhookPayload = {
-        action: 'create_booking',
-        ...newApp,
-        lineUserId: lineProfile?.userId || '',
-        coachName: selectedCoach.name,
-        title: selectedCoach.title || '教練', 
-        type: 'private',
-    };
-    sendToGoogleScript(webhookPayload);
-    
-    setBookingStep(5);
-    showNotification('預約成功！', 'success');
   };
 
   const handleCustomerCancel = async (app: Appointment, reason: string) => {
@@ -391,6 +413,7 @@ export default function App() {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
   };
 
+  // --- ADMIN BOOKING / BLOCKING ---
   const handleSaveBlock = async (e: React.FormEvent, force: boolean = false) => {
     if(e) e.preventDefault();
     if (!currentUser) return;
@@ -400,9 +423,12 @@ export default function App() {
     let targetInventory = null;
     const isPrivate = blockForm.type === 'private' || blockForm.type === 'client';
 
-    if (isPrivate && blockForm.customer?.phone) {
-        targetInventory = inventories.find(i => i.phone === blockForm.customer?.phone);
-
+    // 1. Check Inventory & Points
+    if (isPrivate && blockForm.customer?.name) {
+        // Try matching by name or phone
+        targetInventory = inventories.find(i => i.name === blockForm.customer?.name);
+        
+        // If logic is strict about deduction
         if (targetInventory) {
              if (targetInventory.credits.private <= 0 && !force) {
                  setConfirmModal({
@@ -415,6 +441,7 @@ export default function App() {
                  return;
              }
              
+             // Deduct Logic (Only if strictly private/client)
              if (targetInventory.credits.private > 0) {
                  const newCredits = targetInventory.credits.private - 1;
                  await saveToFirestore('user_inventory', targetInventory.id, {
@@ -434,6 +461,7 @@ export default function App() {
 
     let targetSlots = [blockForm.time];
 
+    // Batch Slot Logic
     if (isBatchMode && blockForm.endTime) {
         const startIndex = ALL_TIME_SLOTS.indexOf(blockForm.time);
         const endIndex = ALL_TIME_SLOTS.indexOf(blockForm.endTime);
@@ -448,17 +476,26 @@ export default function App() {
         const dKey = formatDateKey(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
 
         for (const slot of targetSlots) {
+             // Ignore ID Check: If editing, ignore self.
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
              
              if (status.status === 'available') {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}-${i}-${slot.replace(':','')}`;
-                 const finalType = blockForm.type === 'client' ? 'private' : blockForm.type;
+                 
+                 // Normalize Type
+                 const finalType = (blockForm.type === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
 
                  batchOps.push({ 
-                     id, type: finalType as any, date: dKey, time: slot, 
-                     coachId: coach.id, coachName: coach.name, reason: blockForm.reason, 
-                     status: 'confirmed', customer: (finalType === 'private') ? blockForm.customer : null, 
+                     id, 
+                     type: finalType as any, 
+                     date: dKey, 
+                     time: slot, 
+                     coachId: coach.id, 
+                     coachName: coach.name, 
+                     reason: blockForm.reason, 
+                     status: 'confirmed', 
+                     customer: (finalType === 'private') ? blockForm.customer : null, 
                      createdAt: new Date().toISOString(),
                      lineUserId: targetInventory?.lineUserId 
                  });
@@ -468,10 +505,16 @@ export default function App() {
 
     if (batchOps.length === 0) { showNotification('選定時段已被占用或無效', 'error'); return; }
     
-    await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
-    addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
-    showNotification('儲存成功', 'success');
-    setIsBlockModalOpen(false);
+    // Batch Save
+    try {
+        await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
+        addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
+        showNotification('儲存成功', 'success');
+        setIsBlockModalOpen(false);
+    } catch (e) {
+        console.error(e);
+        showNotification('儲存失敗', 'error');
+    }
   };
 
   const handleActualDelete = () => {
@@ -486,9 +529,10 @@ export default function App() {
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
                  await saveToFirestore('appointments', target.id, updated);
                  
+                 // Restore Points
                  let inv = null;
                  if (target.lineUserId) inv = inventories.find(i => i.lineUserId === target.lineUserId);
-                 if (!inv && target.customer?.phone) inv = inventories.find(i => i.phone === target.customer?.phone);
+                 if (!inv && target.customer?.name) inv = inventories.find(i => i.name === target.customer?.name); // Fallback to Name match
 
                  if (inv) {
                      const newCredits = inv.credits.private + 1;

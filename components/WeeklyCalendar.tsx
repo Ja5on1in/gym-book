@@ -23,7 +23,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   const weekDays = Array.from({length: 7}, (_, i) => addDays(currentWeekStart, i));
 
   return (
-    <div className="glass-panel rounded-3xl overflow-hidden shadow-sm animate-fadeIn relative">
+    <div className="glass-panel rounded-3xl overflow-hidden shadow-sm animate-fadeIn relative flex flex-col h-[750px]">
       <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/50 dark:bg-gray-900/50 z-20 relative backdrop-blur-md">
         <div className="flex items-center gap-4">
           <div className="flex bg-white dark:bg-gray-800 rounded-xl p-1 shadow-sm border border-gray-100 dark:border-gray-700">
@@ -36,10 +36,13 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
           <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><div className="w-3 h-3 bg-gray-200 dark:bg-gray-700 pattern-diagonal rounded-full"></div><span>排休</span></div>
         </div>
       </div>
-      <div className="overflow-x-auto relative h-[650px] overflow-y-auto custom-scrollbar bg-white/30 dark:bg-gray-900/30">
-        <div className="min-w-[900px] relative">
-          <div className="grid grid-cols-8 border-b border-gray-200/50 dark:border-gray-700/50 bg-white/80 dark:bg-gray-900/90 sticky top-0 z-30 backdrop-blur-sm">
-            <div className="p-4 text-center text-xs font-bold text-gray-400 uppercase tracking-widest border-r border-gray-100 dark:border-gray-700/50 sticky left-0 z-40 bg-white dark:bg-gray-900 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">時間</div>
+      
+      {/* Calendar Grid Container */}
+      <div className="flex-1 overflow-auto custom-scrollbar bg-white/30 dark:bg-gray-900/30 relative">
+        <div className="min-w-[900px]">
+          {/* Header Row (Sticky Top) */}
+          <div className="grid grid-cols-8 border-b border-gray-200/50 dark:border-gray-700/50 bg-white/95 dark:bg-gray-900/95 sticky top-0 z-30 shadow-sm backdrop-blur-sm">
+            <div className="p-4 text-center text-xs font-bold text-gray-400 uppercase tracking-widest border-r border-gray-100 dark:border-gray-700/50 sticky left-0 z-40 bg-white dark:bg-gray-900 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">時間</div>
             {weekDays.map((d, i) => (
               <div key={i} className={`p-3 text-center border-r border-gray-100 dark:border-gray-700/50 ${d.toDateString()===new Date().toDateString()?'bg-indigo-50/50 dark:bg-indigo-900/20':''}`}>
                 <div className="text-xs text-gray-500 font-medium mb-1">{['週日','週一','週二','週三','週四','週五','週六'][d.getDay()]}</div>
@@ -48,9 +51,11 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
             ))}
           </div>
           
+          {/* Time Slots */}
           {ALL_TIME_SLOTS.map(time => (
             <div key={time} className="grid grid-cols-8 border-b border-gray-100/50 dark:border-gray-700/50 min-h-[90px]">
-              <div className="p-2 text-center text-xs font-medium text-gray-400 border-r border-gray-100/50 dark:border-gray-700/50 flex items-center justify-center bg-white dark:bg-gray-900 sticky left-0 z-20 shadow-[4px_0_24px_-12px_rgba(0,0,0,0.1)]">{time}</div>
+              {/* Time Label (Sticky Left) */}
+              <div className="p-2 text-center text-xs font-medium text-gray-400 border-r border-gray-100/50 dark:border-gray-700/50 flex items-center justify-center bg-white dark:bg-gray-900 sticky left-0 z-20 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">{time}</div>
               {weekDays.map((day) => {
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
                 const myCoach = currentUser.role === 'manager' ? null : coaches.find(c => c.id === currentUser.id);
