@@ -253,8 +253,31 @@ export default function App() {
       showNotification("已登出", "info");
   };
 
+  // Inventory Management
+  const handleUpdateInventory = async (inventory: UserInventory) => {
+      await saveToFirestore('user_inventory', inventory.id, {
+          ...inventory,
+          lastUpdated: new Date().toISOString()
+      });
+      addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${inventory.credits.private}, 團課: ${inventory.credits.group}`);
+      showNotification('學員點數已更新', 'success');
+  };
+
+  // Auto-register function for new LINE users
+  const handleRegisterInventory = async (profile: { userId: string, displayName: string }) => {
+      const newInventory: UserInventory = {
+          id: profile.userId, // Use LINE UserID as document ID
+          lineUserId: profile.userId,
+          name: profile.displayName,
+          credits: { private: 0, group: 0 },
+          lastUpdated: new Date().toISOString(),
+      };
+      await saveToFirestore('user_inventory', profile.userId, newInventory);
+      addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
+  };
+
   // Frontend Booking - Force type 'private' for 1v1 bookings
-  const handleSubmitBooking = (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
+  const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
         showNotification('請填寫完整資訊', 'error'); return; 
@@ -265,6 +288,33 @@ export default function App() {
     if (status.status === 'booked') { 
         showNotification('該時段已被預約', 'error'); setBookingStep(3); return; 
     }
+
+    // --- Inventory Deduction Logic ---
+    if (lineProfile) {
+        const inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
+        if (inventory) {
+            // Deduct 1 point for private sessions
+            const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
+            
+            // Double check (redundant safety as wizard checks too)
+            if (inventory.credits.private <= 0) {
+                 showNotification('點數不足，無法預約', 'error');
+                 return;
+            }
+
+            await saveToFirestore('user_inventory', inventory.id, {
+                ...inventory,
+                credits: { ...inventory.credits, private: newPrivateCredits },
+                lastUpdated: new Date().toISOString()
+            });
+            addLog('系統扣點', `學員 ${lineProfile.displayName} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
+        } else {
+            // Should be handled by wizard's pre-check, but safety fallback
+            showNotification('找不到學員資料，請洽管理員', 'error');
+            return;
+        }
+    }
+    // --------------------------------
 
     const id = Date.now().toString();
     const newApp: Appointment = { 
@@ -277,7 +327,7 @@ export default function App() {
         lineName: lineProfile?.displayName 
     };
     
-    saveToFirestore('appointments', id, newApp);
+    await saveToFirestore('appointments', id, newApp);
     addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
     
     // Construct Webhook Payload with all required fields
@@ -316,16 +366,6 @@ export default function App() {
 
   const resetBooking = () => {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
-  };
-
-  // Inventory Management
-  const handleUpdateInventory = async (inventory: UserInventory) => {
-      await saveToFirestore('user_inventory', inventory.id, {
-          ...inventory,
-          lastUpdated: new Date().toISOString()
-      });
-      addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${inventory.credits.private}, 團課: ${inventory.credits.group}`);
-      showNotification('學員點數已更新', 'success');
   };
 
   // Admin Actions
@@ -622,6 +662,9 @@ export default function App() {
                 currentDate={currentDate} 
                 handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
                 handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
+                // Pass Inventory Data
+                inventories={inventories}
+                onRegisterUser={handleRegisterInventory}
               />
           );
       }

@@ -15,9 +15,10 @@ import {
   Calendar,
   Clock,
   ArrowRight,
-  MessageCircle
+  MessageCircle,
+  AlertCircle
 } from 'lucide-react';
-import { Coach, Service, Customer } from '../types';
+import { Coach, Service, Customer, UserInventory } from '../types';
 import { SERVICES, ALL_TIME_SLOTS } from '../constants';
 import { formatDateKey, getSlotStatus, isCoachDayOff, isPastTime, getDaysInMonth, getFirstDayOfMonth } from '../utils';
 
@@ -41,39 +42,70 @@ interface BookingWizardProps {
   currentDate: Date;
   handlePrevMonth: () => void;
   handleNextMonth: () => void;
+  // Inventory Props
+  inventories: UserInventory[];
+  onRegisterUser: (profile: {userId: string, displayName: string}) => Promise<void>;
 }
 
 const BookingWizard: React.FC<BookingWizardProps> = ({
   step, setStep, selectedService, setSelectedService,
   selectedCoach, setSelectedCoach, selectedDate, setSelectedDate,
   selectedSlot, setSelectedSlot, formData, setFormData,
-  coaches, appointments, onSubmit, reset, currentDate, handlePrevMonth, handleNextMonth
+  coaches, appointments, onSubmit, reset, currentDate, handlePrevMonth, handleNextMonth,
+  inventories, onRegisterUser
 }) => {
   const [isVerifying, setIsVerifying] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null);
+  
   const dateKey = formatDateKey(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
   const isDayOff = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
 
   const handleLineSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsVerifying(true);
+      setAuthError(null);
+      
       const liff = (window as any).liff;
 
       if (liff) {
           try {
               if (!liff.isLoggedIn()) {
-                  // Standard login with redirect to current page
+                  // Standard login
                   liff.login({ redirectUri: window.location.href });
                   return; 
               }
               const profile = await liff.getProfile();
+              
+              // --- INVENTORY PRE-CHECK LOGIC ---
+              const userInv = inventories.find(i => i.lineUserId === profile.userId);
+              
+              if (!userInv) {
+                  // Case 1: New User - Auto Create Record (0 points) & Block
+                  await onRegisterUser({ userId: profile.userId, displayName: profile.displayName });
+                  setAuthError(`歡迎新學員 ${profile.displayName}！目前點數為 0，請洽管理員儲值後再進行預約。`);
+                  setIsVerifying(false);
+                  return;
+              }
+
+              if (userInv.credits.private <= 0) {
+                  // Case 2: Existing User but 0 points - Block
+                   setAuthError(`親愛的 ${profile.displayName}，您的個人課點數不足 (剩餘: ${userInv.credits.private})。請洽管理員儲值。`);
+                   setIsVerifying(false);
+                   return;
+              }
+              // ---------------------------------
+
               onSubmit(e, { userId: profile.userId, displayName: profile.displayName });
           } catch (err) {
               console.error("LIFF Error", err);
-              // Fallback to normal submit if LIFF fails
-              onSubmit(e);
+              // If LIFF fails completely, maybe allow fallback or show error
+              // For now, allow fallback to normal submit but without points deduction logic potentially?
+              // Ideally, if strictly for LINE users, we should block. 
+              // Assuming hybrid:
+              onSubmit(e); 
           }
       } else {
-          // No LIFF detected, normal submit
+          // No LIFF detected, normal submit (No point deduction checks for non-LINE web users unless we implement other auth)
           onSubmit(e);
       }
       setIsVerifying(false);
@@ -320,8 +352,16 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                        value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
              </div>
              
-             <button type="submit" disabled={isVerifying} className="w-full py-4 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold shadow-lg shadow-green-500/30 transition-all transform hover:scale-[1.02] mt-4 flex items-center justify-center gap-2">
-                {isVerifying ? '驗證中...' : '確認預約'} <MessageCircle size={18}/>
+             {authError && (
+                 <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-xl border border-red-200 dark:border-red-900/50 flex gap-3 animate-fadeIn">
+                     <AlertCircle className="text-red-500 shrink-0" size={20}/>
+                     <p className="text-sm text-red-600 dark:text-red-400 font-medium leading-relaxed">{authError}</p>
+                 </div>
+             )}
+
+             <button type="submit" disabled={isVerifying || !!authError} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-4 flex items-center justify-center gap-2
+                 ${!!authError ? 'bg-gray-400 text-white cursor-not-allowed shadow-none' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
+                {isVerifying ? '驗證中...' : !!authError ? '無法預約' : '確認預約'} <MessageCircle size={18}/>
              </button>
           </form>
         </div>

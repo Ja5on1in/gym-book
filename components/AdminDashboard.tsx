@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, MessageCircle } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import WeeklyCalendar from './WeeklyCalendar';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
@@ -349,7 +349,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        <thead>
                            <tr className="text-xs font-bold text-gray-500 border-b border-gray-100 dark:border-gray-700">
                                <th className="p-3">學員姓名</th>
-                               <th className="p-3">ID / Email</th>
+                               <th className="p-3">ID / Email / Line</th>
                                <th className="p-3 text-right">個人課點數</th>
                                <th className="p-3 text-right">團課點數</th>
                                <th className="p-3">最後更新</th>
@@ -359,7 +359,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        <tbody>
                            {filteredInventories.map(inv => (
                                <tr key={inv.id} className="border-b border-gray-50 dark:border-gray-800 last:border-0 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
-                                   <td className="p-3 font-bold dark:text-white">{inv.name}</td>
+                                   <td className="p-3 font-bold dark:text-white flex items-center gap-2">
+                                       {inv.name}
+                                       {inv.lineUserId && <MessageCircle size={14} className="text-[#06C755]" title="LINE 連動用戶"/>}
+                                   </td>
                                    <td className="p-3 text-sm text-gray-500 font-mono">{inv.id}</td>
                                    <td className="p-3 text-right font-bold text-indigo-600 dark:text-indigo-400">{inv.credits.private}</td>
                                    <td className="p-3 text-right font-bold text-purple-600 dark:text-purple-400">{inv.credits.group}</td>
