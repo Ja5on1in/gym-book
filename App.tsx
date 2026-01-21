@@ -263,7 +263,7 @@ export default function App() {
       showNotification('學員點數已更新', 'success');
   };
 
-  // Auto-register function for new LINE users
+  // Auto-register function for new LINE users (Used as fallback now)
   const handleRegisterInventory = async (profile: { userId: string, displayName: string }) => {
       const newInventory: UserInventory = {
           id: profile.userId, // Use LINE UserID as document ID
@@ -276,7 +276,7 @@ export default function App() {
       addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
   };
 
-  // Frontend Booking - Force type 'private' for 1v1 bookings
+  // Frontend Booking - Enhanced with Phone Binding Logic
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -289,29 +289,63 @@ export default function App() {
         showNotification('該時段已被預約', 'error'); setBookingStep(3); return; 
     }
 
-    // --- Inventory Deduction Logic ---
-    if (lineProfile) {
-        const inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
-        if (inventory) {
-            // Deduct 1 point for private sessions
-            const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
-            
-            // Double check (redundant safety as wizard checks too)
-            if (inventory.credits.private <= 0) {
-                 showNotification('點數不足，無法預約', 'error');
-                 return;
-            }
+    // --- Inventory & Binding Logic ---
+    let targetInventoryId: string | null = null;
+    let inventory = null;
 
-            await saveToFirestore('user_inventory', inventory.id, {
+    if (lineProfile) {
+        // 1. Try to find by LINE ID
+        inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
+
+        // 2. If not found, try to bind by Phone
+        if (!inventory) {
+            inventory = inventories.find(i => i.phone === formData.phone);
+            
+            if (inventory) {
+                // Binding!
+                targetInventoryId = inventory.id;
+                await saveToFirestore('user_inventory', inventory.id, {
+                    ...inventory,
+                    lineUserId: lineProfile.userId,
+                    lastUpdated: new Date().toISOString()
+                });
+                addLog('帳號綁定', `綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
+                inventory = { ...inventory, lineUserId: lineProfile.userId }; // Update local ref
+            }
+        }
+
+        // 3. Process Credits
+        if (inventory) {
+             const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
+             if (inventory.credits.private <= 0) {
+                 showNotification('點數不足，無法預約。請洽管理員。', 'error');
+                 return;
+             }
+             await saveToFirestore('user_inventory', inventory.id, {
                 ...inventory,
                 credits: { ...inventory.credits, private: newPrivateCredits },
                 lastUpdated: new Date().toISOString()
             });
-            addLog('系統扣點', `學員 ${lineProfile.displayName} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
+            addLog('系統扣點', `學員 ${inventory.name} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
         } else {
-            // Should be handled by wizard's pre-check, but safety fallback
-            showNotification('找不到學員資料，請洽管理員', 'error');
-            return;
+             // New User (No ID match, No Phone match)
+             // Create empty record and BLOCK
+             await handleRegisterInventory(lineProfile);
+             // Update the newly created inventory with phone number so future binds work if needed? 
+             // Or just stick to the ID created. 
+             // We need to update the phone number for the new record.
+             const newId = lineProfile.userId;
+             const existing = inventories.find(i => i.id === newId); // wait for state? might be race condition. 
+             // Safer to just use saveToFirestore again directly
+             await saveToFirestore('user_inventory', newId, {
+                 id: newId, lineUserId: newId, name: lineProfile.displayName,
+                 phone: formData.phone, // SAVE PHONE
+                 credits: { private: 0, group: 0 },
+                 lastUpdated: new Date().toISOString()
+             });
+
+             showNotification('歡迎新學員！請洽管理員儲值後再進行預約。', 'info');
+             return;
         }
     }
     // --------------------------------
@@ -330,14 +364,13 @@ export default function App() {
     await saveToFirestore('appointments', id, newApp);
     addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
     
-    // Construct Webhook Payload with all required fields
     const webhookPayload = {
         action: 'create_booking',
         ...newApp,
         lineUserId: lineProfile?.userId || '',
         coachName: selectedCoach.name,
         title: selectedCoach.title || '教練', 
-        type: 'private', // Explicitly set type for frontend booking
+        type: 'private',
     };
     sendToGoogleScript(webhookPayload);
     
@@ -349,8 +382,7 @@ export default function App() {
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
       
-      // --- Refund Logic (Client Side) ---
-      // If appointment type is private/client AND has a lineUserId, refund 1 point.
+      // Refund Logic (Client Side)
       if (app.lineUserId && (app.type === 'private' || app.type === 'client')) {
           const inventory = inventories.find(i => i.lineUserId === app.lineUserId);
           if (inventory) {
@@ -363,10 +395,8 @@ export default function App() {
               addLog('系統補點', `學員 ${inventory.name} 取消預約，退還 1 點 (剩餘: ${newCredits})`);
           }
       }
-      // ----------------------------------
 
       addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
-      
       const coach = coaches.find(c => c.id === app.coachId);
       sendToGoogleScript({ 
           action: 'cancel_booking', 
@@ -385,13 +415,50 @@ export default function App() {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
   };
 
-  // Admin Actions
-  const handleSaveBlock = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Admin Actions - Enhanced with Deduction
+  const handleSaveBlock = async (e: React.FormEvent, force: boolean = false) => {
+    if(e) e.preventDefault();
     if (!currentUser) return;
     const coach = coaches.find(c => c.id === (currentUser.role === 'manager' ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
+    // --- Admin Deduction Logic ---
+    let targetInventory = null;
+    const isPrivate = blockForm.type === 'private' || blockForm.type === 'client';
+
+    if (isPrivate && blockForm.customer?.phone) {
+        targetInventory = inventories.find(i => i.phone === blockForm.customer?.phone);
+
+        if (targetInventory) {
+             if (targetInventory.credits.private <= 0 && !force) {
+                 // Trigger Confirmation
+                 setConfirmModal({
+                     isOpen: true,
+                     message: `學員 ${targetInventory.name} 點數不足 (剩餘: ${targetInventory.credits.private})。是否強制預約？`,
+                     isDanger: false,
+                     showInput: false,
+                     onConfirm: () => handleSaveBlock(null as any, true) // Call recursively with force=true
+                 });
+                 return; // Stop execution
+             }
+
+             // If force is true, we proceed. If credits > 0, we deduct.
+             // If force is true and credits <=0, we DO NOT deduct (stay at 0? or go negative? Requirement says "Warning... force". Assuming just book.)
+             // Let's implement: Deduct if > 0. If force=true and <=0, assume Admin handles it manually or it's a cash payment.
+             
+             if (targetInventory.credits.private > 0) {
+                 const newCredits = targetInventory.credits.private - 1;
+                 await saveToFirestore('user_inventory', targetInventory.id, {
+                     ...targetInventory,
+                     credits: { ...targetInventory.credits, private: newCredits },
+                     lastUpdated: new Date().toISOString()
+                 });
+                 addLog('後台扣點', `管理員為 ${targetInventory.name} 建立預約，扣除 1 點`);
+             }
+        }
+    }
+    // ----------------------------
+
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Appointment[] = [];
     const [y, m, d] = blockForm.date.split('-').map(Number);
@@ -419,14 +486,15 @@ export default function App() {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}-${i}-${slot.replace(':','')}`;
                  
-                 // Ensure type is strictly 'private', 'group', or 'block'
                  const finalType = blockForm.type === 'client' ? 'private' : blockForm.type;
 
                  batchOps.push({ 
                      id, type: finalType as any, date: dKey, time: slot, 
                      coachId: coach.id, coachName: coach.name, reason: blockForm.reason, 
                      status: 'confirmed', customer: (finalType === 'private') ? blockForm.customer : null, 
-                     createdAt: new Date().toISOString() 
+                     createdAt: new Date().toISOString(),
+                     // Bind inventory ID if found
+                     lineUserId: targetInventory?.lineUserId 
                  });
              }
         }
@@ -445,29 +513,29 @@ export default function App() {
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
-     if (target.type === 'private' || target.type === 'client') { // Handle legacy 'client' type for deletion
+     if (target.type === 'private' || target.type === 'client') { 
          setConfirmModal({
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
                  await saveToFirestore('appointments', target.id, updated);
                  
-                 // --- Refund Logic (Admin Side) ---
-                 // If Admin cancels a paid booking, refund 1 point.
-                 if (target.lineUserId && (target.type === 'private' || target.type === 'client')) {
-                    const inventory = inventories.find(i => i.lineUserId === target.lineUserId);
-                    if (inventory) {
-                        const newCredits = inventory.credits.private + 1;
-                        await saveToFirestore('user_inventory', inventory.id, {
-                            ...inventory,
-                            credits: { ...inventory.credits, private: newCredits },
-                            lastUpdated: new Date().toISOString()
-                        });
-                        addLog('系統補點', `管理員取消預約，退還 1 點給 ${inventory.name}`);
-                    }
-                 }
-                 // ---------------------------------
+                 // Refund Logic (Admin Side)
+                 // Try to match by lineUserId OR Phone
+                 let inv = null;
+                 if (target.lineUserId) inv = inventories.find(i => i.lineUserId === target.lineUserId);
+                 if (!inv && target.customer?.phone) inv = inventories.find(i => i.phone === target.customer?.phone);
 
+                 if (inv) {
+                     const newCredits = inv.credits.private + 1;
+                     await saveToFirestore('user_inventory', inv.id, {
+                         ...inv,
+                         credits: { ...inv.credits, private: newCredits },
+                         lastUpdated: new Date().toISOString()
+                     });
+                     addLog('系統補點', `管理員取消預約，退還 1 點給 ${inv.name}`);
+                 }
+                 
                  addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
                  sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason });
                  showNotification('已取消', 'info');
@@ -517,9 +585,7 @@ export default function App() {
       if (!currentUser) return;
       if (currentUser.role === 'coach' && app.coachId !== currentUser.id) { showNotification('權限不足', 'info'); return; }
       
-      // Clean up legacy types for form
       const formType = (app.type === 'client' ? 'private' : app.type) as any;
-      
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
       setDeleteConfirm(false); 
       setIsBatchMode(false);
@@ -549,7 +615,7 @@ export default function App() {
             role: coachData.role,
             email: email || coachData.email || '', 
             status: 'active',
-            title: coachData.title // Ensure title is saved
+            title: coachData.title 
         };
 
         await saveToFirestore('users', uid, { id: uid, ...commonData });
@@ -605,7 +671,6 @@ export default function App() {
             a.date.startsWith(currentMonthPrefix)
         );
         
-        // Fix: Use new types for calculation. Handle legacy 'client' by treating as 'private'
         const personalCount = apps.filter(a => a.type === 'private' || a.type === 'client').length;
         const groupCount = apps.filter(a => a.type === 'group').length;
 
@@ -703,8 +768,8 @@ export default function App() {
           );
       }
 
-      // Admin View
       if (!currentUser) {
+          // ... Login Form (Unchanged)
           return (
              <div className="max-w-md mx-auto mt-10">
                 <div className="glass-panel p-8 rounded-3xl shadow-2xl">
@@ -771,7 +836,6 @@ export default function App() {
                   onToggleComplete={handleToggleComplete}
                />
             )}
-            // Inventory Props
             inventories={inventories}
             onUpdateInventory={handleUpdateInventory}
          />
@@ -884,7 +948,7 @@ export default function App() {
                         </div>
                     </div>
                 ) : (
-                    <form onSubmit={handleSaveBlock} className="p-6 space-y-4">
+                    <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                            <div>
                                <label className="text-xs font-bold text-gray-500 uppercase">類型</label>
@@ -945,10 +1009,48 @@ export default function App() {
                             </div>
                         ) : (
                             <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800">
-                                <div>
-                                    <label className="text-xs font-bold text-indigo-500 uppercase">客戶姓名</label>
-                                    <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
-                                </div>
+                                {blockForm.type === 'private' || blockForm.type === 'client' ? (
+                                    <>
+                                        <div>
+                                            <label className="text-xs font-bold text-indigo-500 uppercase">選擇學員 (庫存連動)</label>
+                                            <select 
+                                                className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white"
+                                                value={blockForm.customer?.name || ''}
+                                                onChange={(e) => {
+                                                    const selectedInv = inventories.find(inv => inv.name === e.target.value);
+                                                    if (selectedInv) {
+                                                        setBlockForm({
+                                                            ...blockForm,
+                                                            customer: { 
+                                                                name: selectedInv.name, 
+                                                                phone: selectedInv.phone || '', 
+                                                                email: selectedInv.email || '' 
+                                                            }
+                                                        });
+                                                    } else {
+                                                        // Fallback for custom name
+                                                        setBlockForm({
+                                                            ...blockForm,
+                                                            customer: { ...blockForm.customer!, name: e.target.value }
+                                                        });
+                                                    }
+                                                }}
+                                            >
+                                                <option value="">-- 請選擇 --</option>
+                                                {inventories.map(inv => (
+                                                    <option key={inv.id} value={inv.name}>
+                                                        {inv.name} (餘課: {inv.credits.private})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                        </div>
+                                    </>
+                                ) : (
+                                     <div>
+                                        <label className="text-xs font-bold text-indigo-500 uppercase">客戶姓名</label>
+                                        <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
+                                    </div>
+                                )}
                                 <div>
                                     <label className="text-xs font-bold text-indigo-500 uppercase">聯絡電話</label>
                                     <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.phone || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, phone: e.target.value }})} />

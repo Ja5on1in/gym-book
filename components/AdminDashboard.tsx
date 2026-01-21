@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, MessageCircle } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, MessageCircle, Phone } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import WeeklyCalendar from './WeeklyCalendar';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
@@ -358,7 +358,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        </thead>
                        <tbody>
                            {filteredInventories.map(inv => (
-                               <tr key={inv.id} className="border-b border-gray-50 dark:border-gray-800 last:border-0 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                               <tr key={inv.id} className="border-b border-gray-5 dark:border-gray-800 last:border-0 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
                                    <td className="p-3 font-bold dark:text-white flex items-center gap-2">
                                        {inv.name}
                                        {inv.lineUserId && <MessageCircle size={14} className="text-[#06C755]" title="LINE 連動用戶"/>}
@@ -527,15 +527,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <label className="text-xs font-bold text-gray-500 uppercase">姓名</label>
                             <input type="text" required value={editingCoach.name || ''} onChange={e => setEditingCoach({...editingCoach, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                         </div>
-                        
-                        <div>
-                            <label className="text-xs font-bold text-gray-500 uppercase">職稱</label>
-                            <select value={editingCoach.title || 'coach'} onChange={e => setEditingCoach({...editingCoach, title: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
-                                <option value="coach">教練 (Coach)</option>
-                                <option value="therapist">治療師 (Therapist)</option>
-                            </select>
-                        </div>
-
                         <div>
                             <label className="text-xs font-bold text-gray-500 uppercase">職位</label>
                             <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
@@ -613,26 +604,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {/* Inventory Edit Modal */}
        {isInventoryModalOpen && editingInventory && (
            <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
-               <div className="glass-panel w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
+               <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
                    <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                       <h3 className="font-bold text-xl dark:text-white">調整學員點數</h3>
+                       <h3 className="font-bold text-xl dark:text-white">{editingInventory.id ? '編輯學員庫存' : '新增學員'}</h3>
                        <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-gray-500"/></button>
                    </div>
                    <form onSubmit={handleSubmitInventory} className="p-6 space-y-4">
                        <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase">學員 ID (Line ID / Email)</label>
+                           <label className="text-xs font-bold text-gray-500 uppercase">學員 ID (Line ID / Email / Phone)</label>
                            <input 
                                type="text" 
                                required 
-                               disabled={!!editingInventory.lastUpdated} // Disable ID edit if it's an existing record
+                               disabled={!!editingInventory.lastUpdated} // Disable ID edit for existing
                                value={editingInventory.id} 
                                onChange={e => setEditingInventory({...editingInventory, id: e.target.value})} 
                                className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50"
-                               placeholder="請輸入唯一 ID"
+                               placeholder="請輸入唯一識別碼"
                            />
                        </div>
                        <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase">學員姓名</label>
+                           <label className="text-xs font-bold text-gray-500 uppercase">姓名</label>
                            <input 
                                type="text" 
                                required 
@@ -641,29 +632,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
                            />
                        </div>
+                       <div>
+                           <label className="text-xs font-bold text-gray-500 uppercase">Email (選填)</label>
+                           <input 
+                               type="email" 
+                               value={editingInventory.email || ''} 
+                               onChange={e => setEditingInventory({...editingInventory, email: e.target.value})} 
+                               className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                           />
+                       </div>
+                        <div>
+                           <label className="text-xs font-bold text-gray-500 uppercase">Phone (選填)</label>
+                           <input 
+                               type="tel" 
+                               value={editingInventory.phone || ''} 
+                               onChange={e => setEditingInventory({...editingInventory, phone: e.target.value})} 
+                               className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                           />
+                       </div>
                        <div className="grid grid-cols-2 gap-4">
                            <div>
-                               <label className="text-xs font-bold text-indigo-500 uppercase">個人課剩餘</label>
+                               <label className="text-xs font-bold text-gray-500 uppercase">個人課點數</label>
                                <input 
                                    type="number" 
+                                   required 
                                    value={editingInventory.credits.private} 
-                                   onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits, private: Number(e.target.value) }})} 
-                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white font-bold"
+                                   onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: Number(e.target.value)}})} 
+                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
                                />
                            </div>
                            <div>
-                               <label className="text-xs font-bold text-purple-500 uppercase">團課剩餘</label>
+                               <label className="text-xs font-bold text-gray-500 uppercase">團課點數</label>
                                <input 
                                    type="number" 
+                                   required 
                                    value={editingInventory.credits.group} 
-                                   onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits, group: Number(e.target.value) }})} 
-                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white font-bold"
+                                   onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: Number(e.target.value)}})} 
+                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
                                />
                            </div>
                        </div>
-                       <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-2">
-                           確認調整
-                       </button>
+                       
+                       <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4">儲存變更</button>
                    </form>
                </div>
            </div>
