@@ -1,6 +1,6 @@
 import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers } from 'lucide-react';
-import { User, Appointment, Coach, Log } from '../types';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search } from 'lucide-react';
+import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import WeeklyCalendar from './WeeklyCalendar';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 
@@ -25,13 +25,17 @@ interface AdminDashboardProps {
   onSaveCoach: (coach: Coach, email?: string, password?: string) => void;
   onDeleteCoach: (id: string, name: string) => void;
   onOpenBatchBlock: () => void;
+  // Inventory Props
+  inventories: UserInventory[];
+  onUpdateInventory: (inventory: UserInventory) => void;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser, onLogout, adminTab, setAdminTab, renderWeeklyCalendar,
   appointments, selectedBatch, toggleBatchSelect, handleBatchDelete,
   analysis, handleExportStatsCsv, handleExportJson, triggerImport, handleFileImport,
-  coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock
+  coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
+  inventories, onUpdateInventory
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -44,6 +48,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   
   // Off Date Input State
   const [tempOffDate, setTempOffDate] = useState('');
+
+  // Inventory Management State
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
+  const [editingInventory, setEditingInventory] = useState<UserInventory | null>(null);
 
   const filteredApps = appointments.filter(a => currentUser.role==='manager' || a.coachId === currentUser.id);
 
@@ -90,7 +99,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         setEditingCoach({
             name: '',
             role: 'coach',
-            title: 'coach', // Default title
             color: COLOR_OPTIONS[0].value,
             workStart: '09:00',
             workEnd: '21:00',
@@ -126,6 +134,40 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsCoachModalOpen(false);
   };
 
+  // Inventory Logic
+  const filteredInventories = inventories.filter(inv => 
+      inv.name.toLowerCase().includes(inventorySearch.toLowerCase()) || 
+      inv.email?.toLowerCase().includes(inventorySearch.toLowerCase()) ||
+      inv.id.toLowerCase().includes(inventorySearch.toLowerCase())
+  );
+
+  const handleOpenInventoryModal = (inv?: UserInventory) => {
+      if (inv) {
+          setEditingInventory({ ...inv });
+      } else {
+          // New User
+          setEditingInventory({
+              id: '', // Will be entered
+              name: '',
+              credits: { private: 0, group: 0 },
+              lastUpdated: ''
+          });
+      }
+      setIsInventoryModalOpen(true);
+  };
+
+  const handleSubmitInventory = (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!editingInventory) return;
+      // If new, ID must be provided manually (Email or LineID)
+      if (!editingInventory.id) {
+          alert("請輸入學員 ID (Line ID 或 Email)");
+          return;
+      }
+      onUpdateInventory(editingInventory);
+      setIsInventoryModalOpen(false);
+  };
+
   return (
     <div className="max-w-6xl mx-auto p-4 pb-24">
        <div className="flex justify-between items-center mb-8">
@@ -137,8 +179,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        </div>
        
        <div className="glass-panel p-1 rounded-2xl flex gap-1 mb-8 overflow-x-auto mx-auto max-w-full md:max-w-fit shadow-lg custom-scrollbar">
-          {['calendar','appointments','analysis','staff','settings','logs'].map(t => {
+          {['calendar','appointments','analysis','inventory','staff','settings','logs'].map(t => {
              if (t === 'staff' && currentUser.role !== 'manager') return null;
+             if (t === 'inventory' && currentUser.role !== 'manager') return null;
              return (
              <button key={t} onClick={()=>setAdminTab(t)} 
                 className={`px-5 py-2.5 rounded-xl whitespace-nowrap text-sm font-medium transition-all flex items-center gap-2
@@ -147,6 +190,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  calendar: <><Clock size={16}/> 行事曆</>, 
                  appointments: <><List size={16}/> 預約列表</>, 
                  analysis: <><BarChart3 size={16}/> 營運分析</>, 
+                 inventory: <><CreditCard size={16}/> 庫存管理</>,
                  staff: <><Users size={16}/> 員工管理</>,
                  settings: <><SettingsIcon size={16}/> 班表設定</>, 
                  logs: <><History size={16}/> 操作紀錄</>
@@ -157,6 +201,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
        {adminTab === 'calendar' && (
          <>
+            {/* Batch Block Button */}
             <div className="flex justify-end mb-4 animate-fadeIn">
                  <button onClick={onOpenBatchBlock} className="flex items-center gap-2 bg-gray-800 text-white dark:bg-white dark:text-gray-900 px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity">
                      <Layers size={16}/> 批次封鎖時段
@@ -182,16 +227,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     key={app.id} 
                     onClick={() => toggleBatchSelect(app.id)}
                     className={`
-                        glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all cursor-pointer select-none border-2
+                        glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all cursor-pointer select-none
                         ${selectedBatch.has(app.id) 
-                            ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
-                            : 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700'
+                            ? 'border-2 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
+                            : 'hover:border-indigo-300 dark:hover:border-indigo-700'
                         }
                     `}
                 >
                   <div className={`
-                        w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all duration-300
-                        ${selectedBatch.has(app.id) ? 'bg-indigo-600 border-indigo-600 scale-110' : 'border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600 group-hover:border-indigo-400'}
+                        w-5 h-5 rounded border flex items-center justify-center transition-colors
+                        ${selectedBatch.has(app.id) ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600'}
                   `}>
                       {selectedBatch.has(app.id) && <X size={14} className="text-white rotate-45" strokeWidth={3} />}
                   </div>
@@ -208,7 +253,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                     <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
                         <span>{coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除教練)'}</span>
-                        <span className="font-medium text-indigo-600 dark:text-indigo-400">{app.type==='client' ? app?.customer?.name : app.reason}</span>
+                        <span className="font-medium text-indigo-600 dark:text-indigo-400">{app.type==='private' || app.type === 'client' ? app?.customer?.name : app.reason}</span>
                     </div>
                   </div>
                </div>
@@ -277,6 +322,64 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                </div>
             </div>
           </div>
+       )}
+
+       {adminTab === 'inventory' && currentUser.role === 'manager' && (
+           <div className="glass-panel rounded-3xl shadow-lg p-6 animate-slideUp">
+               <div className="flex justify-between items-center mb-6">
+                   <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 學員庫存管理</h3>
+                   <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
+                       <Plus size={16}/> 新增/補登
+                   </button>
+               </div>
+               
+               <div className="mb-4 relative">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                    <input 
+                        type="text" 
+                        placeholder="搜尋姓名、Email 或 ID..." 
+                        value={inventorySearch}
+                        onChange={e => setInventorySearch(e.target.value)}
+                        className="w-full glass-input pl-10 pr-4 py-2 rounded-xl dark:text-white"
+                    />
+               </div>
+
+               <div className="overflow-x-auto">
+                   <table className="w-full text-left border-collapse">
+                       <thead>
+                           <tr className="text-xs font-bold text-gray-500 border-b border-gray-100 dark:border-gray-700">
+                               <th className="p-3">學員姓名</th>
+                               <th className="p-3">ID / Email</th>
+                               <th className="p-3 text-right">個人課點數</th>
+                               <th className="p-3 text-right">團課點數</th>
+                               <th className="p-3">最後更新</th>
+                               <th className="p-3">操作</th>
+                           </tr>
+                       </thead>
+                       <tbody>
+                           {filteredInventories.map(inv => (
+                               <tr key={inv.id} className="border-b border-gray-50 dark:border-gray-800 last:border-0 hover:bg-gray-50/50 dark:hover:bg-gray-800/30 transition-colors">
+                                   <td className="p-3 font-bold dark:text-white">{inv.name}</td>
+                                   <td className="p-3 text-sm text-gray-500 font-mono">{inv.id}</td>
+                                   <td className="p-3 text-right font-bold text-indigo-600 dark:text-indigo-400">{inv.credits.private}</td>
+                                   <td className="p-3 text-right font-bold text-purple-600 dark:text-purple-400">{inv.credits.group}</td>
+                                   <td className="p-3 text-xs text-gray-400">{new Date(inv.lastUpdated).toLocaleDateString()}</td>
+                                   <td className="p-3">
+                                       <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20">
+                                           <Edit2 size={16}/>
+                                       </button>
+                                   </td>
+                               </tr>
+                           ))}
+                           {filteredInventories.length === 0 && (
+                               <tr>
+                                   <td colSpan={6} className="p-8 text-center text-gray-400">查無資料</td>
+                               </tr>
+                           )}
+                       </tbody>
+                   </table>
+               </div>
+           </div>
        )}
 
        {adminTab === 'staff' && currentUser.role === 'manager' && (
@@ -502,6 +605,65 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
             </div>
         </div>
+       )}
+
+       {/* Inventory Edit Modal */}
+       {isInventoryModalOpen && editingInventory && (
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
+               <div className="glass-panel w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
+                   <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                       <h3 className="font-bold text-xl dark:text-white">調整學員點數</h3>
+                       <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-gray-500"/></button>
+                   </div>
+                   <form onSubmit={handleSubmitInventory} className="p-6 space-y-4">
+                       <div>
+                           <label className="text-xs font-bold text-gray-500 uppercase">學員 ID (Line ID / Email)</label>
+                           <input 
+                               type="text" 
+                               required 
+                               disabled={!!editingInventory.lastUpdated} // Disable ID edit if it's an existing record
+                               value={editingInventory.id} 
+                               onChange={e => setEditingInventory({...editingInventory, id: e.target.value})} 
+                               className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50"
+                               placeholder="請輸入唯一 ID"
+                           />
+                       </div>
+                       <div>
+                           <label className="text-xs font-bold text-gray-500 uppercase">學員姓名</label>
+                           <input 
+                               type="text" 
+                               required 
+                               value={editingInventory.name} 
+                               onChange={e => setEditingInventory({...editingInventory, name: e.target.value})} 
+                               className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                           />
+                       </div>
+                       <div className="grid grid-cols-2 gap-4">
+                           <div>
+                               <label className="text-xs font-bold text-indigo-500 uppercase">個人課剩餘</label>
+                               <input 
+                                   type="number" 
+                                   value={editingInventory.credits.private} 
+                                   onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits, private: Number(e.target.value) }})} 
+                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white font-bold"
+                               />
+                           </div>
+                           <div>
+                               <label className="text-xs font-bold text-purple-500 uppercase">團課剩餘</label>
+                               <input 
+                                   type="number" 
+                                   value={editingInventory.credits.group} 
+                                   onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits, group: Number(e.target.value) }})} 
+                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white font-bold"
+                               />
+                           </div>
+                       </div>
+                       <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-2">
+                           確認調整
+                       </button>
+                   </form>
+               </div>
+           </div>
        )}
     </div>
   );

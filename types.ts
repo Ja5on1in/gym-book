@@ -1,3 +1,4 @@
+
 export interface User {
   id: string;
   name: string;
@@ -28,7 +29,7 @@ export interface Service {
 
 export interface Appointment {
   id: string;
-  type: 'client' | 'block' | 'private' | 'group';
+  type: 'private' | 'group' | 'block' | 'client'; // Cleaned up: Removed 'client', strictly use private/group. 'client' restored for legacy.
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   coachId: string;
@@ -64,14 +65,14 @@ export interface Log {
 
 export interface SlotStatus {
   status: 'available' | 'booked' | 'unavailable';
-  type?: 'client' | 'block' | 'off' | 'private' | 'group';
+  type?: 'private' | 'group' | 'block' | 'off' | 'client';
   reason?: string;
   record?: Appointment;
 }
 
 export interface BlockFormState {
   id: string | null;
-  type: 'block' | 'client' | 'private' | 'group';
+  type: 'block' | 'private' | 'group' | 'client'; // Cleaned up types
   coachId: string;
   date: string;
   time: string;
@@ -79,4 +80,18 @@ export interface BlockFormState {
   reason: string;
   customer: Customer | null;
   repeatWeeks?: number;
+}
+
+// New: Inventory System
+export interface UserInventory {
+  id: string; // Use lineUserId or Email as ID
+  name: string;
+  lineUserId?: string;
+  email?: string;
+  phone?: string;
+  credits: {
+      private: number;
+      group: number;
+  };
+  lastUpdated: string;
 }

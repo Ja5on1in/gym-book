@@ -36,7 +36,7 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
-import { User, Appointment, Coach, Log, Service, Customer, BlockFormState } from './types';
+import { User, Appointment, Coach, Log, Service, Customer, BlockFormState, UserInventory } from './types';
 import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff } from './utils';
 
 import BookingWizard from './components/BookingWizard';
@@ -44,7 +44,7 @@ import AdminDashboard from './components/AdminDashboard';
 import WeeklyCalendar from './components/WeeklyCalendar';
 import MyBookings from './components/MyBookings';
 
-// Updated LIFF ID
+// Updated LIFF ID - Kept as requested
 const LIFF_ID = '2008923061-bPeQysat';
 
 export default function App() {
@@ -65,6 +65,7 @@ export default function App() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
+  const [inventories, setInventories] = useState<UserInventory[]>([]);
 
   // Dates
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -86,6 +87,7 @@ export default function App() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
 
+  // Cleaned up initial state (Removed 'client' default, use 'block')
   const [blockForm, setBlockForm] = useState<BlockFormState>({
     id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '1v1教練課', customer: null, repeatWeeks: 1
   });
@@ -190,11 +192,17 @@ export default function App() {
         const loaded = data as Log[];
         setLogs(loaded.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()));
     }, () => {});
+    
+    // Inventory Subscription
+    const unsubInventory = subscribeToCollection('user_inventory', (data) => {
+        setInventories(data as UserInventory[]);
+    }, () => {});
 
     return () => {
         unsubApps();
         unsubCoaches && unsubCoaches();
         unsubLogs && unsubLogs();
+        unsubInventory && unsubInventory();
     };
   }, []);
 
@@ -245,6 +253,7 @@ export default function App() {
       showNotification("已登出", "info");
   };
 
+  // Frontend Booking - Force type 'private' for 1v1 bookings
   const handleSubmitBooking = (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -259,7 +268,9 @@ export default function App() {
 
     const id = Date.now().toString();
     const newApp: Appointment = { 
-        id, type: 'client', date: dateKey, time: selectedSlot, 
+        id, 
+        type: 'private', // FORCE PRIVATE TYPE for analytics
+        date: dateKey, time: selectedSlot, 
         service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
         customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString(),
         lineUserId: lineProfile?.userId, 
@@ -275,8 +286,8 @@ export default function App() {
         ...newApp,
         lineUserId: lineProfile?.userId || '',
         coachName: selectedCoach.name,
-        title: selectedCoach.title || '教練', // Pass the Coach Title
-        type: 'client', // Explicitly set type for frontend booking
+        title: selectedCoach.title || '教練', 
+        type: 'private', // Explicitly set type for frontend booking
     };
     sendToGoogleScript(webhookPayload);
     
@@ -305,6 +316,16 @@ export default function App() {
 
   const resetBooking = () => {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
+  };
+
+  // Inventory Management
+  const handleUpdateInventory = async (inventory: UserInventory) => {
+      await saveToFirestore('user_inventory', inventory.id, {
+          ...inventory,
+          lastUpdated: new Date().toISOString()
+      });
+      addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${inventory.credits.private}, 團課: ${inventory.credits.group}`);
+      showNotification('學員點數已更新', 'success');
   };
 
   // Admin Actions
@@ -341,10 +362,13 @@ export default function App() {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}-${i}-${slot.replace(':','')}`;
                  
+                 // Ensure type is strictly 'private', 'group', or 'block'
+                 const finalType = blockForm.type === 'client' ? 'private' : blockForm.type;
+
                  batchOps.push({ 
-                     id, type: blockForm.type, date: dKey, time: slot, 
+                     id, type: finalType as any, date: dKey, time: slot, 
                      coachId: coach.id, coachName: coach.name, reason: blockForm.reason, 
-                     status: 'confirmed', customer: blockForm.type === 'client' ? blockForm.customer : null, 
+                     status: 'confirmed', customer: (finalType === 'private') ? blockForm.customer : null, 
                      createdAt: new Date().toISOString() 
                  });
              }
@@ -364,7 +388,7 @@ export default function App() {
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
-     if (target.type === 'client' || target.type === 'private') {
+     if (target.type === 'private' || target.type === 'client') { // Handle legacy 'client' type for deletion
          setConfirmModal({
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: (reason) => {
@@ -418,7 +442,11 @@ export default function App() {
   const handleAppointmentClick = (app: Appointment) => {
       if (!currentUser) return;
       if (currentUser.role === 'coach' && app.coachId !== currentUser.id) { showNotification('權限不足', 'info'); return; }
-      setBlockForm({ id: app.id, type: app.type, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
+      
+      // Clean up legacy types for form
+      const formType = (app.type === 'client' ? 'private' : app.type) as any;
+      
+      setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -503,11 +531,8 @@ export default function App() {
             a.date.startsWith(currentMonthPrefix)
         );
         
-        // Strict Separation Logic:
-        // Personal = 'client' (Frontend) OR 'private' (Admin)
-        // Group = 'group' (Admin)
-        // Block is excluded.
-        const personalCount = apps.filter(a => a.type === 'client' || a.type === 'private').length;
+        // Fix: Use new types for calculation. Handle legacy 'client' by treating as 'private'
+        const personalCount = apps.filter(a => a.type === 'private' || a.type === 'client').length;
         const groupCount = apps.filter(a => a.type === 'group').length;
 
         return {
@@ -669,6 +694,9 @@ export default function App() {
                   onToggleComplete={handleToggleComplete}
                />
             )}
+            // Inventory Props
+            inventories={inventories}
+            onUpdateInventory={handleUpdateInventory}
          />
       );
   };
@@ -780,8 +808,7 @@ export default function App() {
                                <label className="text-xs font-bold text-gray-500 uppercase">類型</label>
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => setBlockForm({...blockForm, type: e.target.value as any})}>
                                    <option value="block">內部事務 (Block)</option>
-                                   <option value="client">客戶預約 (Client)</option>
-                                   <option value="private">私人課程 (Private)</option>
+                                   <option value="private">私人課程 (1v1)</option>
                                    <option value="group">團體課程 (Group)</option>
                                </select>
                            </div>
@@ -866,7 +893,7 @@ export default function App() {
                                     onClick={() => setDeleteConfirm(true)} 
                                     className="flex-1 py-3 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-xl font-bold transition-colors"
                                 >
-                                    {blockForm.type === 'client' || blockForm.type === 'private' ? '取消預約' : '刪除'}
+                                    {blockForm.type === 'private' || blockForm.type === 'client' ? '取消預約' : '刪除'}
                                 </button>
                             )}
                             <button type="submit" className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-colors">
