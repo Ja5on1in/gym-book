@@ -336,7 +336,7 @@ export default function App() {
                 // Add phone to the new inventory
                 await saveToFirestore('user_inventory', newId, {
                     id: newId, lineUserId: newId, name: lineProfile.displayName,
-                    phone: formData.phone,
+                    phone: formData.phone || "", // Safe fallback
                     credits: { private: 0, group: 0 },
                     lastUpdated: new Date().toISOString()
                 });
@@ -350,12 +350,18 @@ export default function App() {
             type: 'private', 
             date: dateKey, time: selectedSlot, 
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
-            customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId || "", // FIX: Default to empty string
+            // Fix: ensure no undefined values in customer fields
+            customer: { 
+                name: formData.name, 
+                phone: formData.phone || "", 
+                email: formData.email || "" 
+            }, 
+            status: 'confirmed', createdAt: new Date().toISOString(),
+            lineUserId: lineProfile?.userId || "", // FIX: Default to empty string to prevent Firestore error
             lineName: lineProfile?.displayName || "" // FIX: Default to empty string
         };
         
-        // 1. Save to Database First
+        // 1. Save to Database First (Await this)
         await saveToFirestore('appointments', id, newApp);
         addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
         
@@ -369,6 +375,7 @@ export default function App() {
             type: 'private',
         };
         
+        // No await here
         sendToGoogleScript(webhookPayload).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
@@ -400,12 +407,12 @@ export default function App() {
       addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       const coach = coaches.find(c => c.id === app.coachId);
       
-      // Async webhook
+      // Async webhook - Fire and forget
       sendToGoogleScript({ 
           action: 'cancel_booking', 
           id: app.id, 
           reason, 
-          lineUserId: app.lineUserId,
+          lineUserId: app.lineUserId || "", // Ensure string
           coachName: app.coachName,
           title: coach?.title || '教練',
           date: app.date,
@@ -505,9 +512,15 @@ export default function App() {
                      coachName: coach.name, 
                      reason: blockForm.reason, 
                      status: 'confirmed', 
-                     customer: (finalType === 'private') ? blockForm.customer : null, 
+                     // Fix: Ensure customer fields are safe (undefined -> empty string)
+                     customer: (finalType === 'private' && blockForm.customer) ? {
+                         name: blockForm.customer.name,
+                         phone: blockForm.customer.phone || "",
+                         email: blockForm.customer.email || ""
+                     } : null,
                      createdAt: new Date().toISOString(),
-                     lineUserId: targetInventory?.lineUserId || "" // FIX: Default to empty string
+                     // Fix: Ensure lineUserId is not undefined
+                     lineUserId: targetInventory?.lineUserId || ""
                  });
              }
         }
