@@ -235,7 +235,9 @@ export default function App() {
         const fd = new FormData();
         fd.append('data', JSON.stringify(data));
         fd.append('timestamp', new Date().toISOString());
-        await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: fd });
+        // Non-blocking fetch
+        fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: fd })
+            .catch(e => console.warn("Webhook background error:", e));
     } catch (e) { 
         console.error("Webhook Error (Non-blocking):", e); 
     }
@@ -349,14 +351,15 @@ export default function App() {
             date: dateKey, time: selectedSlot, 
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
             customer: { ...formData }, status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId, 
-            lineName: lineProfile?.displayName 
+            lineUserId: lineProfile?.userId || "", // FIX: Default to empty string
+            lineName: lineProfile?.displayName || "" // FIX: Default to empty string
         };
         
+        // 1. Save to Database First
         await saveToFirestore('appointments', id, newApp);
         addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
         
-        // Execute Webhook (Fire and forget, guaranteed non-blocking)
+        // 2. Execute Webhook (Fire and forget, guaranteed non-blocking AFTER DB save)
         const webhookPayload = {
             action: 'create_booking',
             ...newApp,
@@ -504,7 +507,7 @@ export default function App() {
                      status: 'confirmed', 
                      customer: (finalType === 'private') ? blockForm.customer : null, 
                      createdAt: new Date().toISOString(),
-                     lineUserId: targetInventory?.lineUserId 
+                     lineUserId: targetInventory?.lineUserId || "" // FIX: Default to empty string
                  });
              }
         }
