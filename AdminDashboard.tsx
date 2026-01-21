@@ -1,3 +1,4 @@
+
 import React, { useRef, useState } from 'react';
 import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers } from 'lucide-react';
 import { User, Appointment, Coach, Log } from '../types';
@@ -211,7 +212,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     </div>
                     <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
                         <span>{coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除教練)'}</span>
-                        <span className="font-medium text-indigo-600 dark:text-indigo-400">{app.type==='client' ? app?.customer?.name : app.reason}</span>
+                        <span className="font-medium text-indigo-600 dark:text-indigo-400">{(app.type as string) ==='client' ? app?.customer?.name : app.reason}</span>
                     </div>
                   </div>
                </div>

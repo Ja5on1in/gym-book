@@ -82,7 +82,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             
                             // Determine display text: Prefer customer name for private/client bookings
-                            const displayText = (app.type === 'private' || app.type === 'client') 
+                            const displayText = (app.type === 'private' || (app.type as string) === 'client') 
                               ? (app.customer?.name || app.reason || '私人課') 
                               : (app.reason || '預約');
 
