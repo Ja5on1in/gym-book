@@ -348,6 +348,23 @@ export default function App() {
   const handleCustomerCancel = async (app: Appointment, reason: string) => {
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
+      
+      // --- Refund Logic (Client Side) ---
+      // If appointment type is private/client AND has a lineUserId, refund 1 point.
+      if (app.lineUserId && (app.type === 'private' || app.type === 'client')) {
+          const inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+          if (inventory) {
+              const newCredits = inventory.credits.private + 1;
+              await saveToFirestore('user_inventory', inventory.id, {
+                  ...inventory,
+                  credits: { ...inventory.credits, private: newCredits },
+                  lastUpdated: new Date().toISOString()
+              });
+              addLog('系統補點', `學員 ${inventory.name} 取消預約，退還 1 點 (剩餘: ${newCredits})`);
+          }
+      }
+      // ----------------------------------
+
       addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       
       const coach = coaches.find(c => c.id === app.coachId);
@@ -431,9 +448,26 @@ export default function App() {
      if (target.type === 'private' || target.type === 'client') { // Handle legacy 'client' type for deletion
          setConfirmModal({
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
-             onConfirm: (reason) => {
+             onConfirm: async (reason) => {
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
-                 saveToFirestore('appointments', target.id, updated);
+                 await saveToFirestore('appointments', target.id, updated);
+                 
+                 // --- Refund Logic (Admin Side) ---
+                 // If Admin cancels a paid booking, refund 1 point.
+                 if (target.lineUserId && (target.type === 'private' || target.type === 'client')) {
+                    const inventory = inventories.find(i => i.lineUserId === target.lineUserId);
+                    if (inventory) {
+                        const newCredits = inventory.credits.private + 1;
+                        await saveToFirestore('user_inventory', inventory.id, {
+                            ...inventory,
+                            credits: { ...inventory.credits, private: newCredits },
+                            lastUpdated: new Date().toISOString()
+                        });
+                        addLog('系統補點', `管理員取消預約，退還 1 點給 ${inventory.name}`);
+                    }
+                 }
+                 // ---------------------------------
+
                  addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
                  sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason });
                  showNotification('已取消', 'info');
@@ -764,6 +798,11 @@ export default function App() {
               </span>
             </div>
             <div className="flex items-center gap-4">
+               {/* Desktop My Bookings Button */}
+               <button onClick={() => setView('my-bookings')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
+                  <UserIcon size={18}/> 我的預約
+               </button>
+
                {dbStatus !== 'connected' && (
                    <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-full animate-pulse">
                       <AlertTriangle size={12}/> {dbStatus === 'connecting' ? '連線中...' : '離線模式'}

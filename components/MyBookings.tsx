@@ -10,7 +10,6 @@ interface MyBookingsProps {
 }
 
 const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel }) => {
-  const [cancelReason, setCancelReason] = useState('');
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
 
   if (!liffProfile) {
@@ -94,18 +93,11 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <AlertTriangle size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">取消預約確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-4">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？</p>
-                 
-                 <textarea 
-                    className="w-full glass-input p-3 rounded-xl mb-4 h-24 dark:text-white text-sm" 
-                    placeholder="請輸入取消原因..." 
-                    value={cancelReason} 
-                    onChange={e => setCancelReason(e.target.value)}
-                 ></textarea>
+                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？</p>
                  
                  <div className="flex gap-3">
-                     <button onClick={() => { setSelectedApp(null); setCancelReason(''); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
-                     <button onClick={() => { onCancel(selectedApp, cancelReason || '用戶自行取消'); setSelectedApp(null); setCancelReason(''); }} 
+                     <button onClick={() => { setSelectedApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
+                     <button onClick={() => { onCancel(selectedApp, '用戶自行取消'); setSelectedApp(null); }} 
                         className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">
                         確認取消
                      </button>
