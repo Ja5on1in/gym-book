@@ -29,7 +29,7 @@ export interface Service {
 
 export interface Appointment {
   id: string;
-  type: 'private' | 'group' | 'block' | 'client'; // Cleaned up: Removed 'client', strictly use private/group. 'client' restored for legacy.
+  type: 'private' | 'group' | 'block'; // 'client' is deprecated, normalized to 'private' in logic
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   coachId: string;
@@ -65,14 +65,14 @@ export interface Log {
 
 export interface SlotStatus {
   status: 'available' | 'booked' | 'unavailable';
-  type?: 'private' | 'group' | 'block' | 'off' | 'client';
+  type?: 'private' | 'group' | 'block' | 'off';
   reason?: string;
   record?: Appointment;
 }
 
 export interface BlockFormState {
   id: string | null;
-  type: 'block' | 'private' | 'group' | 'client'; // Cleaned up types
+  type: 'block' | 'private' | 'group'; // Normalized inputs
   coachId: string;
   date: string;
   time: string;

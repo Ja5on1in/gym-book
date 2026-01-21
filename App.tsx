@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -147,7 +146,7 @@ export default function App() {
               
               // Retry mechanism: If profile doesn't exist yet (race condition with creation), wait and try once more
               if (!userProfile) {
-                  await new Promise(resolve => setTimeout(resolve, 1500));
+                  await new Promise(resolve => setTimeout(resolve, 2000));
                   userProfile = await getUserProfile(firebaseUser.uid);
               }
 
@@ -165,8 +164,9 @@ export default function App() {
                   }
               } else {
                   console.warn("User has no profile in DB after retry");
+                  // Fallback: If logged in via Firebase but no profile, show error
                   // Do not force logout immediately to allow manual refresh if needed, but show error
-                  showNotification("無法取得使用者權限，請重新登入或聯繫管理員", "error");
+                  showNotification("無法取得使用者權限，請確認帳號是否已建立", "error");
                   setCurrentUser(null);
               }
           } else {
@@ -230,13 +230,14 @@ export default function App() {
 
   const sendToGoogleScript = async (data: any) => {
     if (!GOOGLE_SCRIPT_URL) return;
-    // We swallow errors here so UI doesn't break if Webhook fails
     try {
         const fd = new FormData();
         fd.append('data', JSON.stringify(data));
         fd.append('timestamp', new Date().toISOString());
         await fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: fd });
-    } catch (e) { console.error("Webhook Error (Non-blocking):", e); }
+    } catch (e) { 
+        console.error("Webhook Error (Non-blocking):", e); 
+    }
   };
 
   const handleEmailLogin = async (e: React.FormEvent) => {
@@ -297,7 +298,6 @@ export default function App() {
         showNotification('該時段已被預約', 'error'); setBookingStep(3); return; 
     }
 
-    // Wrap critical DB operations in try-catch to prevent UI freeze
     try {
         let inventory = null;
 
@@ -341,7 +341,7 @@ export default function App() {
         }
 
         const id = Date.now().toString();
-        // Force type to 'private' for client bookings
+        // Force type to 'private' always
         const newApp: Appointment = { 
             id, 
             type: 'private', 
@@ -355,7 +355,7 @@ export default function App() {
         await saveToFirestore('appointments', id, newApp);
         addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(LINE)' : ''}`);
         
-        // Execute Webhook (Fire and forget, or non-blocking)
+        // Execute Webhook (Fire and forget, guaranteed non-blocking)
         const webhookPayload = {
             action: 'create_booking',
             ...newApp,
@@ -365,8 +365,7 @@ export default function App() {
             type: 'private',
         };
         
-        // Don't await strictly for UI transition
-        sendToGoogleScript(webhookPayload);
+        sendToGoogleScript(webhookPayload).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
         showNotification('預約成功！', 'success');
@@ -381,7 +380,7 @@ export default function App() {
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
       
-      if (app.lineUserId && (app.type === 'private' || app.type === 'client')) {
+      if (app.lineUserId && (app.type === 'private')) {
           const inventory = inventories.find(i => i.lineUserId === app.lineUserId);
           if (inventory) {
               const newCredits = inventory.credits.private + 1;
@@ -396,6 +395,8 @@ export default function App() {
 
       addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       const coach = coaches.find(c => c.id === app.coachId);
+      
+      // Async webhook
       sendToGoogleScript({ 
           action: 'cancel_booking', 
           id: app.id, 
@@ -405,7 +406,8 @@ export default function App() {
           title: coach?.title || '教練',
           date: app.date,
           time: app.time
-      });
+      }).catch(e => console.warn("Cancel webhook failed", e));
+      
       showNotification('已取消預約', 'info');
   };
 
@@ -420,13 +422,19 @@ export default function App() {
     const coach = coaches.find(c => c.id === (currentUser.role === 'manager' ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
+    // Normalize Type: Map any legacy 'client' type to 'private'
+    const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
+    const isPrivate = finalType === 'private';
+    
     let targetInventory = null;
-    const isPrivate = blockForm.type === 'private' || blockForm.type === 'client';
 
     // 1. Check Inventory & Points
     if (isPrivate && blockForm.customer?.name) {
-        // Try matching by name or phone
-        targetInventory = inventories.find(i => i.name === blockForm.customer?.name);
+        // Try matching by name OR phone (more robust logic)
+        targetInventory = inventories.find(i => 
+            i.name === blockForm.customer?.name || 
+            (blockForm.customer?.phone && i.phone === blockForm.customer.phone)
+        );
         
         // If logic is strict about deduction
         if (targetInventory) {
@@ -441,7 +449,7 @@ export default function App() {
                  return;
              }
              
-             // Deduct Logic (Only if strictly private/client)
+             // Deduct Logic
              if (targetInventory.credits.private > 0) {
                  const newCredits = targetInventory.credits.private - 1;
                  await saveToFirestore('user_inventory', targetInventory.id, {
@@ -481,11 +489,9 @@ export default function App() {
              
              if (status.status === 'available') {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
-                 const id = isEditSingle ? blockForm.id! : `${Date.now()}-${i}-${slot.replace(':','')}`;
+                 // FIX: Use random string to prevent ID collisions in high-speed loops
+                 const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  
-                 // Normalize Type
-                 const finalType = (blockForm.type === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
-
                  batchOps.push({ 
                      id, 
                      type: finalType as any, 
@@ -522,7 +528,9 @@ export default function App() {
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
-     if (target.type === 'private' || target.type === 'client') { 
+     const isPrivate = target.type === 'private' || (target.type as string) === 'client'; // Legacy check
+
+     if (isPrivate) { 
          setConfirmModal({
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
@@ -532,7 +540,7 @@ export default function App() {
                  // Restore Points
                  let inv = null;
                  if (target.lineUserId) inv = inventories.find(i => i.lineUserId === target.lineUserId);
-                 if (!inv && target.customer?.name) inv = inventories.find(i => i.name === target.customer?.name); // Fallback to Name match
+                 if (!inv && target.customer?.name) inv = inventories.find(i => i.name === target.customer?.name); 
 
                  if (inv) {
                      const newCredits = inv.credits.private + 1;
@@ -545,7 +553,10 @@ export default function App() {
                  }
                  
                  addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
-                 sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason });
+                 
+                 // Async webhook
+                 sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
+                 
                  showNotification('已取消', 'info');
                  setIsBlockModalOpen(false);
              }
@@ -593,7 +604,7 @@ export default function App() {
       if (!currentUser) return;
       if (currentUser.role === 'coach' && app.coachId !== currentUser.id) { showNotification('權限不足', 'info'); return; }
       
-      const formType = (app.type === 'client' ? 'private' : app.type) as any;
+      const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
       setDeleteConfirm(false); 
       setIsBatchMode(false);
@@ -692,7 +703,8 @@ export default function App() {
             a.date.startsWith(currentMonthPrefix)
         );
         
-        const personalCount = apps.filter(a => a.type === 'private' || a.type === 'client').length;
+        // Normalize type check here as well
+        const personalCount = apps.filter(a => a.type === 'private' || (a.type as string) === 'client').length;
         const groupCount = apps.filter(a => a.type === 'group').length;
 
         return {
@@ -1027,12 +1039,13 @@ export default function App() {
                             </div>
                         ) : (
                             <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800">
-                                {blockForm.type === 'private' || blockForm.type === 'client' ? (
+                                <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
+                                {blockForm.type === 'private' ? (
                                     <>
                                         <div>
-                                            <label className="text-xs font-bold text-indigo-500 uppercase">選擇學員 (庫存連動)</label>
+                                            <label className="text-xs text-gray-500 mb-1 block">搜尋庫存學員 (自動帶入)</label>
                                             <select 
-                                                className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white"
+                                                className="w-full glass-input rounded-lg p-2 dark:text-white"
                                                 value={blockForm.customer?.name || ''}
                                                 onChange={(e) => {
                                                     const selectedInv = inventories.find(inv => inv.name === e.target.value);
@@ -1046,6 +1059,7 @@ export default function App() {
                                                             }
                                                         });
                                                     } else {
+                                                        // Manual entry fallback
                                                         setBlockForm({
                                                             ...blockForm,
                                                             customer: { ...blockForm.customer!, name: e.target.value }
@@ -1053,7 +1067,7 @@ export default function App() {
                                                     }
                                                 }}
                                             >
-                                                <option value="">-- 請選擇 --</option>
+                                                <option value="">-- 請選擇 (或直接輸入) --</option>
                                                 {inventories.map(inv => (
                                                     <option key={inv.id} value={inv.name}>
                                                         {inv.name} (餘課: {inv.credits.private})
@@ -1062,14 +1076,14 @@ export default function App() {
                                             </select>
                                         </div>
                                     </>
-                                ) : (
-                                     <div>
-                                        <label className="text-xs font-bold text-indigo-500 uppercase">客戶姓名</label>
-                                        <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
-                                    </div>
-                                )}
+                                ) : null}
+                                
                                 <div>
-                                    <label className="text-xs font-bold text-indigo-500 uppercase">聯絡電話</label>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">客戶姓名</label>
+                                    <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
+                                </div>
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase">聯絡電話</label>
                                     <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.phone || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, phone: e.target.value }})} />
                                 </div>
                             </div>
@@ -1094,7 +1108,7 @@ export default function App() {
                                     onClick={() => setDeleteConfirm(true)} 
                                     className="flex-1 py-3 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-xl font-bold transition-colors"
                                 >
-                                    {blockForm.type === 'private' || blockForm.type === 'client' ? '取消預約' : '刪除'}
+                                    {blockForm.type === 'private' ? '取消預約' : '刪除'}
                                 </button>
                             )}
                             <button type="submit" className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-colors">
