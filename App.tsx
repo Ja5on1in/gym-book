@@ -13,12 +13,9 @@ import {
   Repeat,
   Key,
   Database,
-  Mail,
   Lock as LockIcon,
   Layers,
-  ArrowRight,
   User as UserIcon,
-  List
 } from 'lucide-react';
 
 import { 
@@ -269,11 +266,17 @@ export default function App() {
 
   // Inventory Management Actions
   const handleUpdateInventory = async (inventory: UserInventory) => {
+      // Find old inventory for logging
+      const oldInv = inventories.find(i => i.id === inventory.id);
+      const oldPrivate = oldInv ? oldInv.credits.private : '?';
+      const oldGroup = oldInv ? oldInv.credits.group : '?';
+
       await saveToFirestore('user_inventory', inventory.id, {
           ...inventory,
           lastUpdated: new Date().toISOString()
       });
-      addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${inventory.credits.private}, 團課: ${inventory.credits.group}`);
+
+      addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${oldPrivate} -> ${inventory.credits.private}, 團課: ${oldGroup} -> ${inventory.credits.group}`);
       showNotification('學員點數已更新', 'success');
   };
 
@@ -431,8 +434,19 @@ export default function App() {
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
       
-      if (app.lineUserId && (app.type === 'private')) {
-          const inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+      // Robust Refund Logic
+      if (app.type === 'private' || (app.type as string) === 'client') {
+          let inventory = null;
+          // 1. Try LINE ID
+          if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+          // 2. Try Customer Name/Phone
+          if (!inventory && app.customer?.name) {
+              inventory = inventories.find(i => 
+                  i.name === app.customer?.name || 
+                  (app.customer?.phone && i.phone === app.customer.phone)
+              );
+          }
+
           if (inventory) {
               const newCredits = inventory.credits.private + 1;
               await saveToFirestore('user_inventory', inventory.id, {
@@ -602,7 +616,7 @@ export default function App() {
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
-     const isPrivate = target.type === 'private' || (target.type as string) === 'client'; // Legacy check
+     const isPrivate = target.type === 'private' || (target.type as string) === 'client'; 
 
      if (isPrivate) { 
          setConfirmModal({
@@ -611,10 +625,15 @@ export default function App() {
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
                  await saveToFirestore('appointments', target.id, updated);
                  
-                 // Restore Points
+                 // Restore Points with Robust Logic
                  let inv = null;
                  if (target.lineUserId) inv = inventories.find(i => i.lineUserId === target.lineUserId);
-                 if (!inv && target.customer?.name) inv = inventories.find(i => i.name === target.customer?.name); 
+                 if (!inv && target.customer?.name) {
+                     inv = inventories.find(i => 
+                        i.name === target.customer?.name || 
+                        (target.customer?.phone && i.phone === target.customer.phone)
+                     ); 
+                 }
 
                  if (inv) {
                      const newCredits = inv.credits.private + 1;
@@ -923,10 +942,42 @@ export default function App() {
             selectedBatch={selectedBatch}
             toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
             handleBatchDelete={async () => {
-                if(!window.confirm(`刪除 ${selectedBatch.size} 筆?`)) return;
-                await Promise.all(Array.from(selectedBatch).map((id: string) => deleteFromFirestore('appointments', id)));
+                if(!window.confirm(`確定取消選取的 ${selectedBatch.size} 筆預約嗎？\n(私人課程將自動退還點數)`)) return;
+                
+                let refundedCount = 0;
+                await Promise.all(Array.from(selectedBatch).map(async (id: string) => {
+                    const app = appointments.find(a => a.id === id);
+                    if (!app) return;
+
+                    // 1. Update status
+                    await saveToFirestore('appointments', id, { ...app, status: 'cancelled', cancelReason: '管理員批次取消' });
+
+                    // 2. Refund Logic
+                    if ((app.type === 'private' || (app.type as string) === 'client') && app.status !== 'cancelled') {
+                        let inv = null;
+                        if (app.lineUserId) inv = inventories.find(i => i.lineUserId === app.lineUserId);
+                        if (!inv && app.customer?.name) {
+                            inv = inventories.find(i => 
+                                i.name === app.customer?.name || 
+                                (app.customer?.phone && i.phone === app.customer.phone)
+                            );
+                        }
+
+                        if (inv) {
+                            const newCredits = inv.credits.private + 1;
+                            await saveToFirestore('user_inventory', inv.id, {
+                                ...inv,
+                                credits: { ...inv.credits, private: newCredits },
+                                lastUpdated: new Date().toISOString()
+                            });
+                            refundedCount++;
+                        }
+                    }
+                }));
+                
+                addLog('批次取消', `取消 ${selectedBatch.size} 筆預約，共退還 ${refundedCount} 筆點數`);
                 setSelectedBatch(new Set());
-                showNotification('批量刪除成功', 'success');
+                showNotification(`成功取消 ${selectedBatch.size} 筆，退還 ${refundedCount} 點`, 'success');
             }}
             onOpenBatchBlock={handleOpenBatchBlock}
             renderWeeklyCalendar={() => (

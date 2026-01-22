@@ -1,6 +1,6 @@
 
-import React, { useRef, useState, useEffect } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, Search, MessageSquare, CreditCard, Save } from 'lucide-react';
+import React, { useRef, useState } from 'react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertCircle } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import WeeklyCalendar from './WeeklyCalendar';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
@@ -56,6 +56,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingInventory, setEditingInventory] = useState<Partial<UserInventory>>({});
+  const [isLineIdLocked, setIsLineIdLocked] = useState(true);
 
   const filteredApps = appointments.filter(a => currentUser.role==='manager' || a.coachId === currentUser.id);
 
@@ -141,6 +142,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleOpenInventoryModal = (inv?: UserInventory) => {
       if (inv) {
           setEditingInventory({ ...inv });
+          setIsLineIdLocked(!!inv.lineUserId); // Lock if ID exists
       } else {
           setEditingInventory({
               name: '',
@@ -149,6 +151,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
               lineUserId: '',
               credits: { private: 0, group: 0 }
           });
+          setIsLineIdLocked(false);
       }
       setIsInventoryModalOpen(true);
   };
@@ -157,12 +160,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       e.preventDefault();
       if (!editingInventory.name) return;
       
-      // Construct a valid object with guaranteed defaults
       const inventoryToSave = {
           ...editingInventory,
           credits: {
-              private: editingInventory.credits?.private || 0,
-              group: editingInventory.credits?.group || 0
+              private: Number(editingInventory.credits?.private || 0),
+              group: Number(editingInventory.credits?.group || 0)
           }
       } as UserInventory;
 
@@ -170,6 +172,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setIsInventoryModalOpen(false);
   };
 
+  // Filter Logic
   const filteredInventories = inventories.filter(i => 
       i.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       (i.phone && i.phone.includes(searchQuery)) ||
@@ -208,7 +211,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
        {adminTab === 'calendar' && (
          <>
-            {/* Batch Block Button */}
             <div className="flex justify-end mb-4 animate-fadeIn">
                  <button onClick={onOpenBatchBlock} className="flex items-center gap-2 bg-gray-800 text-white dark:bg-white dark:text-gray-900 px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity">
                      <Layers size={16}/> 批次封鎖時段
@@ -218,106 +220,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          </>
        )}
        
-       {adminTab === 'inventory' && (
-           <div className="glass-panel rounded-3xl shadow-lg p-6">
-               <div className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-                   <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 學員庫存管理</h3>
-                   <div className="flex gap-2 w-full md:w-auto">
-                       <div className="relative flex-1 md:w-64">
-                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16}/>
-                           <input 
-                               type="text" 
-                               placeholder="搜尋姓名/電話..." 
-                               className="w-full glass-input pl-10 pr-4 py-2 rounded-xl text-sm"
-                               value={searchQuery}
-                               onChange={(e) => setSearchQuery(e.target.value)}
-                           />
-                       </div>
-                       <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all whitespace-nowrap">
-                           <Plus size={16}/> 新增學員
-                       </button>
-                   </div>
-               </div>
-
-               <div className="overflow-x-auto custom-scrollbar rounded-xl border border-gray-100 dark:border-gray-700">
-                   <table className="w-full text-sm text-left">
-                       <thead className="text-xs text-gray-500 uppercase bg-gray-50/50 dark:bg-gray-800/50">
-                           <tr>
-                               <th className="px-6 py-3">學員姓名</th>
-                               <th className="px-6 py-3">聯絡資訊</th>
-                               <th className="px-6 py-3">LINE 連結</th>
-                               <th className="px-6 py-3 text-center">1v1 剩餘</th>
-                               <th className="px-6 py-3 text-center">團課 剩餘</th>
-                               <th className="px-6 py-3 text-right">操作</th>
-                           </tr>
-                       </thead>
-                       <tbody>
-                           {filteredInventories.map(inv => (
-                               <tr key={inv.id} className="bg-white/50 dark:bg-gray-900/30 border-b border-gray-100 dark:border-gray-800 hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 transition-colors">
-                                   <td className="px-6 py-4 font-bold text-gray-800 dark:text-white">
-                                       {inv.name}
-                                   </td>
-                                   <td className="px-6 py-4">
-                                       <div className="flex flex-col text-xs text-gray-500">
-                                           {inv.phone && <span>{inv.phone}</span>}
-                                           {inv.email && <span>{inv.email}</span>}
-                                       </div>
-                                   </td>
-                                   <td className="px-6 py-4">
-                                       {inv.lineUserId ? (
-                                           <span className="flex items-center gap-1 text-green-600 dark:text-green-400 text-xs font-bold bg-green-50 dark:bg-green-900/20 px-2 py-1 rounded w-fit">
-                                               <MessageSquare size={12}/> 已連結
-                                           </span>
-                                       ) : (
-                                           <span className="text-gray-400 text-xs">未連結</span>
-                                       )}
-                                   </td>
-                                   <td className="px-6 py-4 text-center">
-                                       <span className={`font-bold text-lg ${inv.credits.private > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
-                                           {inv.credits.private}
-                                       </span>
-                                   </td>
-                                   <td className="px-6 py-4 text-center">
-                                       <span className={`font-bold text-lg ${inv.credits.group > 0 ? 'text-purple-600 dark:text-purple-400' : 'text-gray-400'}`}>
-                                           {inv.credits.group}
-                                       </span>
-                                   </td>
-                                   <td className="px-6 py-4 text-right">
-                                       <div className="flex justify-end gap-2">
-                                           <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors">
-                                               <Edit2 size={16}/>
-                                           </button>
-                                           <button 
-                                              onClick={() => { if(window.confirm('確定刪除此學員資料？')) onDeleteInventory(inv.id); }} 
-                                              className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"
-                                           >
-                                               <Trash2 size={16}/>
-                                           </button>
-                                       </div>
-                                   </td>
-                               </tr>
-                           ))}
-                           {filteredInventories.length === 0 && (
-                               <tr>
-                                   <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
-                                       沒有找到符合的學員資料
-                                   </td>
-                               </tr>
-                           )}
-                       </tbody>
-                   </table>
-               </div>
-           </div>
-       )}
-
-       {/* ... (Previous Tabs: appointments, analysis, staff, settings, logs) ... */}
        {adminTab === 'appointments' && (
          <div className="glass-panel rounded-3xl shadow-lg p-6">
            <div className="flex justify-between mb-6">
              <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
              {selectedBatch.size > 0 && (
                <button onClick={handleBatchDelete} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn">
-                 <Trash2 size={16}/> 刪除選取 ({selectedBatch.size})
+                 <Trash2 size={16}/> 取消預約 (退點) ({selectedBatch.size})
                </button>
              )}
            </div>
@@ -360,6 +269,72 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
              ))}
            </div>
          </div>
+       )}
+
+       {adminTab === 'inventory' && (
+          <div className="glass-panel rounded-3xl shadow-lg p-6">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                  <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 庫存管理</h3>
+                  <div className="flex gap-2 w-full md:w-auto">
+                      <div className="relative flex-1 md:flex-initial">
+                          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                          <input 
+                              type="text" 
+                              placeholder="搜尋姓名、電話或 ID..." 
+                              className="pl-10 pr-4 py-2 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl w-full md:w-64 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white"
+                              value={searchQuery}
+                              onChange={e => setSearchQuery(e.target.value)}
+                          />
+                      </div>
+                      <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all flex items-center gap-2 whitespace-nowrap">
+                          <Plus size={16}/> 新增學員
+                      </button>
+                  </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredInventories.length === 0 ? (
+                      <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50/50 dark:bg-gray-800/30 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                          <UserIcon size={48} className="mx-auto mb-4 opacity-50"/>
+                          <p className="font-medium">找不到符合的學員資料</p>
+                          <button onClick={() => handleOpenInventoryModal()} className="mt-4 text-indigo-500 font-bold hover:underline">新增一筆？</button>
+                      </div>
+                  ) : (
+                      filteredInventories.map(inv => (
+                          <div key={inv.id} className="glass-card p-5 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all group">
+                              <div className="flex justify-between items-start mb-3">
+                                  <div>
+                                      <h4 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                                          {inv.name}
+                                          {inv.lineUserId ? <span className="w-2 h-2 rounded-full bg-[#06C755]" title="已綁定 LINE"></span> : <span className="w-2 h-2 rounded-full bg-gray-300" title="未綁定 LINE"></span>}
+                                      </h4>
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">{inv.phone || '無電話'}</p>
+                                  </div>
+                                  <div className="flex gap-1">
+                                      <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                      <button onClick={() => { if(window.confirm(`確定刪除 ${inv.name} 嗎？此動作無法復原。`)) onDeleteInventory(inv.id) }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                  </div>
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-2 mb-3">
+                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-2 rounded-xl text-center">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">私人課</div>
+                                      <div className={`font-bold text-lg ${inv.credits.private > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>{inv.credits.private}</div>
+                                  </div>
+                                  <div className="bg-orange-50 dark:bg-orange-900/20 p-2 rounded-xl text-center">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">團課</div>
+                                      <div className={`font-bold text-lg ${inv.credits.group > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400'}`}>{inv.credits.group}</div>
+                                  </div>
+                              </div>
+
+                              <div className="text-[10px] text-gray-400 text-right">
+                                  更新於: {new Date(inv.lastUpdated).toLocaleDateString()}
+                              </div>
+                          </div>
+                      ))
+                  )}
+              </div>
+          </div>
        )}
 
        {adminTab === 'analysis' && (
@@ -642,95 +617,107 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
        {/* Inventory Edit Modal */}
        {isInventoryModalOpen && (
-           <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
+           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
                <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
                    <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                       <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard size={20}/> 編輯學員資料</h3>
+                       <h3 className="font-bold text-xl dark:text-white">{editingInventory.id ? '編輯學員資料' : '新增學員資料'}</h3>
                        <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-gray-500"/></button>
                    </div>
                    <form onSubmit={handleSubmitInventory} className="p-6 space-y-4">
                        <div>
                            <label className="text-xs font-bold text-gray-500 uppercase">學員姓名</label>
                            <input 
-                               type="text" 
-                               required 
+                               type="text" required 
                                value={editingInventory.name || ''} 
                                onChange={e => setEditingInventory({...editingInventory, name: e.target.value})} 
                                className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
                                placeholder="請輸入姓名"
                            />
                        </div>
+                       
                        <div className="grid grid-cols-2 gap-4">
                            <div>
                                <label className="text-xs font-bold text-gray-500 uppercase">電話</label>
                                <input 
-                                   type="text" 
+                                   type="tel" 
                                    value={editingInventory.phone || ''} 
                                    onChange={e => setEditingInventory({...editingInventory, phone: e.target.value})} 
                                    className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
-                                   placeholder="09xx-xxx-xxx"
+                                   placeholder="0912-345-678"
                                />
                            </div>
                            <div>
-                               <label className="text-xs font-bold text-gray-500 uppercase">Email (選填)</label>
+                               <label className="text-xs font-bold text-gray-500 uppercase">Email</label>
                                <input 
                                    type="email" 
                                    value={editingInventory.email || ''} 
                                    onChange={e => setEditingInventory({...editingInventory, email: e.target.value})} 
                                    className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
-                                   placeholder="user@example.com"
+                                   placeholder="選填"
                                />
                            </div>
                        </div>
-                       <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
-                               <MessageSquare size={12}/> LINE User ID (手動連結)
-                           </label>
-                           <input 
-                               type="text" 
-                               value={editingInventory.lineUserId || ''} 
-                               onChange={e => setEditingInventory({...editingInventory, lineUserId: e.target.value})} 
-                               className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white font-mono text-sm"
-                               placeholder="Uxxxxxxxxxxxxxxxx..."
-                           />
-                           <p className="text-[10px] text-gray-400 mt-1">
-                               * 若知道學員的 LINE ID 可在此貼上，系統將自動連結預約記錄。
-                           </p>
-                       </div>
-                       
-                       <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800">
-                           <div className="text-xs font-bold text-indigo-500 uppercase">點數庫存設定</div>
+
+                       <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                           <label className="text-xs font-bold text-indigo-500 uppercase flex items-center gap-1 mb-3"><CreditCard size={12}/> 點數管理</label>
                            <div className="grid grid-cols-2 gap-4">
                                <div>
-                                   <label className="text-xs font-bold text-gray-500 uppercase">1v1 私人課</label>
+                                   <label className="text-xs text-gray-500 block mb-1">私人課 (堂)</label>
                                    <input 
-                                       type="number" 
-                                       min="0"
-                                       value={editingInventory.credits?.private ?? 0} 
-                                       onChange={e => setEditingInventory({
-                                           ...editingInventory, 
-                                           credits: { ...editingInventory.credits!, private: parseInt(e.target.value) || 0 }
-                                       })} 
-                                       className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white text-center font-bold"
+                                       type="number" min="0"
+                                       value={editingInventory.credits?.private || 0} 
+                                       onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits!, private: parseInt(e.target.value) || 0 }})} 
+                                       className="w-full glass-input rounded-lg p-2 text-center font-bold text-lg dark:text-white"
                                    />
                                </div>
                                <div>
-                                   <label className="text-xs font-bold text-gray-500 uppercase">團體課程</label>
+                                   <label className="text-xs text-gray-500 block mb-1">團課 (堂)</label>
                                    <input 
-                                       type="number" 
-                                       min="0"
-                                       value={editingInventory.credits?.group ?? 0} 
-                                       onChange={e => setEditingInventory({
-                                           ...editingInventory, 
-                                           credits: { ...editingInventory.credits!, group: parseInt(e.target.value) || 0 }
-                                       })} 
-                                       className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white text-center font-bold"
+                                       type="number" min="0"
+                                       value={editingInventory.credits?.group || 0} 
+                                       onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits!, group: parseInt(e.target.value) || 0 }})} 
+                                       className="w-full glass-input rounded-lg p-2 text-center font-bold text-lg dark:text-white"
                                    />
                                </div>
                            </div>
                        </div>
 
-                       <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-2 flex items-center justify-center gap-2">
+                       <div className="pt-2">
+                           <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1">LINE User ID (系統綁定)</label>
+                           <div className="flex gap-2">
+                               <input 
+                                   type="text" 
+                                   value={editingInventory.lineUserId || ''} 
+                                   onChange={e => setEditingInventory({...editingInventory, lineUserId: e.target.value})} 
+                                   className={`w-full glass-input rounded-xl p-3 dark:text-white ${isLineIdLocked ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : ''}`}
+                                   placeholder="尚未綁定"
+                                   readOnly={isLineIdLocked}
+                               />
+                               {editingInventory.lineUserId && (
+                                   <button 
+                                       type="button" 
+                                       onClick={() => {
+                                           if (isLineIdLocked) {
+                                               if (window.confirm('修改 LINE ID 可能導致用戶無法正常預約，確定要解鎖嗎？')) {
+                                                   setIsLineIdLocked(false);
+                                               }
+                                           } else {
+                                               setIsLineIdLocked(true);
+                                           }
+                                       }} 
+                                       className={`p-3 rounded-xl transition-colors ${isLineIdLocked ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300' : 'bg-red-100 text-red-500 hover:bg-red-200'}`}
+                                       title={isLineIdLocked ? "點擊解鎖" : "點擊鎖定"}
+                                   >
+                                       {isLineIdLocked ? <Lock size={20}/> : <Unlock size={20}/>}
+                                   </button>
+                               )}
+                           </div>
+                           {isLineIdLocked && editingInventory.lineUserId && (
+                               <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1"><Lock size={10}/> 此欄位已鎖定以保護連結</p>
+                           )}
+                       </div>
+
+                       <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 mt-4">
                            <Save size={18}/> 儲存資料
                        </button>
                    </form>
