@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -362,6 +361,15 @@ export default function App() {
                     }
                 }
             }
+
+            // --- STRICT CREDIT CHECK ---
+            if (inventory) {
+                 if (inventory.credits.private <= 0) {
+                     showNotification('您的課程點數不足，請聯繫管理員續課', 'error');
+                     return;
+                 }
+            }
+            // ---------------------------
 
             if (inventory) {
                 const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
@@ -1190,7 +1198,11 @@ export default function App() {
                                                         // Manual entry fallback
                                                         setBlockForm({
                                                             ...blockForm,
-                                                            customer: { ...blockForm.customer!, name: e.target.value }
+                                                            customer: { 
+                                                                name: e.target.value,
+                                                                phone: blockForm.customer?.phone || '',
+                                                                email: blockForm.customer?.email || ''
+                                                            }
                                                         });
                                                     }
                                                 }}
