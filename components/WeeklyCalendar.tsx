@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2 } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime } from '../utils';
@@ -14,21 +14,31 @@ interface WeeklyCalendarProps {
   onSlotClick: (date: string, time: string) => void;
   onAppointmentClick: (app: Appointment) => void;
   onToggleComplete: (app: Appointment) => void;
+  isLoading: boolean; // New prop for loading state
 }
 
 const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
-  currentWeekStart, setCurrentWeekStart, currentUser, coaches, appointments, onSlotClick, onAppointmentClick, onToggleComplete
+  currentWeekStart, setCurrentWeekStart, currentUser, coaches, appointments, onSlotClick, onAppointmentClick, onToggleComplete, isLoading
 }) => {
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
   const weekDays = Array.from({length: 7}, (_, i) => addDays(currentWeekStart, i));
 
   return (
     <div className="glass-panel rounded-3xl overflow-hidden shadow-sm animate-fadeIn relative flex flex-col h-[750px]">
+      
+      {/* Loading Overlay */}
+      {isLoading && (
+        <div className="absolute inset-0 z-50 bg-white/60 dark:bg-gray-900/60 backdrop-blur-sm flex flex-col items-center justify-center">
+            <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400 mb-2" size={48} />
+            <p className="text-gray-600 dark:text-gray-300 font-bold">資料載入中...</p>
+        </div>
+      )}
+
       <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/50 dark:bg-gray-900/50 z-20 relative backdrop-blur-md">
         <div className="flex items-center gap-4">
           <div className="flex bg-white dark:bg-gray-800 rounded-xl p-1 shadow-sm border border-gray-100 dark:border-gray-700">
-              <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><ChevronLeft size={20} className="text-gray-600 dark:text-gray-300"/></button>
-              <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"><ChevronRight size={20} className="text-gray-600 dark:text-gray-300"/></button>
+              <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))} disabled={isLoading} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"><ChevronLeft size={20} className="text-gray-600 dark:text-gray-300"/></button>
+              <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))} disabled={isLoading} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"><ChevronRight size={20} className="text-gray-600 dark:text-gray-300"/></button>
           </div>
           <span className="font-bold text-xl text-gray-800 dark:text-white tracking-tight">{currentWeekStart.getMonth()+1}月 {currentWeekStart.getDate()}日 <span className="text-sm font-normal text-gray-500">週</span></span>
         </div>
@@ -72,7 +82,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                       ${isOff ? 'bg-stripes-gray opacity-40' : 'hover:bg-white/40 dark:hover:bg-gray-800/40 cursor-pointer'}
                     `}
                     onClick={() => {
-                        if (!isOff) onSlotClick(dateKey, time);
+                        if (!isOff && !isLoading) onSlotClick(dateKey, time);
                     }}
                   >
                      <div className="flex flex-col gap-1.5 h-full">
@@ -88,7 +98,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
 
                             return (
                               <div key={app.id} 
-                                   onClick={(e) => { e.stopPropagation(); if(isMine) onAppointmentClick(app); }}
+                                   onClick={(e) => { e.stopPropagation(); if(isMine && !isLoading) onAppointmentClick(app); }}
                                    className={`
                                       text-[11px] p-2 rounded-xl shadow-sm border border-black/5 hover:scale-[1.02] transition-transform
                                       ${colorClass} 
@@ -100,7 +110,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     <span className="font-bold truncate">{coach?.name || app.coachName}</span>
                                     {isMine && isPast && !app.isCompleted && (
                                       <button 
-                                        onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
+                                        onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
                                         className="bg-white/60 hover:bg-white rounded-full p-0.5 text-green-700 transition-colors shadow-sm" title="確認結課"
                                       >
                                         <CheckCircle size={12}/>

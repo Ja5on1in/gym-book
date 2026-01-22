@@ -157,10 +157,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       e.preventDefault();
       if (!editingInventory.name) return;
       
-      // Construct a valid object
+      // Construct a valid object with guaranteed defaults
       const inventoryToSave = {
           ...editingInventory,
-          credits: editingInventory.credits || { private: 0, group: 0 }
+          credits: {
+              private: editingInventory.credits?.private || 0,
+              group: editingInventory.credits?.group || 0
+          }
       } as UserInventory;
 
       onSaveInventory(inventoryToSave);
@@ -551,7 +554,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
        {/* Coach Edit Modal */}
        {isCoachModalOpen && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}>
             <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
                     <h3 className="font-bold text-xl dark:text-white">{isNewCoach ? '新增員工資料' : '編輯員工資料'}</h3>

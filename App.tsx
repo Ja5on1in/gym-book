@@ -316,6 +316,7 @@ export default function App() {
           id: profile.userId,
           lineUserId: profile.userId,
           name: profile.displayName,
+          // Fixed: Ensure safe defaults
           credits: { private: 0, group: 0 },
           lastUpdated: new Date().toISOString(),
       };
@@ -344,15 +345,18 @@ export default function App() {
             if (!inventory) {
                 // Try finding by phone if LINE ID not match
                 inventory = inventories.find(i => i.phone === formData.phone);
+                
+                // Enhancement: Automatic seamless linking
                 if (inventory) {
-                    // Link Line ID
-                    await saveToFirestore('user_inventory', inventory.id, {
-                        ...inventory,
-                        lineUserId: lineProfile.userId,
-                        lastUpdated: new Date().toISOString()
-                    });
-                    addLog('帳號綁定', `綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
-                    inventory = { ...inventory, lineUserId: lineProfile.userId };
+                    if (!inventory.lineUserId) {
+                        await saveToFirestore('user_inventory', inventory.id, {
+                            ...inventory,
+                            lineUserId: lineProfile.userId,
+                            lastUpdated: new Date().toISOString()
+                        });
+                        addLog('帳號綁定', `自動綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
+                        inventory = { ...inventory, lineUserId: lineProfile.userId };
+                    }
                 }
             }
 
@@ -392,7 +396,8 @@ export default function App() {
                 email: formData.email || "" 
             }, 
             status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId || "", // CRITICAL FIX: Ensure not undefined
+            // CRITICAL FIX: Ensure not undefined
+            lineUserId: lineProfile?.userId || "", 
             lineName: lineProfile?.displayName || "" 
         };
         
@@ -472,40 +477,15 @@ export default function App() {
     const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
     const isPrivate = finalType === 'private';
     
-    let targetInventory = null;
+    let targetInventory: UserInventory | undefined;
 
-    // 1. Check Inventory & Points
+    // 1. Identification Phase
     if (isPrivate && blockForm.customer?.name) {
         // Try matching by name OR phone (more robust logic)
         targetInventory = inventories.find(i => 
             i.name === blockForm.customer?.name || 
             (blockForm.customer?.phone && i.phone === blockForm.customer.phone)
         );
-        
-        // If logic is strict about deduction
-        if (targetInventory) {
-             if (targetInventory.credits.private <= 0 && !force) {
-                 setConfirmModal({
-                     isOpen: true,
-                     message: `學員 ${targetInventory.name} 點數不足 (剩餘: ${targetInventory.credits.private})。是否強制預約？`,
-                     isDanger: false,
-                     showInput: false,
-                     onConfirm: () => handleSaveBlock(null as any, true)
-                 });
-                 return;
-             }
-             
-             // Deduct Logic
-             if (targetInventory.credits.private > 0) {
-                 const newCredits = targetInventory.credits.private - 1;
-                 await saveToFirestore('user_inventory', targetInventory.id, {
-                     ...targetInventory,
-                     credits: { ...targetInventory.credits, private: newCredits },
-                     lastUpdated: new Date().toISOString()
-                 });
-                 addLog('後台扣點', `管理員為 ${targetInventory.name} 建立預約，扣除 1 點`);
-             }
-        }
     }
 
     const repeat = blockForm.repeatWeeks || 1;
@@ -515,7 +495,7 @@ export default function App() {
 
     let targetSlots = [blockForm.time];
 
-    // Batch Slot Logic
+    // Batch Slot Logic (Time Range)
     if (isBatchMode && blockForm.endTime) {
         const startIndex = ALL_TIME_SLOTS.indexOf(blockForm.time);
         const endIndex = ALL_TIME_SLOTS.indexOf(blockForm.endTime);
@@ -524,16 +504,44 @@ export default function App() {
         }
     }
 
+    let pointsToDeduct = 0;
+    let stopCreation = false;
+
+    // Outer Loop: Weeks
     for (let i = 0; i < repeat; i++) {
+        if (stopCreation) break;
+
         const targetDate = new Date(startDate);
         targetDate.setDate(startDate.getDate() + (i * 7));
         const dKey = formatDateKey(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
 
+        // Inner Loop: Slots per day
         for (const slot of targetSlots) {
              // Ignore ID Check: If editing, ignore self.
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
              
              if (status.status === 'available') {
+                 // DEDUCTION LOGIC: Per Slot
+                 if (isPrivate && targetInventory) {
+                     if (!force && (targetInventory.credits.private - pointsToDeduct <= 0)) {
+                         // Stop creating subsequent bookings
+                         setConfirmModal({
+                            isOpen: true,
+                            message: `學員 ${targetInventory.name} 點數不足 (剩餘: ${targetInventory.credits.private}，已排: ${pointsToDeduct})。已停止建立第 ${i + 1} 週以後的預約。`,
+                            isDanger: false,
+                            showInput: false,
+                            onConfirm: null 
+                         });
+                         stopCreation = true;
+                         break; // Break inner loop
+                     }
+                     // If forced or have enough points
+                     pointsToDeduct++;
+                 } else if (isPrivate && !targetInventory && !force) {
+                     // No inventory found but private booking
+                     // Continue but maybe warn? For now assume manual customer without points.
+                 }
+
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  // FIX: Use random string to prevent ID collisions in high-speed loops
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
@@ -561,13 +569,27 @@ export default function App() {
         }
     }
 
-    if (batchOps.length === 0) { showNotification('選定時段已被占用或無效', 'error'); return; }
+    if (batchOps.length === 0) { 
+        if (!stopCreation) showNotification('選定時段已被占用或無效', 'error'); 
+        return; 
+    }
     
     // Batch Save
     try {
+        // Execute Point Deduction
+        if (targetInventory && pointsToDeduct > 0) {
+             const newCredits = targetInventory.credits.private - pointsToDeduct;
+             await saveToFirestore('user_inventory', targetInventory.id, {
+                 ...targetInventory,
+                 credits: { ...targetInventory.credits, private: newCredits },
+                 lastUpdated: new Date().toISOString()
+             });
+             addLog('後台扣點', `管理員為 ${targetInventory.name} 批次預約 ${pointsToDeduct} 堂，扣除 ${pointsToDeduct} 點`);
+        }
+
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
-        showNotification('儲存成功', 'success');
+        showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
         setIsBlockModalOpen(false);
     } catch (e) {
         console.error(e);
@@ -917,6 +939,7 @@ export default function App() {
                   onSlotClick={handleSlotClick}
                   onAppointmentClick={handleAppointmentClick}
                   onToggleComplete={handleToggleComplete}
+                  isLoading={dbStatus === 'connecting'} // Pass loading state
                />
             )}
             inventories={inventories}
