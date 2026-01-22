@@ -145,10 +145,12 @@ export default function App() {
           if (firebaseUser) {
               let userProfile = await getUserProfile(firebaseUser.uid);
               
-              // Retry mechanism: If profile doesn't exist yet (race condition with creation), wait and try once more
-              if (!userProfile) {
-                  await new Promise(resolve => setTimeout(resolve, 2000));
+              // Retry mechanism: Wait and try again if profile not found (handling race condition)
+              let retries = 3;
+              while (!userProfile && retries > 0) {
+                  await new Promise(resolve => setTimeout(resolve, 500));
                   userProfile = await getUserProfile(firebaseUser.uid);
+                  retries--;
               }
 
               if (userProfile) {
@@ -165,8 +167,6 @@ export default function App() {
                   }
               } else {
                   console.warn("User has no profile in DB after retry");
-                  // Fallback: If logged in via Firebase but no profile, show error
-                  // Do not force logout immediately to allow manual refresh if needed, but show error
                   showNotification("無法取得使用者權限，請確認帳號是否已建立", "error");
                   setCurrentUser(null);
               }
@@ -267,6 +267,7 @@ export default function App() {
       showNotification("已登出", "info");
   };
 
+  // Inventory Management Actions
   const handleUpdateInventory = async (inventory: UserInventory) => {
       await saveToFirestore('user_inventory', inventory.id, {
           ...inventory,
@@ -274,6 +275,40 @@ export default function App() {
       });
       addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${inventory.credits.private}, 團課: ${inventory.credits.group}`);
       showNotification('學員點數已更新', 'success');
+  };
+
+  const handleSaveInventory = async (inventory: UserInventory) => {
+      try {
+          // Check if ID exists, else create new ID
+          const id = inventory.id || (inventory.lineUserId || (inventory.phone ? `phone_${inventory.phone}` : `manual_${Date.now()}`));
+          
+          // Auto-merge if phone exists but different ID
+          const existingByPhone = inventories.find(i => i.phone && i.phone === inventory.phone && i.id !== id);
+          if (existingByPhone) {
+              if (window.confirm(`發現相同電話號碼的學員: ${existingByPhone.name}。是否更新該學員資料而非新增？`)) {
+                 await saveToFirestore('user_inventory', existingByPhone.id, { ...existingByPhone, ...inventory, id: existingByPhone.id, lastUpdated: new Date().toISOString() });
+                 showNotification('已更新現有學員資料', 'success');
+                 return;
+              }
+          }
+
+          await saveToFirestore('user_inventory', id, { ...inventory, id, lastUpdated: new Date().toISOString() });
+          addLog('學員管理', `儲存學員資料: ${inventory.name}`);
+          showNotification('學員資料已儲存', 'success');
+      } catch (e) {
+          console.error(e);
+          showNotification('儲存失敗', 'error');
+      }
+  };
+
+  const handleDeleteInventory = async (id: string) => {
+      try {
+          await deleteFromFirestore('user_inventory', id);
+          addLog('學員管理', `刪除學員資料 ID: ${id}`);
+          showNotification('學員資料已刪除', 'success');
+      } catch (e) {
+          showNotification('刪除失敗', 'error');
+      }
   };
 
   const handleRegisterInventory = async (profile: { userId: string, displayName: string }) => {
@@ -357,8 +392,8 @@ export default function App() {
                 email: formData.email || "" 
             }, 
             status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId || "", // FIX: Default to empty string to prevent Firestore error
-            lineName: lineProfile?.displayName || "" // FIX: Default to empty string
+            lineUserId: lineProfile?.userId || "", // CRITICAL FIX: Ensure not undefined
+            lineName: lineProfile?.displayName || "" 
         };
         
         // 1. Save to Database First (Await this)
@@ -375,7 +410,7 @@ export default function App() {
             type: 'private',
         };
         
-        // No await here
+        // No await here, use catch for safety
         sendToGoogleScript(webhookPayload).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
@@ -886,6 +921,8 @@ export default function App() {
             )}
             inventories={inventories}
             onUpdateInventory={handleUpdateInventory}
+            onSaveInventory={handleSaveInventory}
+            onDeleteInventory={handleDeleteInventory}
          />
       );
   };

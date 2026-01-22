@@ -31,7 +31,9 @@ export const formatDateTime = (isoString: string) => {
 
 export const isPastTime = (dateKey: string, time: string) => {
   if (!dateKey || !time) return false;
-  return new Date(`${dateKey}T${time}`) < new Date();
+  const now = new Date();
+  const target = new Date(`${dateKey}T${time}`);
+  return target < now;
 };
 
 export const isCoachDayOff = (dateKey: string, coach: Coach) => {
@@ -71,14 +73,19 @@ export const getSlotStatus = (
   // Get dynamic work hours for this specific day
   const { start, end } = getCoachWorkHours(date, coach);
 
-  // Parse times for comparison
-  const slotTime = parseInt(time.split(':')[0]);
-  const startWork = parseInt(start.split(':')[0]);
-  const endWork = parseInt(end.split(':')[0]);
+  // Robust Time Comparison
+  // Convert "HH:mm" to minutes for accurate comparison
+  const parseMinutes = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + (m || 0);
+  };
 
-  // Fix: slotTime should be strictly less than endWork. 
-  // e.g. If endWork is 21:00, the 21:00 slot is unavailable (as it ends at 22:00)
-  if (slotTime < startWork || slotTime >= endWork) return { status: 'unavailable' };
+  const slotMins = parseMinutes(time);
+  const startMins = parseMinutes(start);
+  const endMins = parseMinutes(end);
+
+  // If slot time is before start or >= end time (closing time), it's unavailable
+  if (slotMins < startMins || slotMins >= endMins) return { status: 'unavailable' };
   
   const rec = appointments.find(a => 
     a.date === date && 
