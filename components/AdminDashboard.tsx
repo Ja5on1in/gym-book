@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -361,7 +361,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        )}
 
        <div className="glass-panel p-1 rounded-2xl flex gap-1 mb-8 overflow-x-auto mx-auto max-w-full md:max-w-fit shadow-lg custom-scrollbar">
-          {['calendar','appointments','analysis','staff','inventory','settings','logs'].map(t => {
+          {['calendar','appointments','analysis','staff','inventory','settings','logs','help'].map(t => {
              if (t === 'staff' && currentUser.role !== 'manager') return null;
              return (
              <button key={t} onClick={()=>setAdminTab(t)} 
@@ -374,7 +374,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  staff: <><Users size={16}/> 員工管理</>,
                  inventory: <><CreditCard size={16}/> 庫存管理</>,
                  settings: <><SettingsIcon size={16}/> 班表設定</>, 
-                 logs: <><History size={16}/> 操作紀錄</>
+                 logs: <><History size={16}/> 操作紀錄</>,
+                 help: <><BookOpen size={16}/> 使用手冊</>
                }[t]}
              </button>
           )})}
@@ -773,6 +774,173 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           </div>
        )}
        
+       {adminTab === 'help' && (
+          <div className="glass-panel rounded-3xl shadow-lg p-8 animate-slideUp">
+              <h3 className="font-bold text-2xl mb-6 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-4">
+                  <BookOpen className="text-indigo-500"/> 使用手冊與操作指南
+              </h3>
+
+              <div className="space-y-8">
+                  {/* 1. 狀態與圖示說明 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <Info size={20} className="text-blue-500"/> 狀態與顏色說明
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800">
+                              <span className="text-xs font-bold bg-indigo-100 text-indigo-600 px-2 py-1 rounded-full mb-2 inline-block">已預約</span>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">學生已成功預約課程，尚未上課。此時尚未扣除點數。</p>
+                          </div>
+                          <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-2xl border border-orange-100 dark:border-orange-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-xs font-bold bg-orange-100 text-orange-600 px-2 py-1 rounded-full">已簽到</span>
+                                  <Timer size={14} className="text-orange-500 animate-pulse"/>
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">學生到達現場並在手機上按下簽到。需要教練核實。</p>
+                          </div>
+                          <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-xs font-bold bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full">已完課</span>
+                                  <CheckCircle size={14} className="text-emerald-500"/>
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">教練確認學生上課完畢。系統已自動扣除 1 點。</p>
+                          </div>
+                          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-2xl border border-red-100 dark:border-red-800">
+                              <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-1 rounded-full mb-2 inline-block">已取消</span>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">課程已被取消。不會扣除任何點數。</p>
+                          </div>
+                      </div>
+                  </section>
+
+                  {/* 2. 標準作業流程 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <Layers size={20} className="text-purple-500"/> 標準作業流程 (SOP)
+                      </h4>
+                      <div className="space-y-4">
+                          <div className="flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-300 shrink-0">1</div>
+                              <div>
+                                  <h5 className="font-bold text-gray-800 dark:text-white">學生預約</h5>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">學生透過 LINE 前台預約，或由櫃檯/管理員在後台「行事曆」代為新增預約。此階段系統會檢查餘額並提示，但允許預約。</p>
+                              </div>
+                          </div>
+                          <div className="flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold shrink-0">2</div>
+                              <div>
+                                  <h5 className="font-bold text-gray-800 dark:text-white">學生簽到</h5>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">上課前，學生在「我的預約」點擊「立即簽到」。後台行事曆該卡片會出現橘色外框與「等待確認」字樣。</p>
+                              </div>
+                          </div>
+                          <div className="flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold shrink-0">3</div>
+                              <div>
+                                  <h5 className="font-bold text-gray-800 dark:text-white">教練核銷 (扣點)</h5>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">教練或管理員在行事曆上點擊該課程卡片上的 <span className="inline-flex items-center justify-center bg-orange-500 text-white rounded-full w-4 h-4 text-[10px]"><AlertTriangle size={8}/></span> 按鈕。確認後狀態變為「已完課」，系統將從學生庫存中<strong>扣除 1 點</strong>。</p>
+                              </div>
+                          </div>
+                      </div>
+                  </section>
+
+                  {/* 3. 角色權限 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <ShieldCheck size={20} className="text-emerald-500"/> 角色與權限
+                      </h4>
+                      <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+                          <table className="w-full text-sm text-left">
+                              <thead className="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-bold">
+                                  <tr>
+                                      <th className="p-3">功能</th>
+                                      <th className="p-3">Manager (管理員)</th>
+                                      <th className="p-3">Receptionist (櫃檯)</th>
+                                      <th className="p-3">Coach (教練)</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-900/50">
+                                  <tr>
+                                      <td className="p-3 font-medium">查看行事曆</td>
+                                      <td className="p-3 text-green-600">全部可見</td>
+                                      <td className="p-3 text-green-600">全部可見</td>
+                                      <td className="p-3 text-blue-500">僅見自己</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">代客預約</td>
+                                      <td className="p-3 text-green-600">可指定任意教練</td>
+                                      <td className="p-3 text-green-600">可指定任意教練</td>
+                                      <td className="p-3 text-blue-500">僅限自己時段</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">庫存管理 (購課)</td>
+                                      <td className="p-3 text-green-600">新增/修改/刪除</td>
+                                      <td className="p-3 text-green-600">新增/修改</td>
+                                      <td className="p-3 text-gray-400">僅檢視</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">員工管理</td>
+                                      <td className="p-3 text-green-600">完全權限</td>
+                                      <td className="p-3 text-gray-400">無</td>
+                                      <td className="p-3 text-gray-400">無</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">確認完課 (扣點)</td>
+                                      <td className="p-3 text-green-600">可 (包含強制結課)</td>
+                                      <td className="p-3 text-green-600">可 (已簽到項目)</td>
+                                      <td className="p-3 text-green-600">可 (已簽到項目)</td>
+                                  </tr>
+                              </tbody>
+                          </table>
+                      </div>
+                  </section>
+
+                  {/* 4. 常見問題 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <HelpCircle size={20} className="text-gray-500"/> 常見問題
+                      </h4>
+                      <div className="space-y-4">
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 如果學生點數不足，還能預約嗎？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  可以。系統會發出提示訊息，但不會阻止預約。請櫃檯人員記得在學生來上課時提醒補購課程。
+                              </div>
+                          </details>
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 取消預約會退還點數嗎？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  現在系統改為「完課才扣點」，因此預約時並未真正扣除點數，所以取消預約時也不需要退還點數。
+                              </div>
+                          </details>
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 如何幫學生修改預約時間？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  請在「行事曆」點擊該課程，修改日期與時間後按下「儲存變更」。學生的「我的預約」頁面會同步更新。
+                              </div>
+                          </details>
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 學生忘記簽到怎麼辦？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  管理員可以在行事曆上直接點擊課程，使用「強制結課」功能（綠色勾勾按鈕）來完成核銷與扣點。
+                              </div>
+                          </details>
+                      </div>
+                  </section>
+              </div>
+          </div>
+       )}
+
        {adminTab === 'logs' && (
           <div className="glass-panel rounded-3xl shadow-lg p-6 h-[600px] overflow-y-auto custom-scrollbar">
              <h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><History className="text-gray-500"/> 系統日誌</h3>
@@ -791,121 +959,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
              ))}
              </div>
-          </div>
-       )}
-
-       {/* Export Date Range Modal */}
-       {isExportModalOpen && (
-           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-               <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">
-                   <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white flex items-center gap-2"><FileSpreadsheet size={20} className="text-emerald-500"/> 匯出報表</h3>
-                   
-                   <div className="space-y-3 mb-6">
-                       <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase block mb-1">開始日期</label>
-                           <input 
-                               type="date" 
-                               value={statsStartDate} 
-                               onChange={e => setStatsStartDate(e.target.value)}
-                               className="w-full glass-input p-3 rounded-xl text-sm font-bold dark:text-white"
-                           />
-                       </div>
-                       <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase block mb-1">結束日期</label>
-                           <input 
-                               type="date" 
-                               value={statsEndDate} 
-                               onChange={e => setStatsEndDate(e.target.value)}
-                               className="w-full glass-input p-3 rounded-xl text-sm font-bold dark:text-white"
-                           />
-                       </div>
-                   </div>
-
-                   <div className="flex gap-3">
-                       <button onClick={() => setIsExportModalOpen(false)} className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
-                       <button onClick={handleExportRangeCsv} className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2">
-                           <Download size={18}/> 下載 CSV
-                       </button>
-                   </div>
-               </div>
-           </div>
-       )}
-
-       {/* Inventory Edit Modal */}
-       {isInventoryModalOpen && (
-          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
-              <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
-                  <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                      <h3 className="font-bold text-xl dark:text-white">{editingInventory.id ? '編輯學員資料' : '新增學員'}</h3>
-                      <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-gray-500"/></button>
-                  </div>
-                  <form onSubmit={handleSubmitInventory} className="p-6 space-y-4">
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">姓名</label>
-                          <input 
-                              type="text" 
-                              required 
-                              className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
-                              value={editingInventory.name} 
-                              onChange={e => setEditingInventory({...editingInventory, name: e.target.value})}
-                          />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase">電話</label>
-                          <input 
-                              type="tel" 
-                              className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
-                              value={editingInventory.phone} 
-                              onChange={e => setEditingInventory({...editingInventory, phone: e.target.value})}
-                              placeholder="0912345678"
-                          />
-                      </div>
-                      <div>
-                          <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1">
-                              LINE User ID {isLineIdLocked && <Lock size={12} className="text-orange-500"/>}
-                          </label>
-                          <input 
-                              type="text" 
-                              className={`w-full glass-input rounded-xl p-3 mt-1 dark:text-white ${isLineIdLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
-                              value={editingInventory.lineUserId || ''} 
-                              onChange={e => setEditingInventory({...editingInventory, lineUserId: e.target.value})}
-                              disabled={isLineIdLocked}
-                              placeholder="U12345678..."
-                          />
-                      </div>
-                      
-                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
-                          <div>
-                              <label className="text-xs font-bold text-indigo-500 uppercase">私人課 (剩餘點數)</label>
-                              <div className="flex items-center gap-2 mt-1">
-                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: Math.max(0, (editingInventory.credits?.private || 0) - 1)} as any})} className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold hover:bg-gray-300 dark:hover:bg-gray-600">-</button>
-                                  <input 
-                                      type="number" 
-                                      className="w-full glass-input rounded-lg p-2 text-center font-bold dark:text-white"
-                                      value={editingInventory.credits?.private || 0}
-                                      onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: Number(e.target.value)} as any})}
-                                  />
-                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: (editingInventory.credits?.private || 0) + 1} as any})} className="w-8 h-8 rounded-lg bg-indigo-500 text-white flex items-center justify-center font-bold hover:bg-indigo-600">+</button>
-                              </div>
-                          </div>
-                          <div>
-                              <label className="text-xs font-bold text-orange-500 uppercase">團課 (剩餘點數)</label>
-                              <div className="flex items-center gap-2 mt-1">
-                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: Math.max(0, (editingInventory.credits?.group || 0) - 1)} as any})} className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold hover:bg-gray-300 dark:hover:bg-gray-600">-</button>
-                                  <input 
-                                      type="number" 
-                                      className="w-full glass-input rounded-lg p-2 text-center font-bold dark:text-white"
-                                      value={editingInventory.credits?.group || 0}
-                                      onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: Number(e.target.value)} as any})}
-                                  />
-                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: (editingInventory.credits?.group || 0) + 1} as any})} className="w-8 h-8 rounded-lg bg-orange-500 text-white flex items-center justify-center font-bold hover:bg-orange-600">+</button>
-                              </div>
-                          </div>
-                      </div>
-
-                      <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4">儲存變更</button>
-                  </form>
-              </div>
           </div>
        )}
 
