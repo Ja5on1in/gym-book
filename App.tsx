@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -356,7 +355,7 @@ export default function App() {
       addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
   };
 
-  // --- CRITICAL FIX: Safe Booking Submission ---
+  // --- SAFE BOOKING SUBMISSION (PRE-DEDUCT) ---
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -392,12 +391,22 @@ export default function App() {
                 }
             }
 
-            // --- STRICT CREDIT CHECK ---
+            // --- STRICT CREDIT CHECK & PRE-DEDUCTION ---
             if (inventory) {
                  if (inventory.credits.private <= 0) {
                      showNotification('您的課程點數不足，請聯繫管理員續課', 'error');
                      return;
                  }
+                 // Deduct immediately on booking
+                 const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
+                 await saveToFirestore('user_inventory', inventory.id, {
+                     ...inventory,
+                     credits: { ...inventory.credits, private: newPrivateCredits },
+                     lastUpdated: new Date().toISOString()
+                 });
+                 // Log updated state locally for safety before re-fetch
+                 inventory = { ...inventory, credits: { ...inventory.credits, private: newPrivateCredits } };
+                 addLog('系統扣點', `學員 ${inventory.name} 預約成功，預扣 1 點 (剩餘: ${newPrivateCredits})`);
             } else {
                  if (lineProfile) {
                     showNotification('您的課程點數不足 (新用戶請聯繫管理員購課)', 'error');
@@ -405,16 +414,6 @@ export default function App() {
                  }
             }
             // ---------------------------
-
-            if (inventory) {
-                const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
-                await saveToFirestore('user_inventory', inventory.id, {
-                    ...inventory,
-                    credits: { ...inventory.credits, private: newPrivateCredits },
-                    lastUpdated: new Date().toISOString()
-                });
-                addLog('系統扣點', `學員 ${inventory.name} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
-            }
         }
 
         const id = Date.now().toString();
@@ -466,7 +465,7 @@ export default function App() {
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
       
-      // Robust Refund Logic
+      // Refund Logic (Always refund if confirmed -> cancelled)
       if (app.type === 'private' || (app.type as string) === 'client') {
           let inventory = null;
           // 1. Try LINE ID
@@ -762,12 +761,13 @@ export default function App() {
               return;
           }
 
+          // JUST UPDATE STATUS. NO DEDUCTION (Already deducted on booking).
           await saveToFirestore('appointments', app.id, {
               ...app,
               status: 'completed'
           });
 
-          addLog('學員簽到', `學員 ${app.customer?.name} 自行簽到成功`);
+          addLog('學員簽到', `學員 ${app.customer?.name} 自行簽到成功 (已預扣點數)`);
           
           let remaining = null;
           if (app.lineUserId) {
@@ -1256,7 +1256,6 @@ export default function App() {
                                                         {blockForm.customer.name}
                                                         {blockForm.customer.phone && <span className="text-xs text-gray-500 font-normal">({blockForm.customer.phone})</span>}
                                                     </div>
-                                                    {/* Attempt to show credits if available in inventory */}
                                                     {(() => {
                                                         const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
                                                         if (linkedInv) {
@@ -1320,18 +1319,7 @@ export default function App() {
                                         )}
                                         {!blockForm.customer?.name && <div className="text-[10px] text-red-400 mt-1">* 必須選擇現有學員</div>}
                                     </>
-                                ) : (
-                                    <>
-                                        <div>
-                                            <label className="text-xs font-bold text-gray-500 uppercase">客戶姓名</label>
-                                            <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-gray-500 uppercase">聯絡電話</label>
-                                            <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.phone || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, phone: e.target.value }})} />
-                                        </div>
-                                    </>
-                                )}
+                                ) : null}
                             </div>
                         )}
                         

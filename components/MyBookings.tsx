@@ -60,7 +60,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
             const coach = coaches.find(c => c.id === app.coachId);
             const isCancelled = app.status === 'cancelled';
             const isCompleted = app.status === 'completed';
-            // Constraint removed: Allow check-in if status is confirmed
+            // Allow check-in if status is confirmed
             const canCheckIn = app.status === 'confirmed'; 
             const isUpcoming = new Date(app.date + ' ' + app.time) > new Date() && !isCancelled;
 
@@ -83,23 +83,25 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                     <User size={14}/> 教練：{coach?.name || app.coachName}
                 </div>
 
-                {canCheckIn && (
-                   <button 
-                       onClick={() => setCheckInConfirmApp(app)}
-                       className="w-full mb-2 py-3 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short"
-                   >
-                       <CheckCircle size={20}/> 立即簽到
-                   </button>
-                )}
+                <div className="flex gap-2">
+                  {canCheckIn && (
+                     <button 
+                         onClick={() => setCheckInConfirmApp(app)}
+                         className="flex-1 mb-2 py-3 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short"
+                     >
+                         <CheckCircle size={20}/> 立即簽到
+                     </button>
+                  )}
 
-                {isUpcoming && !canCheckIn && !isCompleted && (
-                    <button 
-                        onClick={() => setSelectedApp(app)}
-                        className="w-full py-2 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                    >
-                        取消預約
-                    </button>
-                )}
+                  {isUpcoming && !isCompleted && (
+                      <button 
+                          onClick={() => setSelectedApp(app)}
+                          className={`flex-1 mb-2 py-3 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-lg font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${!canCheckIn ? 'w-full' : ''}`}
+                      >
+                          取消預約
+                      </button>
+                  )}
+                </div>
                 
                 {isCompleted && (
                     <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">
@@ -122,7 +124,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <AlertTriangle size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">取消預約確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？</p>
+                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？<br/>(將會退還 1 點課程點數)</p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setSelectedApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
@@ -143,8 +145,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <Info size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">簽到確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-2">確認要現在簽到嗎？</p>
-                 <p className="text-sm text-red-500 font-bold text-center mb-6">簽到後將正式扣除 1 點課程點數。</p>
+                 <p className="text-sm text-gray-500 text-center mb-6">確認要現在簽到嗎？</p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setCheckInConfirmApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>

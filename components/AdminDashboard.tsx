@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -62,7 +62,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Appointment Filter State
   const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'anomaly' | 'audit'>('all');
 
-  // Analysis Date Range State
+  // Export Modal State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+
+  // Analysis Date Range State (Hidden in UI unless exporting, defaults to current month for visual stats)
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
   const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
@@ -171,6 +174,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       link.href = URL.createObjectURL(blob);
       link.download = `report_${statsStartDate}_to_${statsEndDate}.csv`;
       link.click();
+      
+      setIsExportModalOpen(false);
   };
 
   const handleExportCancelCsv = () => {
@@ -547,38 +552,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {adminTab === 'analysis' && (
           <div className="space-y-6 animate-slideUp">
             
-            {/* Date Range Picker for Analysis */}
-            <div className="glass-card p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
-                <div className="flex items-center gap-2">
-                    <BarChart3 className="text-indigo-500"/>
-                    <span className="font-bold dark:text-white">報表區間設定</span>
-                </div>
-                <div className="flex items-center gap-3 w-full md:w-auto">
-                    <input 
-                        type="date" 
-                        value={statsStartDate} 
-                        onChange={e => setStatsStartDate(e.target.value)}
-                        className="glass-input p-2 rounded-xl text-sm font-bold w-full md:w-auto dark:text-white"
-                    />
-                    <span className="text-gray-400">~</span>
-                    <input 
-                        type="date" 
-                        value={statsEndDate} 
-                        onChange={e => setStatsEndDate(e.target.value)}
-                        className="glass-input p-2 rounded-xl text-sm font-bold w-full md:w-auto dark:text-white"
-                    />
-                </div>
-            </div>
-
             <div className="flex justify-end gap-3">
                <button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
-               <button onClick={handleExportRangeCsv} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出區間報表</button>
+               <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出區間報表</button>
             </div>
             
+            {/* Visual stats default to current range or whatever is in state, but inputs are hidden */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                <div className="glass-panel p-6 rounded-3xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div>
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 (區間)</h4>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 (目前顯示: {statsStartDate}~{statsEndDate})</h4>
                   <div className="space-y-3 relative z-10">
                     {statsData.topTimeSlots.length > 0 ? statsData.topTimeSlots.map((s: any, i: number) => (
                         <div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-white/40 dark:border-gray-700">
@@ -590,7 +573,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                </div>
                
                <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center">
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">狀態總覽 (區間)</h4>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">狀態總覽</h4>
                   <div className="grid grid-cols-3 gap-2 text-center divide-x divide-gray-200 dark:divide-gray-700">
                      <div>
                          <div className="text-3xl lg:text-4xl font-bold text-indigo-500 mb-1">{statsData.totalActive}</div>
@@ -608,7 +591,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                </div>
 
                <div className="glass-panel p-6 rounded-3xl md:col-span-1">
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計 (區間)</h4>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計</h4>
                   <div className="overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
                       <div className="grid grid-cols-4 gap-2 text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">
                           <span>教練</span>
@@ -759,6 +742,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
              ))}
              </div>
           </div>
+       )}
+
+       {/* Export Date Range Modal */}
+       {isExportModalOpen && (
+           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+               <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">
+                   <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white flex items-center gap-2"><FileSpreadsheet size={20} className="text-emerald-500"/> 匯出報表</h3>
+                   
+                   <div className="space-y-3 mb-6">
+                       <div>
+                           <label className="text-xs font-bold text-gray-500 uppercase block mb-1">開始日期</label>
+                           <input 
+                               type="date" 
+                               value={statsStartDate} 
+                               onChange={e => setStatsStartDate(e.target.value)}
+                               className="w-full glass-input p-3 rounded-xl text-sm font-bold dark:text-white"
+                           />
+                       </div>
+                       <div>
+                           <label className="text-xs font-bold text-gray-500 uppercase block mb-1">結束日期</label>
+                           <input 
+                               type="date" 
+                               value={statsEndDate} 
+                               onChange={e => setStatsEndDate(e.target.value)}
+                               className="w-full glass-input p-3 rounded-xl text-sm font-bold dark:text-white"
+                           />
+                       </div>
+                   </div>
+
+                   <div className="flex gap-3">
+                       <button onClick={() => setIsExportModalOpen(false)} className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
+                       <button onClick={handleExportRangeCsv} className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2">
+                           <Download size={18}/> 下載 CSV
+                       </button>
+                   </div>
+               </div>
+           </div>
        )}
 
        {/* Coach Edit Modal */}
