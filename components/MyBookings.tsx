@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useEffect } from 'react';
 import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer } from 'lucide-react';
 import { Appointment, Coach } from '../types';
@@ -97,7 +95,8 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      </button>
                   )}
 
-                  {isUpcoming && !isCompleted && !isCheckedIn && (
+                  {/* Allow canceling even if checked in, as long as not officially completed by coach (Refund Logic) */}
+                  {isUpcoming && !isCompleted && (
                       <button 
                           onClick={() => setSelectedApp(app)}
                           className={`flex-1 mb-2 py-3 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-lg font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${!canCheckIn ? 'w-full' : ''}`}
@@ -155,7 +154,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <Info size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">簽到確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">簽到後請出示畫面給教練確認<br/><span className="text-xs text-orange-500 font-bold">(教練確認後才會扣除點數)</span></p>
+                 <p className="text-sm text-gray-500 text-center mb-6">簽到後請出示畫面給教練確認<br/><span className="text-xs text-gray-400 font-bold">(點數已於預約時扣除)</span></p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setCheckInConfirmApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>

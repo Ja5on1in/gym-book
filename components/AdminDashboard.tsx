@@ -1,6 +1,4 @@
 
-
-
 import React, { useRef, useState, useMemo } from 'react';
 import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
@@ -151,7 +149,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ["統計項目", "數值"],
           ["總預約數 (含取消)", statsData.rangeApps.length],
           ["有效預約 (未簽到)", statsData.totalActive],
-          ["已完課 (已簽到)", statsData.totalCompleted],
+          ["已完課", statsData.totalCompleted],
           ["已取消", statsData.totalCancelled],
           [],
           ["教練", "個人課", "團課/其他", "總計"],
@@ -329,7 +327,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    </div>
                    <div>
                        <div className="font-bold text-lg">等待確認完課</div>
-                       <div className="text-sm opacity-90">有 {checkedInCount} 筆學生已簽到，請確認並扣點</div>
+                       <div className="text-sm opacity-90">有 {checkedInCount} 筆學生已簽到，請核實</div>
                    </div>
                </div>
                <ChevronRight/>
@@ -348,7 +346,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    </div>
                    <div>
                        <div className="font-bold text-lg">待處理稽核</div>
-                       <div className="text-sm opacity-90">有 {auditPendingCount} 筆已簽到課程需要確認</div>
+                       <div className="text-sm opacity-90">有 {auditPendingCount} 筆已完課紀錄</div>
                    </div>
                </div>
                <ChevronRight/>
@@ -402,13 +400,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     onClick={() => setAppointmentFilter('checked_in')}
                     className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'checked_in' ? 'bg-orange-500 text-white shadow-md' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 hover:bg-orange-100'}`}
                  >
-                    <Timer size={16}/> 已簽到 (待扣點)
+                    <Timer size={16}/> 已簽到
                  </button>
                  <button 
                     onClick={() => setAppointmentFilter('audit')}
                     className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'audit' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 hover:bg-emerald-100'}`}
                  >
-                    <ShieldCheck size={16}/> 已完課/稽核
+                    <ShieldCheck size={16}/> 已完課
                  </button>
                  <button 
                     onClick={() => setAppointmentFilter('anomaly')}
@@ -816,6 +814,84 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    </div>
                </div>
            </div>
+       )}
+
+       {/* Inventory Edit Modal */}
+       {isInventoryModalOpen && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
+              <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
+                  <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                      <h3 className="font-bold text-xl dark:text-white">{editingInventory.id ? '編輯學員資料' : '新增學員'}</h3>
+                      <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-gray-500"/></button>
+                  </div>
+                  <form onSubmit={handleSubmitInventory} className="p-6 space-y-4">
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">姓名</label>
+                          <input 
+                              type="text" 
+                              required 
+                              className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                              value={editingInventory.name} 
+                              onChange={e => setEditingInventory({...editingInventory, name: e.target.value})}
+                          />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase">電話</label>
+                          <input 
+                              type="tel" 
+                              className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                              value={editingInventory.phone} 
+                              onChange={e => setEditingInventory({...editingInventory, phone: e.target.value})}
+                              placeholder="0912345678"
+                          />
+                      </div>
+                      <div>
+                          <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1">
+                              LINE User ID {isLineIdLocked && <Lock size={12} className="text-orange-500"/>}
+                          </label>
+                          <input 
+                              type="text" 
+                              className={`w-full glass-input rounded-xl p-3 mt-1 dark:text-white ${isLineIdLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+                              value={editingInventory.lineUserId || ''} 
+                              onChange={e => setEditingInventory({...editingInventory, lineUserId: e.target.value})}
+                              disabled={isLineIdLocked}
+                              placeholder="U12345678..."
+                          />
+                      </div>
+                      
+                      <div className="grid grid-cols-2 gap-4 pt-2 border-t border-gray-100 dark:border-gray-700">
+                          <div>
+                              <label className="text-xs font-bold text-indigo-500 uppercase">私人課 (剩餘點數)</label>
+                              <div className="flex items-center gap-2 mt-1">
+                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: Math.max(0, (editingInventory.credits?.private || 0) - 1)} as any})} className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold hover:bg-gray-300 dark:hover:bg-gray-600">-</button>
+                                  <input 
+                                      type="number" 
+                                      className="w-full glass-input rounded-lg p-2 text-center font-bold dark:text-white"
+                                      value={editingInventory.credits?.private || 0}
+                                      onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: Number(e.target.value)} as any})}
+                                  />
+                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: (editingInventory.credits?.private || 0) + 1} as any})} className="w-8 h-8 rounded-lg bg-indigo-500 text-white flex items-center justify-center font-bold hover:bg-indigo-600">+</button>
+                              </div>
+                          </div>
+                          <div>
+                              <label className="text-xs font-bold text-orange-500 uppercase">團課 (剩餘點數)</label>
+                              <div className="flex items-center gap-2 mt-1">
+                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: Math.max(0, (editingInventory.credits?.group || 0) - 1)} as any})} className="w-8 h-8 rounded-lg bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold hover:bg-gray-300 dark:hover:bg-gray-600">-</button>
+                                  <input 
+                                      type="number" 
+                                      className="w-full glass-input rounded-lg p-2 text-center font-bold dark:text-white"
+                                      value={editingInventory.credits?.group || 0}
+                                      onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: Number(e.target.value)} as any})}
+                                  />
+                                  <button type="button" onClick={() => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: (editingInventory.credits?.group || 0) + 1} as any})} className="w-8 h-8 rounded-lg bg-orange-500 text-white flex items-center justify-center font-bold hover:bg-orange-600">+</button>
+                              </div>
+                          </div>
+                      </div>
+
+                      <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4">儲存變更</button>
+                  </form>
+              </div>
+          </div>
        )}
 
        {/* Coach Edit Modal */}
