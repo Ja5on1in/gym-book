@@ -37,7 +37,7 @@ interface BookingWizardProps {
   selectedSlot: string | null;
   setSelectedSlot: (s: string | null) => void;
   formData: Customer;
-  setFormData: (c: Customer) => void;
+  setFormData: React.Dispatch<React.SetStateAction<Customer>>;
   coaches: Coach[];
   appointments: any[];
   onSubmit: (e: React.FormEvent, lineProfile?: {userId: string, displayName: string}) => void;

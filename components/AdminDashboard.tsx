@@ -143,6 +143,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleOpenInventoryModal = (inv?: UserInventory) => {
       // Permission check just in case, though UI hides buttons
       if (currentUser.role !== 'manager' && !inv) return; 
+      // Coaches can view details but the save button will be hidden/disabled or we just let them see the row data without modal?
+      // For simplicity, if manager, allow edit. If coach, maybe just don't open modal or open in read-only.
+      // Current requirement says "remove edit buttons", so coach shouldn't reach here easily.
+      // But if they do, we block writes.
+      
+      if (currentUser.role !== 'manager') return;
 
       if (inv) {
           setEditingInventory({ ...inv });
@@ -162,6 +168,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleSubmitInventory = (e: React.FormEvent) => {
       e.preventDefault();
+      if (currentUser.role !== 'manager') return;
       if (!editingInventory.name) return;
       
       const inventoryToSave = {
@@ -278,7 +285,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {adminTab === 'inventory' && (
           <div className="glass-panel rounded-3xl shadow-lg p-6">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-                  <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 庫存管理</h3>
+                  <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 庫存管理 {currentUser.role !== 'manager' && <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full ml-2">檢視模式</span>}</h3>
                   <div className="flex gap-2 w-full md:w-auto">
                       <div className="relative flex-1 md:flex-initial">
                           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
@@ -628,7 +635,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        )}
 
        {/* Inventory Edit Modal */}
-       {isInventoryModalOpen && (
+       {isInventoryModalOpen && currentUser.role === 'manager' && (
            <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
                <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
                    <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">

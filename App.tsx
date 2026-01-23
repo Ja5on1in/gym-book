@@ -17,6 +17,10 @@ import {
   Lock as LockIcon,
   Layers,
   User as UserIcon,
+  Search,
+  X,
+  CreditCard,
+  Check
 } from 'lucide-react';
 
 import { 
@@ -85,6 +89,10 @@ export default function App() {
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
+  
+  // Member Search State (New)
+  const [memberSearchTerm, setMemberSearchTerm] = useState('');
+  const [filteredMembers, setFilteredMembers] = useState<UserInventory[]>([]);
 
   // Cleaned up initial state
   const [blockForm, setBlockForm] = useState<BlockFormState>({
@@ -210,6 +218,20 @@ export default function App() {
         unsubInventory && unsubInventory();
     };
   }, []);
+
+  // Filter Members Effect
+  useEffect(() => {
+      if (!memberSearchTerm) {
+          setFilteredMembers([]);
+          return;
+      }
+      const lowerTerm = memberSearchTerm.toLowerCase();
+      const results = inventories.filter(inv => 
+          inv.name.toLowerCase().includes(lowerTerm) || 
+          (inv.phone && inv.phone.includes(lowerTerm))
+      ).slice(0, 6); // Limit to 6 results
+      setFilteredMembers(results);
+  }, [memberSearchTerm, inventories]);
 
   // --- ACTIONS ---
 
@@ -377,23 +399,7 @@ export default function App() {
                      return;
                  }
             } else {
-                 // No inventory found but trying to book via LINE
-                 // For safety, require points or auto-registration
-                 // Currently we proceed to auto-register, but usually business rule requires payment first.
-                 // Assuming 0 points is allowed for new users? No, strict check says <= 0 blocks.
-                 // So new users with 0 points will be blocked above unless we give free trial.
-                 // If we want to allow 0 points for new users, modify the check.
-                 // Current logic: New users created below have 0 points.
-                 // FIX: Allow booking but set points to -1? Or Block?
-                 // Prompt request: "Deduction interception... if points <= 0, intercept."
-                 // So if new user has 0 points, they are blocked.
-                 
-                 // However, we need to create the user first to track them.
-                 // If we block here, they can't book.
-                 // Let's assume new users must contact admin.
                  if (lineProfile) {
-                    // Try to see if we should create them just to show the error properly?
-                    // Or simply block.
                     showNotification('您的課程點數不足 (新用戶請聯繫管理員購課)', 'error');
                     return;
                  }
@@ -513,18 +519,24 @@ export default function App() {
     const coach = coaches.find(c => c.id === (currentUser.role === 'manager' ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
-    // Normalize Type: Map any legacy 'client' type to 'private'
+    // Normalize Type
     const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
     const isPrivate = finalType === 'private';
     
+    // Strict Guard: Private bookings MUST have a customer from selection
+    if (isPrivate && !blockForm.customer?.name) {
+        showNotification('請先搜尋並選擇學員', 'error');
+        return;
+    }
+
     let targetInventory: UserInventory | undefined;
 
     // 1. Identification Phase
     if (isPrivate && blockForm.customer?.name) {
-        // Try matching by name OR phone (more robust logic)
+        // Since we force selection, we assume data is correct, but let's re-verify against inventory list for safety
         targetInventory = inventories.find(i => 
-            i.name === blockForm.customer?.name || 
-            (blockForm.customer?.phone && i.phone === blockForm.customer.phone)
+            i.name === blockForm.customer?.name && 
+            (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true)
         );
     }
 
@@ -577,13 +589,9 @@ export default function App() {
                      }
                      // If forced or have enough points
                      pointsToDeduct++;
-                 } else if (isPrivate && !targetInventory && !force) {
-                     // No inventory found but private booking
-                     // Continue but maybe warn? For now assume manual customer without points.
                  }
 
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
-                 // FIX: Use random string to prevent ID collisions in high-speed loops
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  
                  batchOps.push({ 
@@ -602,7 +610,7 @@ export default function App() {
                          email: blockForm.customer.email || ""
                      } : null,
                      createdAt: new Date().toISOString(),
-                     // Fix: Ensure lineUserId is not undefined
+                     // Fix: Ensure lineUserId is not undefined, take from inventory if possible
                      lineUserId: targetInventory?.lineUserId || ""
                  });
              }
@@ -697,6 +705,7 @@ export default function App() {
       if (coach && isCoachDayOff(date, coach)) { showNotification('排休日無法新增', 'error'); return; }
       
       setBlockForm({ id: null, type: 'block', coachId: targetCoachId, date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, reason: '1v1教練課', customer: null, repeatWeeks: 1 });
+      setMemberSearchTerm(''); // Reset search
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -714,6 +723,7 @@ export default function App() {
           time: '09:00', endTime: '12:00',
           reason: '內部訓練', customer: null, repeatWeeks: 1 
       });
+      setMemberSearchTerm(''); // Reset search
       setDeleteConfirm(false); 
       setIsBatchMode(true);
       setIsBlockModalOpen(true);
@@ -725,6 +735,7 @@ export default function App() {
       
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
+      setMemberSearchTerm(''); // Existing customer is shown in card, no need to preset search term
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -1138,7 +1149,12 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-4">
                            <div>
                                <label className="text-xs font-bold text-gray-500 uppercase">類型</label>
-                               <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => setBlockForm({...blockForm, type: e.target.value as any})}>
+                               <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => {
+                                   const newType = e.target.value as any;
+                                   setBlockForm({...blockForm, type: newType});
+                                   // Reset customer if switching types to prevent bad state
+                                   if(newType !== 'private') setMemberSearchTerm('');
+                               }}>
                                    <option value="block">內部事務 (Block)</option>
                                    <option value="private">私人課程 (1v1)</option>
                                    <option value="group">團體課程 (Group)</option>
@@ -1194,59 +1210,93 @@ export default function App() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800">
+                            <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all">
                                 <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
                                 {blockForm.type === 'private' ? (
                                     <>
+                                        {blockForm.customer?.name ? (
+                                            <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
+                                                <div>
+                                                    <div className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                                        {blockForm.customer.name}
+                                                        {blockForm.customer.phone && <span className="text-xs text-gray-500 font-normal">({blockForm.customer.phone})</span>}
+                                                    </div>
+                                                    {/* Attempt to show credits if available in inventory */}
+                                                    {(() => {
+                                                        const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
+                                                        if (linkedInv) {
+                                                            return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {linkedInv.credits.private} 堂</div>
+                                                        }
+                                                        return null;
+                                                    })()}
+                                                </div>
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setBlockForm({...blockForm, customer: null})}
+                                                    className="p-2 bg-gray-100 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                                                    title="重新選擇"
+                                                >
+                                                    <X size={16}/>
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="relative">
+                                                <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
+                                                <input 
+                                                    type="text" 
+                                                    className="w-full glass-input rounded-xl p-3 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                                                    placeholder="輸入關鍵字..."
+                                                    value={memberSearchTerm}
+                                                    onChange={(e) => setMemberSearchTerm(e.target.value)}
+                                                    autoFocus
+                                                />
+                                                {memberSearchTerm && !blockForm.customer && (
+                                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
+                                                        {filteredMembers.length > 0 ? (
+                                                            filteredMembers.map(m => (
+                                                                <div 
+                                                                    key={m.id} 
+                                                                    onClick={() => {
+                                                                        setBlockForm({
+                                                                            ...blockForm,
+                                                                            customer: { 
+                                                                                name: m.name, 
+                                                                                phone: m.phone || '', 
+                                                                                email: m.email || '' 
+                                                                            }
+                                                                        });
+                                                                        setMemberSearchTerm('');
+                                                                    }}
+                                                                    className="p-3 hover:bg-indigo-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0"
+                                                                >
+                                                                    <div className="font-bold text-gray-800 dark:text-white">{m.name}</div>
+                                                                    <div className="flex justify-between text-xs text-gray-500 mt-0.5">
+                                                                        <span>{m.phone || '無電話'}</span>
+                                                                        <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
+                                                                    </div>
+                                                                </div>
+                                                            ))
+                                                        ) : (
+                                                            <div className="p-4 text-center text-xs text-gray-400">找不到相符學員</div>
+                                                        )}
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                        {!blockForm.customer?.name && <div className="text-[10px] text-red-400 mt-1">* 必須選擇現有學員</div>}
+                                    </>
+                                ) : (
+                                    <>
                                         <div>
-                                            <label className="text-xs text-gray-500 mb-1 block">搜尋庫存學員 (自動帶入)</label>
-                                            <select 
-                                                className="w-full glass-input rounded-lg p-2 dark:text-white"
-                                                value={blockForm.customer?.name || ''}
-                                                onChange={(e) => {
-                                                    const selectedInv = inventories.find(inv => inv.name === e.target.value);
-                                                    if (selectedInv) {
-                                                        // Automatically fill name AND PHONE (crucial for linking)
-                                                        setBlockForm({
-                                                            ...blockForm,
-                                                            customer: { 
-                                                                name: selectedInv.name, 
-                                                                phone: selectedInv.phone || '', 
-                                                                email: selectedInv.email || '' 
-                                                            }
-                                                        });
-                                                    } else {
-                                                        // Manual entry fallback
-                                                        setBlockForm({
-                                                            ...blockForm,
-                                                            customer: { 
-                                                                name: e.target.value,
-                                                                phone: blockForm.customer?.phone || '',
-                                                                email: blockForm.customer?.email || ''
-                                                            }
-                                                        });
-                                                    }
-                                                }}
-                                            >
-                                                <option value="">-- 請選擇 (或直接輸入) --</option>
-                                                {inventories.map(inv => (
-                                                    <option key={inv.id} value={inv.name}>
-                                                        {inv.name} (餘課: {inv.credits.private})
-                                                    </option>
-                                                ))}
-                                            </select>
+                                            <label className="text-xs font-bold text-gray-500 uppercase">客戶姓名</label>
+                                            <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold text-gray-500 uppercase">聯絡電話</label>
+                                            <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.phone || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, phone: e.target.value }})} />
                                         </div>
                                     </>
-                                ) : null}
-                                
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase">客戶姓名</label>
-                                    <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.name || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, name: e.target.value }})} />
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase">聯絡電話</label>
-                                    <input required type="text" className="w-full glass-input rounded-lg p-2 mt-1 dark:text-white" value={blockForm.customer?.phone || ''} onChange={e => setBlockForm({...blockForm, customer: { ...blockForm.customer!, phone: e.target.value }})} />
-                                </div>
+                                )}
                             </div>
                         )}
                         
@@ -1272,7 +1322,14 @@ export default function App() {
                                     {blockForm.type === 'private' ? '取消預約' : '刪除'}
                                 </button>
                             )}
-                            <button type="submit" className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-colors">
+                            <button 
+                                type="submit" 
+                                disabled={blockForm.type === 'private' && !blockForm.customer?.name}
+                                className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
+                                    ${(blockForm.type === 'private' && !blockForm.customer?.name) 
+                                        ? 'bg-gray-400 cursor-not-allowed' 
+                                        : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
+                            >
                                 {blockForm.id ? '儲存變更' : '確認新增'}
                             </button>
                         </div>
