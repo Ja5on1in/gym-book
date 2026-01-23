@@ -20,7 +20,8 @@ import {
   X,
   CreditCard,
   Check,
-  CheckCircle2
+  CheckCircle2,
+  Zap
 } from 'lucide-react';
 
 import { 
@@ -90,6 +91,8 @@ export default function App() {
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
+  // New: Direct Complete Toggle
+  const [directComplete, setDirectComplete] = useState(false);
   
   // Member Search State (New)
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
@@ -571,7 +574,8 @@ export default function App() {
                      coachId: coach.id, 
                      coachName: coach.name, 
                      reason: blockForm.reason, 
-                     status: isEditSingle && originalApp ? originalApp.status : 'confirmed', 
+                     // IMPORTANT: If directComplete is checked, force 'completed', otherwise default
+                     status: (isEditSingle && originalApp && !directComplete) ? originalApp.status : (directComplete ? 'completed' : 'confirmed'), 
                      customer: (finalType === 'private' && blockForm.customer) ? {
                          name: blockForm.customer.name,
                          phone: blockForm.customer.phone || "",
@@ -597,8 +601,25 @@ export default function App() {
     try {
         // Use saveToFirestore (upsert) because we might be creating new IDs or overwriting specific ones fully
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
+
+        // --- DIRECT COMPLETE DEDUCTION LOGIC ---
+        if (directComplete && isPrivate && targetInventory && batchOps.length > 0) {
+            // Deduct credits for EACH appointment created in batch (usually 1 if single)
+            // Note: If batchOps > 1 (e.g., recurring or batch time), deduct multiple points
+            const pointsToDeduct = batchOps.length;
+            const newCredits = targetInventory.credits.private - pointsToDeduct;
+            
+            await updateDocument('user_inventory', targetInventory.id, {
+                credits: { ...targetInventory.credits, private: newCredits },
+                lastUpdated: new Date().toISOString()
+            });
+            
+            addLog(blockForm.id ? '修改並完課' : '新增並完課', `自動扣除 ${targetInventory.name} ${pointsToDeduct} 點`);
+        }
+        // ---------------------------------------
+
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
-        showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
+        showNotification(`成功建立 ${batchOps.length} 筆預約${directComplete ? ' (已完課)' : ''}`, 'success');
         setIsBlockModalOpen(false);
     } catch (e) {
         console.error(e);
@@ -649,6 +670,7 @@ export default function App() {
       
       setBlockForm({ id: null, type: 'block', coachId: targetCoachId, date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, reason: '1v1教練課', customer: null, repeatWeeks: 1 });
       setMemberSearchTerm(''); // Reset search
+      setDirectComplete(false); // Reset direct complete
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -667,6 +689,7 @@ export default function App() {
           reason: '內部訓練', customer: null, repeatWeeks: 1 
       });
       setMemberSearchTerm(''); // Reset search
+      setDirectComplete(false); // Reset
       setDeleteConfirm(false); 
       setIsBatchMode(true);
       setIsBlockModalOpen(true);
@@ -679,6 +702,7 @@ export default function App() {
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
       setMemberSearchTerm(''); // Existing customer is shown in card, no need to preset search term
+      setDirectComplete(false); // Reset
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -712,6 +736,7 @@ export default function App() {
           return;
       }
 
+      // Allow confirming if checked_in (standard) or confirmed (skip check-in, manual confirm)
       if (app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error');
           return;
@@ -723,7 +748,10 @@ export default function App() {
       }
 
       try {
-          // --- DEDUCTION LOGIC ---
+          // --- STEP 1: Update Status FIRST (Lock it) ---
+          await updateDocument('appointments', app.id, { status: 'completed' });
+
+          // --- STEP 2: DEDUCTION LOGIC ---
           let deducted = false;
           let remaining = '?';
           
@@ -746,15 +774,17 @@ export default function App() {
               }
           }
           // ------------------------
-
-          // Update Appointment to Completed
-          await updateDocument('appointments', app.id, { status: 'completed' });
+          
+          // Force update local state immediately for UI responsiveness (optimistic update)
+          const updatedApps = appointments.map(a => a.id === app.id ? { ...a, status: 'completed' as const } : a);
+          setAppointments(updatedApps);
 
           addLog('完課確認', `員工 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
           showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
       } catch (e) {
           console.error(e);
-          showNotification('更新失敗', 'error');
+          showNotification('更新失敗，請檢查網路連線', 'error');
+          // Revert optimistic update if needed, but since we updated Firestore first, usually reload will fix it.
       }
   };
 
@@ -1296,14 +1326,31 @@ export default function App() {
                         )}
                         
                         {!blockForm.id && (
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
-                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})}>
-                                    <option value={1}>單次事件</option>
-                                    <option value={4}>重複 4 週</option>
-                                    <option value={8}>重複 8 週</option>
-                                    <option value={12}>重複 12 週</option>
-                                </select>
+                            <div className="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
+                                    <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})}>
+                                        <option value={1}>單次事件</option>
+                                        <option value={4}>重複 4 週</option>
+                                        <option value={8}>重複 8 週</option>
+                                        <option value={12}>重複 12 週</option>
+                                    </select>
+                                </div>
+                                {blockForm.type === 'private' && blockForm.customer?.name && (
+                                    <div className="flex items-center">
+                                       <label className="flex items-center gap-2 cursor-pointer p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl w-full border border-indigo-100 dark:border-indigo-800 transition-all hover:bg-indigo-100">
+                                            <input 
+                                                type="checkbox" 
+                                                className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
+                                                checked={directComplete}
+                                                onChange={e => setDirectComplete(e.target.checked)}
+                                            />
+                                            <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
+                                                <Zap size={14}/> 直接完課 (扣點)
+                                            </span>
+                                       </label>
+                                    </div>
+                                )}
                             </div>
                         )}
 
@@ -1325,7 +1372,7 @@ export default function App() {
                                         ? 'bg-gray-400 cursor-not-allowed' 
                                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                             >
-                                {blockForm.id ? '儲存變更' : '確認新增'}
+                                {blockForm.id ? '儲存變更' : (directComplete ? '建立並完課' : '確認新增')}
                             </button>
                         </div>
                     </form>

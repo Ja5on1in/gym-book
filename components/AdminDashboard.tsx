@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info, Calendar } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info, Calendar, Zap } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -511,9 +511,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <div className="flex gap-2 mr-2">
                                       <button 
                                           onClick={(e) => { e.stopPropagation(); onConfirmCompletion(app); }}
-                                          className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-md hover:bg-indigo-700 transition-colors animate-pulse"
+                                          className="text-xs bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-md hover:shadow-purple-500/40 transition-all animate-pulse"
                                       >
-                                          <CheckCircle size={14}/> 核實完課
+                                          <Zap size={14} className="fill-yellow-300 text-yellow-300 animate-ping-slow"/> 核實完課
                                       </button>
                                       <button 
                                           onClick={(e) => { e.stopPropagation(); onCancelAppointment(app, '管理員核實取消(誤觸)'); }}
