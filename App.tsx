@@ -20,8 +20,7 @@ import {
   X,
   CreditCard,
   Check,
-  CheckCircle2,
-  Zap
+  CheckCircle2
 } from 'lucide-react';
 
 import { 
@@ -30,7 +29,6 @@ import {
     saveToFirestore, 
     deleteFromFirestore, 
     disableUserInFirestore, 
-    updateDocument, // Imported robust update
     isFirebaseAvailable, 
     loginWithEmail, 
     logout,
@@ -91,8 +89,6 @@ export default function App() {
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
-  // New: Direct Complete Toggle
-  const [directComplete, setDirectComplete] = useState(false);
   
   // Member Search State (New)
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
@@ -188,7 +184,6 @@ export default function App() {
       return () => unsubscribe();
   }, []);
 
-  // Robust Listener Cleanup
   useEffect(() => {
     const unsubApps = subscribeToCollection('appointments', (data) => {
         const apps = data as Appointment[];
@@ -217,12 +212,11 @@ export default function App() {
         setInventories([...data] as UserInventory[]);
     }, () => {});
 
-    // Cleanup function to prevent memory leaks or crashes on unmount
     return () => {
-        if (unsubApps) unsubApps();
-        if (unsubCoaches) unsubCoaches();
-        if (unsubLogs) unsubLogs();
-        if (unsubInventory) unsubInventory();
+        unsubApps();
+        unsubCoaches && unsubCoaches();
+        unsubLogs && unsubLogs();
+        unsubInventory && unsubInventory();
     };
   }, []);
 
@@ -312,7 +306,7 @@ export default function App() {
       const oldPrivate = oldInv ? oldInv.credits.private : '?';
       const oldGroup = oldInv ? oldInv.credits.group : '?';
 
-      await updateDocument('user_inventory', inventory.id, {
+      await saveToFirestore('user_inventory', inventory.id, {
           ...inventory,
           lastUpdated: new Date().toISOString()
       });
@@ -392,7 +386,8 @@ export default function App() {
                 // Enhancement: Automatic seamless linking
                 if (inventory) {
                     if (!inventory.lineUserId) {
-                        await updateDocument('user_inventory', inventory.id, {
+                        await saveToFirestore('user_inventory', inventory.id, {
+                            ...inventory,
                             lineUserId: lineProfile.userId,
                             lastUpdated: new Date().toISOString()
                         });
@@ -462,13 +457,10 @@ export default function App() {
       // Logic Update: Since we don't deduct on booking anymore, we DO NOT refund on cancel.
       // We only care if status is not already completed/cancelled.
 
-      // SAFE UPDATE using updateDocument
-      await updateDocument('appointments', app.id, { 
-          status: 'cancelled', 
-          cancelReason: reason 
-      });
+      const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
+      await saveToFirestore('appointments', app.id, updated);
       
-      addLog('取消預約', `取消 ${app.customer?.name} - ${reason}`);
+      addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       const coach = coaches.find(c => c.id === app.coachId);
       
       // Async webhook - Fire and forget
@@ -544,9 +536,6 @@ export default function App() {
 
     let stopCreation = false;
 
-    // Find original app for data preservation if single edit
-    const originalApp = blockForm.id ? appointments.find(a => a.id === blockForm.id) : null;
-
     // Outer Loop: Weeks
     for (let i = 0; i < repeat; i++) {
         if (stopCreation) break;
@@ -563,31 +552,23 @@ export default function App() {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  
-                 // CRITICAL: Explicitly construct the appointment with potentially UPDATED date and time
-                 // Preserve LINE ID from original app if available (prevents data loss on edit)
-                 const op: Appointment = { 
-                     ...(isEditSingle ? originalApp : {}), // Spread original first to keep hidden fields
+                 batchOps.push({ 
                      id, 
                      type: finalType as any, 
-                     date: dKey, 
-                     time: slot, 
+                     date: dKey, // CRITICAL: Ensure date is updated during iteration or single edit
+                     time: slot, // CRITICAL: Ensure time is updated
                      coachId: coach.id, 
                      coachName: coach.name, 
                      reason: blockForm.reason, 
-                     // IMPORTANT: If directComplete is checked, force 'completed', otherwise default
-                     status: (isEditSingle && originalApp && !directComplete) ? originalApp.status : (directComplete ? 'completed' : 'confirmed'), 
+                     status: 'confirmed', 
                      customer: (finalType === 'private' && blockForm.customer) ? {
                          name: blockForm.customer.name,
                          phone: blockForm.customer.phone || "",
                          email: blockForm.customer.email || ""
                      } : null,
-                     createdAt: originalApp?.createdAt || new Date().toISOString(),
-                     // Priority: Linked Inventory > Original Record > Empty
-                     lineUserId: targetInventory?.lineUserId || originalApp?.lineUserId || "",
-                     lineName: targetInventory?.name || originalApp?.lineName || ""
-                 };
-                 
-                 batchOps.push(op);
+                     createdAt: new Date().toISOString(),
+                     lineUserId: targetInventory?.lineUserId || ""
+                 });
              }
         }
     }
@@ -599,27 +580,9 @@ export default function App() {
     
     // Batch Save
     try {
-        // Use saveToFirestore (upsert) because we might be creating new IDs or overwriting specific ones fully
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
-
-        // --- DIRECT COMPLETE DEDUCTION LOGIC ---
-        if (directComplete && isPrivate && targetInventory && batchOps.length > 0) {
-            // Deduct credits for EACH appointment created in batch (usually 1 if single)
-            // Note: If batchOps > 1 (e.g., recurring or batch time), deduct multiple points
-            const pointsToDeduct = batchOps.length;
-            const newCredits = targetInventory.credits.private - pointsToDeduct;
-            
-            await updateDocument('user_inventory', targetInventory.id, {
-                credits: { ...targetInventory.credits, private: newCredits },
-                lastUpdated: new Date().toISOString()
-            });
-            
-            addLog(blockForm.id ? '修改並完課' : '新增並完課', `自動扣除 ${targetInventory.name} ${pointsToDeduct} 點`);
-        }
-        // ---------------------------------------
-
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
-        showNotification(`成功建立 ${batchOps.length} 筆預約${directComplete ? ' (已完課)' : ''}`, 'success');
+        showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
         setIsBlockModalOpen(false);
     } catch (e) {
         console.error(e);
@@ -639,10 +602,8 @@ export default function App() {
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
                  // NO REFUND LOGIC here anymore as we don't deduct on booking
-                 await updateDocument('appointments', target.id, { 
-                     status: 'cancelled', 
-                     cancelReason: reason 
-                 });
+                 const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
+                 await saveToFirestore('appointments', target.id, updated);
                  
                  addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
                  sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
@@ -670,7 +631,6 @@ export default function App() {
       
       setBlockForm({ id: null, type: 'block', coachId: targetCoachId, date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, reason: '1v1教練課', customer: null, repeatWeeks: 1 });
       setMemberSearchTerm(''); // Reset search
-      setDirectComplete(false); // Reset direct complete
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -689,7 +649,6 @@ export default function App() {
           reason: '內部訓練', customer: null, repeatWeeks: 1 
       });
       setMemberSearchTerm(''); // Reset search
-      setDirectComplete(false); // Reset
       setDeleteConfirm(false); 
       setIsBatchMode(true);
       setIsBlockModalOpen(true);
@@ -702,7 +661,6 @@ export default function App() {
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
       setMemberSearchTerm(''); // Existing customer is shown in card, no need to preset search term
-      setDirectComplete(false); // Reset
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -718,7 +676,8 @@ export default function App() {
               return;
           }
           
-          await updateDocument('appointments', app.id, {
+          await saveToFirestore('appointments', app.id, {
+              ...app,
               status: 'checked_in'
           });
 
@@ -736,22 +695,13 @@ export default function App() {
           return;
       }
 
-      // Allow confirming if checked_in (standard) or confirmed (skip check-in, manual confirm)
       if (app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error');
           return;
       }
 
-      // Explicit Confirmation Prompt
-      if (!window.confirm(`確認核實此課程並扣除學員 1 點點數？\n學員: ${app.customer?.name}`)) {
-          return;
-      }
-
       try {
-          // --- STEP 1: Update Status FIRST (Lock it) ---
-          await updateDocument('appointments', app.id, { status: 'completed' });
-
-          // --- STEP 2: DEDUCTION LOGIC ---
+          // --- DEDUCTION LOGIC ---
           let deducted = false;
           let remaining = '?';
           
@@ -765,7 +715,8 @@ export default function App() {
 
               if (inventory) {
                   const newCredits = inventory.credits.private - 1;
-                  await updateDocument('user_inventory', inventory.id, {
+                  await saveToFirestore('user_inventory', inventory.id, {
+                      ...inventory,
                       credits: { ...inventory.credits, private: newCredits },
                       lastUpdated: new Date().toISOString()
                   });
@@ -774,17 +725,15 @@ export default function App() {
               }
           }
           // ------------------------
-          
-          // Force update local state immediately for UI responsiveness (optimistic update)
-          const updatedApps = appointments.map(a => a.id === app.id ? { ...a, status: 'completed' as const } : a);
-          setAppointments(updatedApps);
 
-          addLog('完課確認', `員工 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
+          // Update Appointment to Completed
+          await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
+
+          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
           showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
       } catch (e) {
           console.error(e);
-          showNotification('更新失敗，請檢查網路連線', 'error');
-          // Revert optimistic update if needed, but since we updated Firestore first, usually reload will fix it.
+          showNotification('更新失敗', 'error');
       }
   };
 
@@ -794,14 +743,14 @@ export default function App() {
         // Use the proper confirmation flow which deducts points
         await handleCoachConfirmCompletion(app);
     } else {
-        // Legacy toggle or force toggle for Manager/Receptionist
+        // Legacy toggle or force toggle for Manager
         if (currentUser?.role !== 'manager' && currentUser?.role !== 'receptionist') {
-           showNotification('教練請點擊「核實完課」按鈕 (僅適用於已簽到課程)', 'info');
+           showNotification('教練請點擊「確認完課」按鈕 (僅適用於已簽到課程)', 'info');
            return;
         }
         // Manager force toggle (Does NOT auto-deduct here to avoid double deduction accidents, assume manual correction)
         const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
-        await updateDocument('appointments', app.id, { status: newStatus });
+        await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
         addLog('課程狀態', `管理員/櫃檯強制變更 ${app.customer?.name} 狀態為 ${newStatus}`);
     }
   };
@@ -1071,8 +1020,6 @@ export default function App() {
             onUpdateInventory={handleUpdateInventory}
             onSaveInventory={handleSaveInventory}
             onDeleteInventory={handleDeleteInventory}
-            onCancelAppointment={handleCustomerCancel} // New Prop
-            onConfirmCompletion={handleCoachConfirmCompletion} // New Prop for list actions
          />
       );
   };
@@ -1326,31 +1273,14 @@ export default function App() {
                         )}
                         
                         {!blockForm.id && (
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
-                                    <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})}>
-                                        <option value={1}>單次事件</option>
-                                        <option value={4}>重複 4 週</option>
-                                        <option value={8}>重複 8 週</option>
-                                        <option value={12}>重複 12 週</option>
-                                    </select>
-                                </div>
-                                {blockForm.type === 'private' && blockForm.customer?.name && (
-                                    <div className="flex items-center">
-                                       <label className="flex items-center gap-2 cursor-pointer p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl w-full border border-indigo-100 dark:border-indigo-800 transition-all hover:bg-indigo-100">
-                                            <input 
-                                                type="checkbox" 
-                                                className="w-5 h-5 rounded text-indigo-600 focus:ring-indigo-500 border-gray-300"
-                                                checked={directComplete}
-                                                onChange={e => setDirectComplete(e.target.checked)}
-                                            />
-                                            <span className="text-sm font-bold text-indigo-700 dark:text-indigo-300 flex items-center gap-1">
-                                                <Zap size={14}/> 直接完課 (扣點)
-                                            </span>
-                                       </label>
-                                    </div>
-                                )}
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
+                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})}>
+                                    <option value={1}>單次事件</option>
+                                    <option value={4}>重複 4 週</option>
+                                    <option value={8}>重複 8 週</option>
+                                    <option value={12}>重複 12 週</option>
+                                </select>
                             </div>
                         )}
 
@@ -1372,7 +1302,7 @@ export default function App() {
                                         ? 'bg-gray-400 cursor-not-allowed' 
                                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                             >
-                                {blockForm.id ? '儲存變更' : (directComplete ? '建立並完課' : '確認新增')}
+                                {blockForm.id ? '儲存變更' : '確認新增'}
                             </button>
                         </div>
                     </form>

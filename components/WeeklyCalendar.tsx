@@ -1,6 +1,8 @@
 
+
+
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime } from '../utils';
@@ -113,14 +115,14 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                   <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-bold truncate">{coach?.name || app.coachName}</span>
                                     
-                                    {/* Action Button: Check In confirm for Coach - UPDATED STYLE */}
+                                    {/* Action Button: Check In confirm for Coach */}
                                     {isMine && isCheckedIn && (
                                         <button 
                                             onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
-                                            className="bg-indigo-600 text-white rounded-md px-1.5 py-0.5 shadow-sm hover:scale-105 transition-transform flex items-center gap-0.5 text-[9px] font-bold tracking-tight" 
+                                            className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
                                             title="確認完課 (扣點)"
                                         >
-                                            <Check size={10}/> 核實
+                                            <AlertCircle size={12}/>
                                         </button>
                                     )}
 

@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info, Calendar, Zap } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -32,9 +32,6 @@ interface AdminDashboardProps {
   onUpdateInventory: (inv: UserInventory) => void;
   onDeleteInventory: (id: string) => void;
   onSaveInventory: (inv: UserInventory) => void;
-  // New: Handlers for direct action
-  onCancelAppointment: (app: Appointment, reason: string) => void;
-  onConfirmCompletion: (app: Appointment) => void;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -42,7 +39,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   appointments, selectedBatch, toggleBatchSelect, handleBatchDelete,
   handleExportJson, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
-  inventories, onDeleteInventory, onSaveInventory, onCancelAppointment, onConfirmCompletion
+  inventories, onDeleteInventory, onSaveInventory
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -147,14 +144,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
      updateCoachWorkDays({ ...coach, workDays: newWorkDays, dailyWorkHours: newDaily });
   };
 
-  const handleSetThisMonth = () => {
-      const now = new Date();
-      const first = new Date(now.getFullYear(), now.getMonth(), 1);
-      const last = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      setStatsStartDate(formatDateKey(first.getFullYear(), first.getMonth(), first.getDate()));
-      setStatsEndDate(formatDateKey(last.getFullYear(), last.getMonth(), last.getDate()));
-  };
-
   const handleExportRangeCsv = () => {
       const rows = [
           ["統計區間", `${statsStartDate} ~ ${statsEndDate}`],
@@ -195,9 +184,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       a.status === 'cancelled' && 
       (currentUser.role === 'manager' || currentUser.role === 'receptionist' || a.coachId === currentUser.id)
     );
-    const header = "預約日期,時間,教練,客戶名稱,取消原因,狀態";
+    const header = "預約日期,時間,教練,客戶名稱,取消原因";
     const rows = cancelledApps.map(a => 
-      `${a.date},${a.time},${a.coachName},${a.customer?.name || ''},${a.cancelReason || ''},${a.status}`
+      `${a.date},${a.time},${a.coachName},${a.customer?.name || ''},${a.cancelReason || ''}`
     );
     const csvContent = "\uFEFF" + [header, ...rows].join("\n");
     
@@ -320,8 +309,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     })
     .sort((a,b)=> { try { return new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime() } catch(e){ return 0 } });
 
-  const auditPendingCount = filteredApps.filter(a => a.status === 'checked_in').length;
-  const auditCompletedCount = filteredApps.filter(a => a.status === 'completed').length;
+  const auditPendingCount = filteredApps.filter(a => a.status === 'completed').length;
+  const checkedInCount = filteredApps.filter(a => a.status === 'checked_in').length;
 
   return (
     <div className="max-w-6xl mx-auto p-4 pb-24">
@@ -333,11 +322,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <button onClick={onLogout} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shadow-sm"><LogOut size={16}/> 登出</button>
        </div>
        
-       {/* Checked In Alert - UPDATED UI */}
-       {auditPendingCount > 0 && (
+       {/* Checked In Alert */}
+       {checkedInCount > 0 && (
            <div 
-             className="mb-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between animate-pulse cursor-pointer hover:scale-[1.01] transition-transform"
              onClick={() => { setAdminTab('appointments'); setStatusFilter('checked_in'); }}
+             className="mb-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-lg cursor-pointer hover:scale-[1.01] transition-transform flex items-center justify-between animate-pulse"
            >
                <div className="flex items-center gap-3">
                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
@@ -345,17 +334,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    </div>
                    <div>
                        <div className="font-bold text-lg">等待確認完課</div>
-                       <div className="text-sm opacity-90">有 {auditPendingCount} 筆學生已簽到，請核實</div>
+                       <div className="text-sm opacity-90">有 {checkedInCount} 筆學生已簽到，請核實</div>
                    </div>
                </div>
-               <div className="bg-white/20 p-2 rounded-full">
-                  <ChevronRight/>
-               </div>
+               <ChevronRight/>
            </div>
        )}
 
        {/* Audit Alert */}
-       {currentUser.role === 'manager' && auditCompletedCount > 0 && (
+       {currentUser.role === 'manager' && auditPendingCount > 0 && (
            <div 
              onClick={() => { setAdminTab('appointments'); setStatusFilter('completed'); }}
              className="mb-6 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-lg cursor-pointer hover:scale-[1.01] transition-transform flex items-center justify-between"
@@ -366,7 +353,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    </div>
                    <div>
                        <div className="font-bold text-lg">待處理稽核</div>
-                       <div className="text-sm opacity-90">有 {auditCompletedCount} 筆已完課紀錄</div>
+                       <div className="text-sm opacity-90">有 {auditPendingCount} 筆已完課紀錄</div>
                    </div>
                </div>
                <ChevronRight/>
@@ -506,24 +493,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                              )}
                           </div>
                           <div className="flex items-center gap-2">
-                              {/* ACTION BUTTONS FOR CHECKED IN */}
-                              {isCheckedIn && (
-                                  <div className="flex gap-2 mr-2">
-                                      <button 
-                                          onClick={(e) => { e.stopPropagation(); onConfirmCompletion(app); }}
-                                          className="text-xs bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-md hover:shadow-purple-500/40 transition-all animate-pulse"
-                                      >
-                                          <Zap size={14} className="fill-yellow-300 text-yellow-300 animate-ping-slow"/> 核實完課
-                                      </button>
-                                      <button 
-                                          onClick={(e) => { e.stopPropagation(); onCancelAppointment(app, '管理員核實取消(誤觸)'); }}
-                                          className="text-xs bg-white border border-gray-200 text-gray-500 px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm hover:bg-gray-100 transition-colors"
-                                      >
-                                          <X size={14}/>
-                                      </button>
-                                  </div>
-                              )}
-
                               {/* Allow reverting status for manager */}
                               {(isAudit || isCheckedIn) && currentUser.role === 'manager' && (
                                   <button 
@@ -557,48 +526,440 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          </div>
        )}
 
-       {/* Export Date Range Modal */}
-       {isExportModalOpen && (
-           <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-               <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">
-                   <div className="flex justify-between items-start mb-4">
-                       <h3 className="font-bold text-lg text-gray-800 dark:text-white flex items-center gap-2">
-                           <FileSpreadsheet size={20} className="text-emerald-500"/> 匯出報表
-                       </h3>
-                       <button onClick={handleSetThisMonth} className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-lg font-bold hover:bg-indigo-100 transition-colors flex items-center gap-1">
-                           <Calendar size={12}/> 本月
-                       </button>
-                   </div>
-                   
-                   <div className="space-y-3 mb-6">
-                       <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase block mb-1">開始日期</label>
-                           <input 
-                               type="date" 
-                               value={statsStartDate} 
-                               onChange={e => setStatsStartDate(e.target.value)}
-                               className="w-full glass-input p-3 rounded-xl text-sm font-bold dark:text-white"
-                           />
-                       </div>
-                       <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase block mb-1">結束日期</label>
-                           <input 
-                               type="date" 
-                               value={statsEndDate} 
-                               onChange={e => setStatsEndDate(e.target.value)}
-                               className="w-full glass-input p-3 rounded-xl text-sm font-bold dark:text-white"
-                           />
-                       </div>
-                   </div>
+       {adminTab === 'inventory' && (
+          <div className="glass-panel rounded-3xl shadow-lg p-6">
+              <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                  <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 庫存管理 {currentUser.role !== 'manager' && currentUser.role !== 'receptionist' && <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full ml-2">檢視模式</span>}</h3>
+                  <div className="flex gap-2 w-full md:w-auto">
+                      <div className="relative flex-1 md:flex-initial">
+                          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                          <input 
+                              type="text" 
+                              placeholder="搜尋姓名、電話或 ID..." 
+                              className="pl-10 pr-4 py-2 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl w-full md:w-64 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white"
+                              value={searchQuery}
+                              onChange={e => setSearchQuery(e.target.value)}
+                          />
+                      </div>
+                      {/* Only Manager/Receptionist can Add */}
+                      {['manager', 'receptionist'].includes(currentUser.role) && (
+                          <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all flex items-center gap-2 whitespace-nowrap">
+                              <Plus size={16}/> 新增學員
+                          </button>
+                      )}
+                  </div>
+              </div>
 
-                   <div className="flex gap-3">
-                       <button onClick={() => setIsExportModalOpen(false)} className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
-                       <button onClick={handleExportRangeCsv} className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/30 flex items-center justify-center gap-2">
-                           <Download size={18}/> 下載 CSV
-                       </button>
-                   </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredInventories.length === 0 ? (
+                      <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50/50 dark:bg-gray-800/30 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                          <UserIcon size={48} className="mx-auto mb-4 opacity-50"/>
+                          <p className="font-medium">找不到符合的學員資料</p>
+                          {['manager', 'receptionist'].includes(currentUser.role) && (
+                            <button onClick={() => handleOpenInventoryModal()} className="mt-4 text-indigo-500 font-bold hover:underline">新增一筆？</button>
+                          )}
+                      </div>
+                  ) : (
+                      filteredInventories.map(inv => (
+                          <div key={inv.id} className="glass-card p-5 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all group">
+                              <div className="flex justify-between items-start mb-3">
+                                  <div>
+                                      <h4 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                                          {inv.name}
+                                          {inv.lineUserId ? <span className="w-2 h-2 rounded-full bg-[#06C755]" title="已綁定 LINE"></span> : <span className="w-2 h-2 rounded-full bg-gray-300" title="未綁定 LINE"></span>}
+                                      </h4>
+                                      <p className="text-xs text-gray-500 dark:text-gray-400">{inv.phone || '無電話'}</p>
+                                  </div>
+                                  {/* Only Manager/Receptionist can Edit/Delete */}
+                                  {['manager', 'receptionist'].includes(currentUser.role) && (
+                                      <div className="flex gap-1">
+                                          <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                          <button onClick={() => { if(window.confirm(`確定刪除 ${inv.name} 嗎？此動作無法復原。`)) onDeleteInventory(inv.id) }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                      </div>
+                                  )}
+                              </div>
+                              
+                              <div className="grid grid-cols-2 gap-2 mb-3">
+                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-2 rounded-xl text-center">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">私人課</div>
+                                      <div className={`font-bold text-lg ${inv.credits.private > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>{inv.credits.private}</div>
+                                  </div>
+                                  <div className="bg-orange-50 dark:bg-orange-900/20 p-2 rounded-xl text-center">
+                                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">團課</div>
+                                      <div className={`font-bold text-lg ${inv.credits.group > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400'}`}>{inv.credits.group}</div>
+                                  </div>
+                              </div>
+
+                              <div className="text-[10px] text-gray-400 text-right">
+                                  更新於: {new Date(inv.lastUpdated).toLocaleDateString()}
+                              </div>
+                          </div>
+                      ))
+                  )}
+              </div>
+          </div>
+       )}
+
+       {adminTab === 'analysis' && (
+          <div className="space-y-6 animate-slideUp">
+            
+            <div className="flex justify-end gap-3">
+               <button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
+               <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出區間報表</button>
+            </div>
+            
+            {/* Visual stats default to current range or whatever is in state, but inputs are hidden */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+               <div className="glass-panel p-6 rounded-3xl relative overflow-hidden">
+                  <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 (目前顯示: {statsStartDate}~{statsEndDate})</h4>
+                  <div className="space-y-3 relative z-10">
+                    {statsData.topTimeSlots.length > 0 ? statsData.topTimeSlots.map((s: any, i: number) => (
+                        <div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-white/40 dark:border-gray-700">
+                            <span className="font-bold text-orange-600 dark:text-orange-400">#{i+1} {s.time}</span>
+                            <span className="text-sm font-medium">{s.count} 堂</span>
+                        </div>
+                    )) : <div className="text-center text-gray-400 text-sm py-4">無數據</div>}
+                  </div>
                </div>
-           </div>
+               
+               <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center">
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">狀態總覽</h4>
+                  <div className="grid grid-cols-3 gap-2 text-center divide-x divide-gray-200 dark:divide-gray-700">
+                     <div>
+                         <div className="text-3xl lg:text-4xl font-bold text-indigo-500 mb-1">{statsData.totalActive}</div>
+                         <div className="text-[10px] font-bold text-gray-400 uppercase">預約中</div>
+                     </div>
+                     <div>
+                         <div className="text-3xl lg:text-4xl font-bold text-emerald-500 mb-1">{statsData.totalCompleted}</div>
+                         <div className="text-[10px] font-bold text-gray-400 uppercase">已完課</div>
+                     </div>
+                     <div>
+                         <div className="text-3xl lg:text-4xl font-bold text-red-500 mb-1">{statsData.totalCancelled}</div>
+                         <div className="text-[10px] font-bold text-gray-400 uppercase">已取消</div>
+                     </div>
+                  </div>
+               </div>
+
+               <div className="glass-panel p-6 rounded-3xl md:col-span-1">
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計</h4>
+                  <div className="overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
+                      <div className="grid grid-cols-4 gap-2 text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">
+                          <span>教練</span>
+                          <span className="text-right">個人</span>
+                          <span className="text-right">團課</span>
+                          <span className="text-right">總計</span>
+                      </div>
+                      {(currentUser.role === 'manager' 
+                          ? statsData.coachStats 
+                          : statsData.coachStats.filter((s: any) => s.id === currentUser.id)
+                       ).map((c: any) => (
+                        <div key={c.id} className="grid grid-cols-4 gap-2 text-sm py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 items-center">
+                            <span className="truncate font-medium dark:text-gray-200">{c.name}</span>
+                            <span className="text-right text-gray-500">{c.personal}</span>
+                            <span className="text-right text-gray-500">{c.group}</span>
+                            <span className="text-right font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 rounded px-1">{c.total}</span>
+                        </div>
+                      ))}
+                  </div>
+               </div>
+            </div>
+          </div>
+       )}
+
+       {adminTab === 'staff' && currentUser.role === 'manager' && (
+          <div className="glass-panel rounded-3xl shadow-lg p-6">
+            <div className="flex justify-between items-center mb-6">
+                <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Users className="text-indigo-500"/> 員工管理</h3>
+                <button onClick={() => handleOpenCoachModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
+                    <Plus size={16}/> 新增教練
+                </button>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {coaches.map(coach => (
+                    <div key={coach.id} className="glass-card p-4 rounded-2xl relative group hover:shadow-lg transition-all border border-gray-100 dark:border-gray-700">
+                        <div className={`absolute top-0 left-0 w-2 h-full rounded-l-2xl ${coach.color.split(' ')[0]}`}></div>
+                        <div className="pl-4 flex justify-between items-start">
+                            <div>
+                                <h4 className="font-bold text-lg dark:text-white mb-1">{coach.name}</h4>
+                                <div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mb-1">
+                                    <span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 uppercase">{coach.role}</span>
+                                    <span>{coach.workStart} - {coach.workEnd}</span>
+                                </div>
+                                {coach.offDates && coach.offDates.length > 0 && (
+                                   <div className="flex items-center gap-1 text-[10px] text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded w-fit">
+                                      <CalendarX size={10}/>
+                                      {coach.offDates.length} 個特定休假日
+                                   </div>
+                                )}
+                            </div>
+                            <div className="flex gap-2">
+                                <button onClick={() => handleOpenCoachModal(coach)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                <button onClick={() => onDeleteCoach(coach.id, coach.name)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+          </div>
+       )}
+
+       {adminTab === 'settings' && (
+          <div className="space-y-6">
+             {currentUser.role === 'manager' && (
+               <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 rounded-3xl shadow-lg text-white flex justify-between items-center">
+                  <span className="font-bold flex items-center gap-3 text-lg"><Database size={24}/> 資料庫管理</span>
+                  <div className="flex gap-3">
+                    <button onClick={handleExportJson} className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-xl text-sm border border-white/30 transition-all">匯出備份</button>
+                    <button onClick={() => fileInputRef.current?.click()} className="bg-white text-indigo-600 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-gray-50 transition-all">匯入資料</button>
+                    <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden"/>
+                  </div>
+               </div>
+             )}
+             {coaches.map(c => {
+               if (currentUser.role === 'coach' && currentUser.id !== c.id) return null;
+               return (
+               <div key={c.id} className="glass-panel p-6 rounded-3xl shadow-sm">
+                  <div className="font-bold mb-6 dark:text-white flex items-center gap-3 text-xl border-b border-gray-100 dark:border-gray-700 pb-4">
+                     <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600"><Clock size={20}/></div>
+                     {c.name} 班表設定
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                     {['日','一','二','三','四','五','六'].map((d, i) => {
+                       const isWorkDay = c.workDays?.includes(i);
+                       const hours = c.dailyWorkHours?.[i.toString()] || { start: c.workStart, end: c.workEnd };
+                       return (
+                         <div key={i} className={`p-4 rounded-2xl border transition-all duration-300 ${isWorkDay ? 'border-indigo-200 bg-indigo-50/50 dark:bg-indigo-900/10 dark:border-indigo-800' : 'border-gray-100 bg-gray-50/50 dark:bg-gray-800/50 dark:border-gray-700 opacity-60'}`}>
+                           <div className="flex items-center justify-between">
+                             <div className="flex items-center gap-4">
+                                <button 
+                                  onClick={() => handleUpdateDayConfig(c, i, !isWorkDay, hours.start, hours.end)}
+                                  className={`w-12 h-7 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-600'}`}
+                                >
+                                  <div className={`absolute top-1 left-1 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-300 ${isWorkDay ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                </button>
+                                <span className={`font-bold ${isWorkDay ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400'}`}>星期{d}</span>
+                             </div>
+                             {!isWorkDay && <span className="text-xs font-medium text-gray-400 bg-white dark:bg-gray-700 px-2 py-1 rounded">休假</span>}
+                           </div>
+                           
+                           {isWorkDay && (
+                             <div className="mt-4 flex items-center gap-2 bg-white/70 dark:bg-gray-700/50 p-2 rounded-xl border border-gray-100 dark:border-gray-600 shadow-sm">
+                               <Clock size={14} className="text-gray-400 ml-1"/>
+                               <select 
+                                 value={hours.start} 
+                                 onChange={(e) => handleUpdateDayConfig(c, i, true, e.target.value, hours.end)}
+                                 className="flex-1 bg-transparent text-sm font-medium text-gray-700 dark:text-gray-200 outline-none cursor-pointer text-center"
+                               >
+                                 {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                               </select>
+                               <ChevronRight size={14} className="text-gray-300"/>
+                               <select 
+                                 value={hours.end} 
+                                 onChange={(e) => handleUpdateDayConfig(c, i, true, hours.start, e.target.value)}
+                                 className="flex-1 bg-transparent text-sm font-medium text-gray-700 dark:text-gray-200 outline-none cursor-pointer text-center"
+                               >
+                                 {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                               </select>
+                             </div>
+                           )}
+                         </div>
+                       );
+                     })}
+                  </div>
+               </div>
+               );
+             })}
+          </div>
+       )}
+       
+       {adminTab === 'help' && (
+          <div className="glass-panel rounded-3xl shadow-lg p-8 animate-slideUp">
+              <h3 className="font-bold text-2xl mb-6 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-4">
+                  <BookOpen className="text-indigo-500"/> 使用手冊與操作指南
+              </h3>
+
+              <div className="space-y-8">
+                  {/* 1. 狀態與圖示說明 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <Info size={20} className="text-blue-500"/> 狀態與顏色說明
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                          <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800">
+                              <span className="text-xs font-bold bg-indigo-100 text-indigo-600 px-2 py-1 rounded-full mb-2 inline-block">已預約</span>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">學生已成功預約課程，尚未上課。此時尚未扣除點數。</p>
+                          </div>
+                          <div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-2xl border border-orange-100 dark:border-orange-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-xs font-bold bg-orange-100 text-orange-600 px-2 py-1 rounded-full">已簽到</span>
+                                  <Timer size={14} className="text-orange-500 animate-pulse"/>
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">學生到達現場並在手機上按下簽到。需要教練核實。</p>
+                          </div>
+                          <div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                              <div className="flex items-center gap-2 mb-2">
+                                  <span className="text-xs font-bold bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full">已完課</span>
+                                  <CheckCircle size={14} className="text-emerald-500"/>
+                              </div>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">教練確認學生上課完畢。系統已自動扣除 1 點。</p>
+                          </div>
+                          <div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-2xl border border-red-100 dark:border-red-800">
+                              <span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-1 rounded-full mb-2 inline-block">已取消</span>
+                              <p className="text-sm text-gray-600 dark:text-gray-300">課程已被取消。不會扣除任何點數。</p>
+                          </div>
+                      </div>
+                  </section>
+
+                  {/* 2. 標準作業流程 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <Layers size={20} className="text-purple-500"/> 標準作業流程 (SOP)
+                      </h4>
+                      <div className="space-y-4">
+                          <div className="flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-300 shrink-0">1</div>
+                              <div>
+                                  <h5 className="font-bold text-gray-800 dark:text-white">學生預約</h5>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">學生透過 LINE 前台預約，或由櫃檯/管理員在後台「行事曆」代為新增預約。此階段系統會檢查餘額並提示，但允許預約。</p>
+                              </div>
+                          </div>
+                          <div className="flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold shrink-0">2</div>
+                              <div>
+                                  <h5 className="font-bold text-gray-800 dark:text-white">學生簽到</h5>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">上課前，學生在「我的預約」點擊「立即簽到」。後台行事曆該卡片會出現橘色外框與「等待確認」字樣。</p>
+                              </div>
+                          </div>
+                          <div className="flex items-start gap-4">
+                              <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold shrink-0">3</div>
+                              <div>
+                                  <h5 className="font-bold text-gray-800 dark:text-white">教練核銷 (扣點)</h5>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400">教練或管理員在行事曆上點擊該課程卡片上的 <span className="inline-flex items-center justify-center bg-orange-500 text-white rounded-full w-4 h-4 text-[10px]"><AlertTriangle size={8}/></span> 按鈕。確認後狀態變為「已完課」，系統將從學生庫存中<strong>扣除 1 點</strong>。</p>
+                              </div>
+                          </div>
+                      </div>
+                  </section>
+
+                  {/* 3. 角色權限 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <ShieldCheck size={20} className="text-emerald-500"/> 角色與權限
+                      </h4>
+                      <div className="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+                          <table className="w-full text-sm text-left">
+                              <thead className="bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 font-bold">
+                                  <tr>
+                                      <th className="p-3">功能</th>
+                                      <th className="p-3">Manager (管理員)</th>
+                                      <th className="p-3">Receptionist (櫃檯)</th>
+                                      <th className="p-3">Coach (教練)</th>
+                                  </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-100 dark:divide-gray-700 bg-white dark:bg-gray-900/50">
+                                  <tr>
+                                      <td className="p-3 font-medium">查看行事曆</td>
+                                      <td className="p-3 text-green-600">全部可見</td>
+                                      <td className="p-3 text-green-600">全部可見</td>
+                                      <td className="p-3 text-blue-500">僅見自己</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">代客預約</td>
+                                      <td className="p-3 text-green-600">可指定任意教練</td>
+                                      <td className="p-3 text-green-600">可指定任意教練</td>
+                                      <td className="p-3 text-blue-500">僅限自己時段</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">庫存管理 (購課)</td>
+                                      <td className="p-3 text-green-600">新增/修改/刪除</td>
+                                      <td className="p-3 text-green-600">新增/修改</td>
+                                      <td className="p-3 text-gray-400">僅檢視</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">員工管理</td>
+                                      <td className="p-3 text-green-600">完全權限</td>
+                                      <td className="p-3 text-gray-400">無</td>
+                                      <td className="p-3 text-gray-400">無</td>
+                                  </tr>
+                                  <tr>
+                                      <td className="p-3 font-medium">確認完課 (扣點)</td>
+                                      <td className="p-3 text-green-600">可 (包含強制結課)</td>
+                                      <td className="p-3 text-green-600">可 (已簽到項目)</td>
+                                      <td className="p-3 text-green-600">可 (已簽到項目)</td>
+                                  </tr>
+                              </tbody>
+                          </table>
+                      </div>
+                  </section>
+
+                  {/* 4. 常見問題 */}
+                  <section>
+                      <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2">
+                          <HelpCircle size={20} className="text-gray-500"/> 常見問題
+                      </h4>
+                      <div className="space-y-4">
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 如果學生點數不足，還能預約嗎？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  可以。系統會發出提示訊息，但不會阻止預約。請櫃檯人員記得在學生來上課時提醒補購課程。
+                              </div>
+                          </details>
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 取消預約會退還點數嗎？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  現在系統改為「完課才扣點」，因此預約時並未真正扣除點數，所以取消預約時也不需要退還點數。
+                              </div>
+                          </details>
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 如何幫學生修改預約時間？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  請在「行事曆」點擊該課程，修改日期與時間後按下「儲存變更」。學生的「我的預約」頁面會同步更新。
+                              </div>
+                          </details>
+                          <details className="group bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700">
+                              <summary className="flex justify-between items-center font-medium cursor-pointer list-none p-4">
+                                  <span>Q: 學生忘記簽到怎麼辦？</span>
+                                  <span className="transition group-open:rotate-180"><ChevronRight size={16}/></span>
+                              </summary>
+                              <div className="text-gray-600 dark:text-gray-400 px-4 pb-4 text-sm border-t border-gray-100 dark:border-gray-700 pt-3">
+                                  管理員可以在行事曆上直接點擊課程，使用「強制結課」功能（綠色勾勾按鈕）來完成核銷與扣點。
+                              </div>
+                          </details>
+                      </div>
+                  </section>
+              </div>
+          </div>
+       )}
+
+       {adminTab === 'logs' && (
+          <div className="glass-panel rounded-3xl shadow-lg p-6 h-[600px] overflow-y-auto custom-scrollbar">
+             <h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><History className="text-gray-500"/> 系統日誌</h3>
+             <div className="space-y-4">
+             {logs.filter(log => currentUser.role === 'manager' || log.user === currentUser.name).map(log => (
+                <div key={log.id} className="relative pl-6 pb-2 border-l-2 border-gray-200 dark:border-gray-700 last:border-0">
+                   <div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white dark:bg-gray-800 border-2 border-indigo-400"></div>
+                   <div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mb-1">
+                      <span>{new Date(log.time).toLocaleString()}</span>
+                      <span>{log.user}</span>
+                   </div>
+                   <div className="glass-card p-3 rounded-xl">
+                       <div className="font-bold text-gray-800 dark:text-gray-200 mb-1">{log.action}</div>
+                       <div className="text-sm text-gray-600 dark:text-gray-400">{log.details}</div>
+                   </div>
+                </div>
+             ))}
+             </div>
+          </div>
        )}
 
        {/* Coach Edit Modal */}

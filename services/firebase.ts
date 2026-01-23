@@ -154,7 +154,6 @@ export const subscribeToCollection = (
         };
     }
     
-    // Returns the unsubscribe function directly
     return onSnapshot(collection(db, colName), (s: any) => {
         const docs = s.docs.map((d: any) => d.data());
         callback(docs);
@@ -164,7 +163,6 @@ export const subscribeToCollection = (
     });
 };
 
-// Upsert (Set with merge) - Safe for creating or overwriting
 export const saveToFirestore = async (col: string, id: string, data: any) => {
     if (!isFirebaseAvailable || !db) {
         const key = `mock_db_${col}`;
@@ -180,20 +178,7 @@ export const saveToFirestore = async (col: string, id: string, data: any) => {
         await setDoc(doc(db, col, id), data, { merge: true });
     } catch (e) {
         console.error(`Firestore save failed to ${col}/${id}`, e);
-        throw e;
-    }
-};
-
-// Partial Update (Fails if doc doesn't exist) - Use for status updates
-export const updateDocument = async (col: string, id: string, data: any) => {
-    if (!isFirebaseAvailable || !db) {
-        return saveToFirestore(col, id, data); // Fallback to save for local
-    }
-    try {
-        await updateDoc(doc(db, col, id), data);
-    } catch (e) {
-        console.error(`Firestore update failed for ${col}/${id}`, e);
-        throw e;
+        throw e; // Throw so UI can show failure
     }
 };
 
