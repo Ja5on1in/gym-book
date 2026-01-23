@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
@@ -217,6 +216,9 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {coaches.filter(c => {
+                // Filter out receptionists from booking wizard
+                if (c.role === 'receptionist') return false;
+
                 if (selectedService?.id === 'assessment') {
                     const title = (c.title || '').toLowerCase();
                     return title !== 'coach' && title !== '教練';

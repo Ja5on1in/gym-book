@@ -555,8 +555,8 @@ export default function App() {
                  batchOps.push({ 
                      id, 
                      type: finalType as any, 
-                     date: dKey, 
-                     time: slot, 
+                     date: dKey, // CRITICAL: Ensure date is updated during iteration or single edit
+                     time: slot, // CRITICAL: Ensure time is updated
                      coachId: coach.id, 
                      coachName: coach.name, 
                      reason: blockForm.reason, 

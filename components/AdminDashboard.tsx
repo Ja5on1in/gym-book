@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -59,8 +59,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [editingInventory, setEditingInventory] = useState<Partial<UserInventory>>({});
   const [isLineIdLocked, setIsLineIdLocked] = useState(true);
 
-  // Appointment Filter State
-  const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'anomaly' | 'audit' | 'checked_in'>('all');
+  // Appointment Filter State (New)
+  const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled'>('all');
+  const [appSearchTerm, setAppSearchTerm] = useState('');
 
   // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -286,19 +287,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Appointment List Logic with Auditing
   const displayAppointments = filteredApps
     .filter(app => {
-        if (appointmentFilter === 'anomaly') {
-            // Anomaly: Confirmed BUT Past time (Should be completed or cancelled)
-            return app.status === 'confirmed' && isPastTime(app.date, app.time);
-        }
-        if (appointmentFilter === 'audit') {
-            // Audit: Completed
-            return app.status === 'completed';
-        }
-        if (appointmentFilter === 'checked_in') {
-            // Pending: Checked In
-            return app.status === 'checked_in';
+        // Status Filter
+        if (statusFilter !== 'all') {
+            if (statusFilter === 'confirmed') return app.status === 'confirmed';
+            if (statusFilter === 'checked_in') return app.status === 'checked_in';
+            if (statusFilter === 'completed') return app.status === 'completed';
+            if (statusFilter === 'cancelled') return app.status === 'cancelled';
         }
         return true;
+    })
+    .filter(app => {
+        // Search Filter
+        if (!appSearchTerm) return true;
+        const term = appSearchTerm.toLowerCase();
+        return (
+            (app.customer?.name && app.customer.name.toLowerCase().includes(term)) ||
+            (app.customer?.phone && app.customer.phone.includes(term)) ||
+            (app.reason && app.reason.toLowerCase().includes(term)) ||
+            (app.coachName && app.coachName.toLowerCase().includes(term))
+        );
     })
     .sort((a,b)=> { try { return new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime() } catch(e){ return 0 } });
 
@@ -318,7 +325,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {/* Checked In Alert */}
        {checkedInCount > 0 && (
            <div 
-             onClick={() => { setAdminTab('appointments'); setAppointmentFilter('checked_in'); }}
+             onClick={() => { setAdminTab('appointments'); setStatusFilter('checked_in'); }}
              className="mb-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-lg cursor-pointer hover:scale-[1.01] transition-transform flex items-center justify-between animate-pulse"
            >
                <div className="flex items-center gap-3">
@@ -337,7 +344,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {/* Audit Alert */}
        {currentUser.role === 'manager' && auditPendingCount > 0 && (
            <div 
-             onClick={() => { setAdminTab('appointments'); setAppointmentFilter('audit'); }}
+             onClick={() => { setAdminTab('appointments'); setStatusFilter('completed'); }}
              className="mb-6 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-lg cursor-pointer hover:scale-[1.01] transition-transform flex items-center justify-between"
            >
                <div className="flex items-center gap-3">
@@ -389,31 +396,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
            <div className="flex flex-col md:flex-row justify-between mb-6 gap-4 items-start md:items-center">
              <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
              
-             <div className="flex flex-wrap gap-2">
-                 <button 
-                    onClick={() => setAppointmentFilter('all')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${appointmentFilter === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200'}`}
-                 >
-                    全部
-                 </button>
-                 <button 
-                    onClick={() => setAppointmentFilter('checked_in')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'checked_in' ? 'bg-orange-500 text-white shadow-md' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 hover:bg-orange-100'}`}
-                 >
-                    <Timer size={16}/> 已簽到
-                 </button>
-                 <button 
-                    onClick={() => setAppointmentFilter('audit')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'audit' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 hover:bg-emerald-100'}`}
-                 >
-                    <ShieldCheck size={16}/> 已完課
-                 </button>
-                 <button 
-                    onClick={() => setAppointmentFilter('anomaly')}
-                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'anomaly' ? 'bg-red-500 text-white shadow-md' : 'bg-red-50 text-red-500 dark:bg-red-900/20 hover:bg-red-100'}`}
-                 >
-                    <AlertTriangle size={16}/> 異常 (過期未簽)
-                 </button>
+             <div className="flex flex-wrap gap-2 w-full md:w-auto">
+                 {/* Search Input */}
+                 <div className="relative flex-1">
+                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                    <input 
+                        type="text"
+                        placeholder="搜尋姓名/電話..."
+                        className="pl-9 pr-3 py-2 w-full md:w-48 rounded-xl bg-gray-100 dark:bg-gray-800 border-none text-sm focus:ring-2 focus:ring-indigo-500 outline-none dark:text-white"
+                        value={appSearchTerm}
+                        onChange={e => setAppSearchTerm(e.target.value)}
+                    />
+                 </div>
+
+                 {/* Status Dropdown */}
+                 <div className="relative">
+                    <Filter size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
+                    <select
+                        className="pl-9 pr-8 py-2 rounded-xl bg-gray-100 dark:bg-gray-800 border-none text-sm focus:ring-2 focus:ring-indigo-500 outline-none cursor-pointer appearance-none dark:text-white font-bold"
+                        value={statusFilter}
+                        onChange={e => setStatusFilter(e.target.value as any)}
+                    >
+                        <option value="all">所有狀態</option>
+                        <option value="confirmed">已確認 (未簽到)</option>
+                        <option value="checked_in">已簽到 (待核實)</option>
+                        <option value="completed">已完課</option>
+                        <option value="cancelled">已取消</option>
+                    </select>
+                    <ChevronRight size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 rotate-90"/>
+                 </div>
 
                  {selectedBatch.size > 0 && (
                    <button onClick={handleBatchDelete} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn ml-2">
@@ -439,22 +450,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    // Coach cannot edit/select audit items
                    const isLocked = isAudit && currentUser.role !== 'manager'; 
 
+                   // Helper for status visual
+                   const getStatusVisuals = () => {
+                       switch(app.status) {
+                           case 'checked_in': return { bg: 'bg-orange-50 dark:bg-orange-900/10', border: 'border-orange-200 dark:border-orange-800', badge: 'bg-orange-100 text-orange-600', label: '已簽到' };
+                           case 'completed': return { bg: 'bg-emerald-50 dark:bg-emerald-900/10', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-100 text-emerald-600', label: '已完課' };
+                           case 'cancelled': return { bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-200 dark:border-red-800', badge: 'bg-red-100 text-red-600', label: '已取消' };
+                           default: return { bg: 'bg-white dark:bg-gray-800', border: 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700', badge: 'bg-indigo-100 text-indigo-600', label: '已預約' };
+                       }
+                   };
+                   const visuals = getStatusVisuals();
+
                    return (
                    <div 
                         key={app.id} 
                         onClick={() => !isLocked && toggleBatchSelect(app.id)}
                         className={`
-                            glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all select-none border
-                            ${selectedBatch.has(app.id) 
-                                ? 'border-2 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
-                                : isAnomaly 
-                                    ? 'border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-900/10'
-                                    : isAudit
-                                        ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-900/10'
-                                        : isCheckedIn
-                                            ? 'border-orange-300 dark:border-orange-700 bg-orange-50/50 dark:bg-orange-900/20'
-                                            : 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700'
-                            }
+                            glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all select-none border shadow-sm
+                            ${selectedBatch.has(app.id) ? 'border-2 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' : visuals.border}
+                            ${visuals.bg}
                             ${isLocked ? 'cursor-default opacity-80' : 'cursor-pointer'}
                         `}
                     >
@@ -484,24 +498,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     onClick={(e) => { e.stopPropagation(); handleRevertStatus(app); }}
                                     className="text-xs bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 px-2 py-1 rounded-lg flex items-center gap-1 shadow-sm transition-colors"
                                   >
-                                      <RotateCcw size={10}/> 還原狀態
+                                      <RotateCcw size={10}/> 還原
                                   </button>
                               )}
-                              <span className={`text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 ${
-                                  app.status === 'cancelled' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 
-                                  app.status === 'completed' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
-                                  app.status === 'checked_in' ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' :
-                                  'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
-                              }`}>
+                              <span className={`text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 ${visuals.badge}`}>
                                   {app.status === 'completed' && <CheckCircle size={10}/>}
-                                  {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課' : app.status === 'checked_in' ? '已簽到' : '已確認'}
+                                  {app.status === 'checked_in' && <Timer size={10}/>}
+                                  {visuals.label}
                               </span>
                           </div>
                         </div>
                         <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
-                            <span>{coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除教練)'}</span>
-                            <span className="font-medium text-indigo-600 dark:text-indigo-400">{(app.type as string) ==='client' ? app?.customer?.name : app.reason}</span>
+                            <span className="flex items-center gap-1"><UserIcon size={12}/> {coaches.find(c => c.id === app.coachId)?.name || app.coachName}</span>
+                            <span className="font-bold text-gray-700 dark:text-gray-300">{(app.type as string) ==='client' ? app?.customer?.name : app.reason}</span>
                         </div>
+                        {app.customer?.phone && (
+                            <div className="text-xs text-gray-400 mt-1 pl-4 border-l-2 border-gray-200 ml-0.5">
+                                {app.customer.phone}
+                            </div>
+                        )}
                       </div>
                    </div>
                  )})
