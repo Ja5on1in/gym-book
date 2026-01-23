@@ -1,8 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle } from 'lucide-react';
+import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info } from 'lucide-react';
 import { Appointment, Coach } from '../types';
-import { isCheckInWindow } from '../utils';
 
 interface MyBookingsProps {
   liffProfile: { userId: string; displayName: string } | null;
@@ -14,8 +13,9 @@ interface MyBookingsProps {
 
 const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn }) => {
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
+  const [checkInConfirmApp, setCheckInConfirmApp] = useState<Appointment | null>(null);
 
-  // Force re-render periodically to update check-in button state
+  // Force re-render periodically to update check-in button state (legacy, kept for safety)
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick(t => t + 1), 60000);
@@ -60,7 +60,8 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
             const coach = coaches.find(c => c.id === app.coachId);
             const isCancelled = app.status === 'cancelled';
             const isCompleted = app.status === 'completed';
-            const canCheckIn = !isCancelled && !isCompleted && isCheckInWindow(app.date, app.time, app.service?.duration);
+            // Constraint removed: Allow check-in if status is confirmed
+            const canCheckIn = app.status === 'confirmed'; 
             const isUpcoming = new Date(app.date + ' ' + app.time) > new Date() && !isCancelled;
 
             return (
@@ -84,14 +85,14 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
 
                 {canCheckIn && (
                    <button 
-                       onClick={() => onCheckIn(app)}
+                       onClick={() => setCheckInConfirmApp(app)}
                        className="w-full mb-2 py-3 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short"
                    >
                        <CheckCircle size={20}/> 立即簽到
                    </button>
                 )}
 
-                {isUpcoming && !canCheckIn && (
+                {isUpcoming && !canCheckIn && !isCompleted && (
                     <button 
                         onClick={() => setSelectedApp(app)}
                         className="w-full py-2 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
@@ -113,6 +114,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
         </div>
       )}
 
+      {/* Cancel Confirmation Modal */}
       {selectedApp && (
          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
              <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">
@@ -127,6 +129,28 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <button onClick={() => { onCancel(selectedApp, '用戶自行取消'); setSelectedApp(null); }} 
                         className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">
                         確認取消
+                     </button>
+                 </div>
+             </div>
+        </div>
+      )}
+
+      {/* Check-in Confirmation Modal */}
+      {checkInConfirmApp && (
+         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+             <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp">
+                 <div className="w-12 h-12 bg-green-100 text-green-500 rounded-full flex items-center justify-center mx-auto mb-4">
+                     <Info size={24}/>
+                 </div>
+                 <h3 className="font-bold text-lg mb-2 text-center dark:text-white">簽到確認</h3>
+                 <p className="text-sm text-gray-500 text-center mb-2">確認要現在簽到嗎？</p>
+                 <p className="text-sm text-red-500 font-bold text-center mb-6">簽到後將正式扣除 1 點課程點數。</p>
+                 
+                 <div className="flex gap-3">
+                     <button onClick={() => { setCheckInConfirmApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
+                     <button onClick={() => { onCheckIn(checkInConfirmApp); setCheckInConfirmApp(null); }} 
+                        className="flex-1 py-2.5 bg-green-500 text-white rounded-xl font-bold shadow-lg shadow-green-500/30">
+                        確認簽到
                      </button>
                  </div>
              </div>

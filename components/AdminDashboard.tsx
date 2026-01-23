@@ -1,9 +1,10 @@
 
-import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle } from 'lucide-react';
+import React, { useRef, useState, useMemo } from 'react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
-import { isPastTime } from '../utils';
+import { isPastTime, formatDateKey } from '../utils';
+import { saveToFirestore } from '../services/firebase';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -15,8 +16,8 @@ interface AdminDashboardProps {
   selectedBatch: Set<string>;
   toggleBatchSelect: (id: string) => void;
   handleBatchDelete: () => void;
-  analysis: any;
-  handleExportStatsCsv: () => void;
+  analysis: any; // Legacy prop, replaced by local calculation
+  handleExportStatsCsv: () => void; // Legacy prop, overridden
   handleExportJson: () => void;
   triggerImport: () => void;
   handleFileImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -36,9 +37,9 @@ interface AdminDashboardProps {
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser, onLogout, adminTab, setAdminTab, renderWeeklyCalendar,
   appointments, selectedBatch, toggleBatchSelect, handleBatchDelete,
-  analysis, handleExportStatsCsv, handleExportJson, triggerImport, handleFileImport,
+  handleExportJson, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
-  inventories, onUpdateInventory, onDeleteInventory, onSaveInventory
+  inventories, onDeleteInventory, onSaveInventory
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -59,9 +60,68 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isLineIdLocked, setIsLineIdLocked] = useState(true);
 
   // Appointment Filter State
-  const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'anomaly'>('all');
+  const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'anomaly' | 'audit'>('all');
+
+  // Analysis Date Range State
+  const today = new Date();
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
+  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  
+  const [statsStartDate, setStatsStartDate] = useState(formatDateKey(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate()));
+  const [statsEndDate, setStatsEndDate] = useState(formatDateKey(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate()));
 
   const filteredApps = appointments.filter(a => currentUser.role==='manager' || a.coachId === currentUser.id);
+
+  // --- Analysis Calculation (Local with Date Range) ---
+  const statsData = useMemo(() => {
+    // Filter by date range (inclusive)
+    const rangeApps = appointments.filter(a => a.date >= statsStartDate && a.date <= statsEndDate);
+    
+    // Calculate stats based on rangeApps
+    const totalActive = rangeApps.filter(a => a.status === 'confirmed').length;
+    const totalCompleted = rangeApps.filter(a => a.status === 'completed').length;
+    const totalCancelled = rangeApps.filter(a => a.status === 'cancelled').length;
+    
+    // Top Slots
+    const slotCounts: Record<string, number> = {};
+    rangeApps.filter(a => a.status !== 'cancelled').forEach(a => {
+        slotCounts[a.time] = (slotCounts[a.time] || 0) + 1;
+    });
+    const topTimeSlots = Object.entries(slotCounts)
+        .sort(([,a], [,b]) => b - a)
+        .slice(0, 3)
+        .map(([time, count]) => ({ time, count }));
+
+    // Coach Stats
+    const coachStats = coaches.map(c => {
+        const cApps = rangeApps.filter(a => a.coachId === c.id && a.status !== 'cancelled');
+        const personal = cApps.filter(a => a.type === 'private' || (a.type as string) === 'client').length;
+        const group = cApps.filter(a => a.type === 'group').length;
+        return {
+            id: c.id,
+            name: c.name,
+            personal,
+            group,
+            total: personal + group
+        };
+    });
+
+    return { totalActive, totalCompleted, totalCancelled, topTimeSlots, coachStats, rangeApps };
+  }, [appointments, statsStartDate, statsEndDate, coaches]);
+
+  // --- Handlers ---
+
+  const handleRevertStatus = async (app: Appointment) => {
+      if (currentUser.role !== 'manager') return;
+      if (!window.confirm(`確定要將 ${app.customer?.name || '此課程'} 的狀態從「已簽到」還原為「已確認」嗎？`)) return;
+      
+      try {
+          await saveToFirestore('appointments', app.id, { ...app, status: 'confirmed' });
+      } catch (e) {
+          console.error(e);
+          alert('更新失敗');
+      }
+  };
 
   const handleUpdateDayConfig = (coach: Coach, dayIndex: number, enabled: boolean, start?: string, end?: string) => {
      const newWorkDays = enabled 
@@ -78,6 +138,39 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
      }
 
      updateCoachWorkDays({ ...coach, workDays: newWorkDays, dailyWorkHours: newDaily });
+  };
+
+  const handleExportRangeCsv = () => {
+      const rows = [
+          ["統計區間", `${statsStartDate} ~ ${statsEndDate}`],
+          ["統計項目", "數值"],
+          ["總預約數 (含取消)", statsData.rangeApps.length],
+          ["有效預約 (未簽到)", statsData.totalActive],
+          ["已完課 (已簽到)", statsData.totalCompleted],
+          ["已取消", statsData.totalCancelled],
+          [],
+          ["教練", "個人課", "團課/其他", "總計"],
+          ...statsData.coachStats.map(c => [c.name, c.personal, c.group, c.total]),
+          [],
+          ["預約明細"],
+          ["日期", "時間", "狀態", "類型", "教練", "學員", "備註/原因"],
+          ...statsData.rangeApps.map(a => [
+              a.date, 
+              a.time, 
+              a.status === 'completed' ? '已完課' : a.status === 'cancelled' ? '已取消' : '已預約',
+              a.type,
+              a.coachName,
+              a.customer?.name || '',
+              a.cancelReason || a.reason || ''
+          ])
+      ];
+
+      const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `report_${statsStartDate}_to_${statsEndDate}.csv`;
+      link.click();
   };
 
   const handleExportCancelCsv = () => {
@@ -185,15 +278,22 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       (i.lineUserId && i.lineUserId.includes(searchQuery))
   );
 
-  // Appointment List Logic with Anomaly Filter
+  // Appointment List Logic with Auditing
   const displayAppointments = filteredApps
     .filter(app => {
         if (appointmentFilter === 'anomaly') {
+            // Anomaly: Confirmed BUT Past time (Should be completed or cancelled)
             return app.status === 'confirmed' && isPastTime(app.date, app.time);
+        }
+        if (appointmentFilter === 'audit') {
+            // Audit: Completed
+            return app.status === 'completed';
         }
         return true;
     })
-    .sort((a,b)=> { try { return new Date(`${a.date} ${a.time}`).getTime() - new Date(`${b.date} ${b.time}`).getTime() } catch(e){ return 0 } });
+    .sort((a,b)=> { try { return new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime() } catch(e){ return 0 } });
+
+  const auditPendingCount = filteredApps.filter(a => a.status === 'completed').length;
 
   return (
     <div className="max-w-6xl mx-auto p-4 pb-24">
@@ -205,6 +305,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <button onClick={onLogout} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shadow-sm"><LogOut size={16}/> 登出</button>
        </div>
        
+       {/* Audit Alert */}
+       {currentUser.role === 'manager' && auditPendingCount > 0 && (
+           <div 
+             onClick={() => { setAdminTab('appointments'); setAppointmentFilter('audit'); }}
+             className="mb-6 bg-gradient-to-r from-emerald-500 to-teal-600 rounded-2xl p-4 text-white shadow-lg cursor-pointer hover:scale-[1.01] transition-transform flex items-center justify-between"
+           >
+               <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                       <ShieldCheck size={20}/>
+                   </div>
+                   <div>
+                       <div className="font-bold text-lg">待處理稽核</div>
+                       <div className="text-sm opacity-90">有 {auditPendingCount} 筆已簽到課程需要確認</div>
+                   </div>
+               </div>
+               <ChevronRight/>
+           </div>
+       )}
+
        <div className="glass-panel p-1 rounded-2xl flex gap-1 mb-8 overflow-x-auto mx-auto max-w-full md:max-w-fit shadow-lg custom-scrollbar">
           {['calendar','appointments','analysis','staff','inventory','settings','logs'].map(t => {
              if (t === 'staff' && currentUser.role !== 'manager') return null;
@@ -249,6 +368,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     全部
                  </button>
                  <button 
+                    onClick={() => setAppointmentFilter('audit')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'audit' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 hover:bg-emerald-100'}`}
+                 >
+                    <ShieldCheck size={16}/> 已簽到/稽核
+                 </button>
+                 <button 
                     onClick={() => setAppointmentFilter('anomaly')}
                     className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'anomaly' ? 'bg-red-500 text-white shadow-md' : 'bg-red-50 text-red-500 dark:bg-red-900/20 hover:bg-red-100'}`}
                  >
@@ -274,29 +399,36 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
              ) : (
                  displayAppointments.map(app => {
                    const isAnomaly = app.status === 'confirmed' && isPastTime(app.date, app.time);
-                   
+                   const isAudit = app.status === 'completed';
+                   // Coach cannot edit/select audit items
+                   const isLocked = isAudit && currentUser.role !== 'manager'; 
+
                    return (
                    <div 
                         key={app.id} 
-                        onClick={() => toggleBatchSelect(app.id)}
+                        onClick={() => !isLocked && toggleBatchSelect(app.id)}
                         className={`
-                            glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all cursor-pointer select-none border
+                            glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all select-none border
                             ${selectedBatch.has(app.id) 
-                                ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
+                                ? 'border-2 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
                                 : isAnomaly 
                                     ? 'border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-900/10'
-                                    : 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700'
+                                    : isAudit
+                                        ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-900/10'
+                                        : 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700'
                             }
+                            ${isLocked ? 'cursor-default opacity-80' : 'cursor-pointer'}
                         `}
                     >
                       <div className={`
-                            w-5 h-5 rounded border flex items-center justify-center transition-colors
+                            w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0
                             ${selectedBatch.has(app.id) ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600'}
+                            ${isLocked ? 'opacity-30' : ''}
                       `}>
                           {selectedBatch.has(app.id) && <X size={14} className="text-white rotate-45" strokeWidth={3} />}
                       </div>
                       
-                      <div className="flex-1 pointer-events-none">
+                      <div className="flex-1">
                         <div className="flex justify-between items-center mb-1">
                           <div className="flex items-center gap-3">
                              <span className="font-bold text-lg dark:text-white">{app.date}</span>
@@ -307,13 +439,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                  </span>
                              )}
                           </div>
-                          <span className={`text-xs px-3 py-1 rounded-full font-bold ${
-                              app.status === 'cancelled' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 
-                              app.status === 'completed' ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300' :
-                              'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
-                          }`}>
-                              {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已簽到' : '已確認'}
-                          </span>
+                          <div className="flex items-center gap-2">
+                              {isAudit && currentUser.role === 'manager' && (
+                                  <button 
+                                    onClick={(e) => { e.stopPropagation(); handleRevertStatus(app); }}
+                                    className="text-xs bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 px-2 py-1 rounded-lg flex items-center gap-1 shadow-sm transition-colors"
+                                  >
+                                      <RotateCcw size={10}/> 還原狀態
+                                  </button>
+                              )}
+                              <span className={`text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 ${
+                                  app.status === 'cancelled' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 
+                                  app.status === 'completed' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                  'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                              }`}>
+                                  {app.status === 'completed' && <CheckCircle size={10}/>}
+                                  {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已簽到' : '已確認'}
+                              </span>
+                          </div>
                         </div>
                         <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
                             <span>{coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除教練)'}</span>
@@ -403,42 +546,69 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
        {adminTab === 'analysis' && (
           <div className="space-y-6 animate-slideUp">
+            
+            {/* Date Range Picker for Analysis */}
+            <div className="glass-card p-4 rounded-2xl flex flex-col md:flex-row items-center justify-between gap-4 mb-4">
+                <div className="flex items-center gap-2">
+                    <BarChart3 className="text-indigo-500"/>
+                    <span className="font-bold dark:text-white">報表區間設定</span>
+                </div>
+                <div className="flex items-center gap-3 w-full md:w-auto">
+                    <input 
+                        type="date" 
+                        value={statsStartDate} 
+                        onChange={e => setStatsStartDate(e.target.value)}
+                        className="glass-input p-2 rounded-xl text-sm font-bold w-full md:w-auto dark:text-white"
+                    />
+                    <span className="text-gray-400">~</span>
+                    <input 
+                        type="date" 
+                        value={statsEndDate} 
+                        onChange={e => setStatsEndDate(e.target.value)}
+                        className="glass-input p-2 rounded-xl text-sm font-bold w-full md:w-auto dark:text-white"
+                    />
+                </div>
+            </div>
+
             <div className="flex justify-end gap-3">
                <button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
-               <button onClick={handleExportStatsCsv} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出報表</button>
+               <button onClick={handleExportRangeCsv} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出區間報表</button>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                <div className="glass-panel p-6 rounded-3xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div>
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 Top 3</h4>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 (區間)</h4>
                   <div className="space-y-3 relative z-10">
-                    {analysis.topTimeSlots.map((s: any, i: number) => (
+                    {statsData.topTimeSlots.length > 0 ? statsData.topTimeSlots.map((s: any, i: number) => (
                         <div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-white/40 dark:border-gray-700">
                             <span className="font-bold text-orange-600 dark:text-orange-400">#{i+1} {s.time}</span>
                             <span className="text-sm font-medium">{s.count} 堂</span>
                         </div>
-                    ))}
+                    )) : <div className="text-center text-gray-400 text-sm py-4">無數據</div>}
                   </div>
                </div>
                
                <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center">
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">預約狀態總覽</h4>
-                  <div className="flex justify-around items-center">
-                     <div className="text-center">
-                         <div className="text-5xl font-bold text-emerald-500 mb-2 drop-shadow-sm">{analysis.totalActive}</div>
-                         <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">有效預約</div>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">狀態總覽 (區間)</h4>
+                  <div className="grid grid-cols-3 gap-2 text-center divide-x divide-gray-200 dark:divide-gray-700">
+                     <div>
+                         <div className="text-3xl lg:text-4xl font-bold text-indigo-500 mb-1">{statsData.totalActive}</div>
+                         <div className="text-[10px] font-bold text-gray-400 uppercase">預約中</div>
                      </div>
-                     <div className="h-16 w-px bg-gray-200 dark:bg-gray-700"></div>
-                     <div className="text-center">
-                         <div className="text-5xl font-bold text-red-500 mb-2 drop-shadow-sm">{analysis.totalCancelled}</div>
-                         <div className="text-xs font-bold text-gray-400 uppercase tracking-wider">已取消</div>
+                     <div>
+                         <div className="text-3xl lg:text-4xl font-bold text-emerald-500 mb-1">{statsData.totalCompleted}</div>
+                         <div className="text-[10px] font-bold text-gray-400 uppercase">已完課</div>
+                     </div>
+                     <div>
+                         <div className="text-3xl lg:text-4xl font-bold text-red-500 mb-1">{statsData.totalCancelled}</div>
+                         <div className="text-[10px] font-bold text-gray-400 uppercase">已取消</div>
                      </div>
                   </div>
                </div>
 
                <div className="glass-panel p-6 rounded-3xl md:col-span-1">
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計 (本月)</h4>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計 (區間)</h4>
                   <div className="overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
                       <div className="grid grid-cols-4 gap-2 text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">
                           <span>教練</span>
@@ -447,8 +617,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <span className="text-right">總計</span>
                       </div>
                       {(currentUser.role === 'manager' 
-                          ? analysis.coachStats 
-                          : analysis.coachStats.filter((s: any) => s.id === currentUser.id)
+                          ? statsData.coachStats 
+                          : statsData.coachStats.filter((s: any) => s.id === currentUser.id)
                        ).map((c: any) => (
                         <div key={c.id} className="grid grid-cols-4 gap-2 text-sm py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 items-center">
                             <span className="truncate font-medium dark:text-gray-200">{c.name}</span>
@@ -677,116 +847,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
             </div>
         </div>
-       )}
-
-       {/* Inventory Edit Modal */}
-       {isInventoryModalOpen && currentUser.role === 'manager' && (
-           <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
-               <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
-                   <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
-                       <h3 className="font-bold text-xl dark:text-white">{editingInventory.id ? '編輯學員資料' : '新增學員資料'}</h3>
-                       <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-gray-500"/></button>
-                   </div>
-                   <form onSubmit={handleSubmitInventory} className="p-6 space-y-4">
-                       <div>
-                           <label className="text-xs font-bold text-gray-500 uppercase">學員姓名</label>
-                           <input 
-                               type="text" required 
-                               value={editingInventory.name || ''} 
-                               onChange={e => setEditingInventory({...editingInventory, name: e.target.value})} 
-                               className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
-                               placeholder="請輸入姓名"
-                           />
-                       </div>
-                       
-                       <div className="grid grid-cols-2 gap-4">
-                           <div>
-                               <label className="text-xs font-bold text-gray-500 uppercase">電話</label>
-                               <input 
-                                   type="tel" 
-                                   value={editingInventory.phone || ''} 
-                                   onChange={e => setEditingInventory({...editingInventory, phone: e.target.value})} 
-                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
-                                   placeholder="0912-345-678"
-                               />
-                           </div>
-                           <div>
-                               <label className="text-xs font-bold text-gray-500 uppercase">Email</label>
-                               <input 
-                                   type="email" 
-                                   value={editingInventory.email || ''} 
-                                   onChange={e => setEditingInventory({...editingInventory, email: e.target.value})} 
-                                   className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
-                                   placeholder="選填"
-                               />
-                           </div>
-                       </div>
-
-                       <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                           <label className="text-xs font-bold text-indigo-500 uppercase flex items-center gap-1 mb-3"><CreditCard size={12}/> 點數管理</label>
-                           <div className="grid grid-cols-2 gap-4">
-                               <div>
-                                   <label className="text-xs text-gray-500 block mb-1">私人課 (堂)</label>
-                                   <input 
-                                       type="number" min="0"
-                                       value={editingInventory.credits?.private || 0} 
-                                       onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits!, private: parseInt(e.target.value) || 0 }})} 
-                                       className="w-full glass-input rounded-lg p-2 text-center font-bold text-lg dark:text-white"
-                                   />
-                               </div>
-                               <div>
-                                   <label className="text-xs text-gray-500 block mb-1">團課 (堂)</label>
-                                   <input 
-                                       type="number" min="0"
-                                       value={editingInventory.credits?.group || 0} 
-                                       onChange={e => setEditingInventory({...editingInventory, credits: { ...editingInventory.credits!, group: parseInt(e.target.value) || 0 }})} 
-                                       className="w-full glass-input rounded-lg p-2 text-center font-bold text-lg dark:text-white"
-                                   />
-                               </div>
-                           </div>
-                       </div>
-
-                       <div className="pt-2">
-                           <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1">LINE User ID (系統綁定)</label>
-                           <div className="flex gap-2">
-                               <input 
-                                   type="text" 
-                                   value={editingInventory.lineUserId || ''} 
-                                   onChange={e => setEditingInventory({...editingInventory, lineUserId: e.target.value})} 
-                                   className={`w-full glass-input rounded-xl p-3 dark:text-white ${isLineIdLocked ? 'bg-gray-100 dark:bg-gray-800 text-gray-500 cursor-not-allowed' : ''}`}
-                                   placeholder="尚未綁定"
-                                   readOnly={isLineIdLocked}
-                               />
-                               {editingInventory.lineUserId && (
-                                   <button 
-                                       type="button" 
-                                       onClick={() => {
-                                           if (isLineIdLocked) {
-                                               if (window.confirm('修改 LINE ID 可能導致用戶無法正常預約，確定要解鎖嗎？')) {
-                                                   setIsLineIdLocked(false);
-                                               }
-                                           } else {
-                                               setIsLineIdLocked(true);
-                                           }
-                                       }} 
-                                       className={`p-3 rounded-xl transition-colors ${isLineIdLocked ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300 hover:bg-gray-300' : 'bg-red-100 text-red-500 hover:bg-red-200'}`}
-                                       title={isLineIdLocked ? "點擊解鎖" : "點擊鎖定"}
-                                   >
-                                       {isLineIdLocked ? <Lock size={20}/> : <Unlock size={20}/>}
-                                   </button>
-                               )}
-                           </div>
-                           {isLineIdLocked && editingInventory.lineUserId && (
-                               <p className="text-[10px] text-gray-400 mt-1 flex items-center gap-1"><Lock size={10}/> 此欄位已鎖定以保護連結</p>
-                           )}
-                       </div>
-
-                       <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 mt-4">
-                           <Save size={18}/> 儲存資料
-                       </button>
-                   </form>
-               </div>
-           </div>
        )}
     </div>
   );

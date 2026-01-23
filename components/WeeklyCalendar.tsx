@@ -73,7 +73,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                 
                 const slotApps = appointments.filter(a => a.date === dateKey && a.time === time && a.status !== 'cancelled');
                 const visibleApps = slotApps;
-                const isPast = isPastTime(dateKey, time);
+                // isPastTime check removed from blocking logic for managers below
 
                 return (
                   <div 
@@ -109,8 +109,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                               >
                                   <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-bold truncate">{coach?.name || app.coachName}</span>
-                                    {/* Only Manager can force complete manually from here */}
-                                    {isMine && isPast && !isCompleted && currentUser.role === 'manager' && (
+                                    {/* Only Manager can force complete manually from here. Removed isPast check. */}
+                                    {isMine && !isCompleted && currentUser.role === 'manager' && (
                                       <button 
                                         onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
                                         className="bg-white/60 hover:bg-white rounded-full p-0.5 text-green-700 transition-colors shadow-sm" title="強制結課"
