@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -66,6 +66,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
 
+  // History Modal State
+  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
+  const [viewingHistoryFor, setViewingHistoryFor] = useState<UserInventory | null>(null);
+
   // Analysis Date Range State (Hidden in UI unless exporting, defaults to current month for visual stats)
   const today = new Date();
   const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -112,6 +116,56 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
     return { totalActive, totalCompleted, totalCancelled, topTimeSlots, coachStats, rangeApps };
   }, [appointments, statsStartDate, statsEndDate, coaches]);
+
+  // --- Credit History Calculation ---
+  const userHistory = useMemo(() => {
+    if (!viewingHistoryFor) return [];
+
+    // Deductions from completed appointments
+    const deductions = appointments
+        .filter(app => 
+            app.status === 'completed' && 
+            (app.type === 'private' || (app.type as string) === 'client') &&
+            (
+                (viewingHistoryFor.lineUserId && app.lineUserId === viewingHistoryFor.lineUserId) ||
+                (app.customer?.name === viewingHistoryFor.name && (!viewingHistoryFor.phone || app.customer?.phone === viewingHistoryFor.phone))
+            )
+        )
+        .map(app => ({
+            timestamp: new Date(`${app.date}T${app.time}`).getTime(),
+            description: '私人課程完課',
+            change: -1,
+            details: `教練: ${app.coachName || 'N/A'}`
+        }));
+
+    // Additions/Manual Adjustments from logs
+    const adjustments = logs
+        .filter(log => 
+            log.action === '庫存調整' && 
+            log.details.includes(viewingHistoryFor.name)
+        )
+        .map(log => {
+            const match = log.details.match(/1v1: ([\d\?]+) -> (\d+)/);
+            let change = 0;
+            if (match) {
+                const before = match[1] === '?' ? NaN : parseInt(match[1], 10);
+                const after = parseInt(match[2], 10);
+                if (!isNaN(after)) {
+                    change = isNaN(before) ? after : after - before;
+                }
+            }
+            return {
+                timestamp: new Date(log.time).getTime(),
+                description: '點數調整',
+                change: change,
+                details: `操作者: ${log.user}`
+            }
+        }).filter(adj => adj.change !== 0);
+
+    const combined = [...deductions, ...adjustments];
+    return combined.sort((a, b) => b.timestamp - a.timestamp);
+  }, [viewingHistoryFor, appointments, logs]);
+
 
   // --- Handlers ---
 
@@ -275,6 +329,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
       onSaveInventory(inventoryToSave);
       setIsInventoryModalOpen(false);
+  };
+  
+  const handleViewHistory = (inv: UserInventory) => {
+    setViewingHistoryFor(inv);
+    setIsHistoryModalOpen(true);
   };
 
   // Filter Logic
@@ -564,7 +623,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div key={inv.id} className="glass-card p-5 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all group">
                               <div className="flex justify-between items-start mb-3">
                                   <div>
-                                      <h4 className="font-bold text-lg dark:text-white flex items-center gap-2">
+                                      <h4 
+                                          onClick={() => handleViewHistory(inv)}
+                                          className="font-bold text-lg dark:text-white flex items-center gap-2 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                                      >
                                           {inv.name}
                                           {inv.lineUserId ? <span className="w-2 h-2 rounded-full bg-[#06C755]" title="已綁定 LINE"></span> : <span className="w-2 h-2 rounded-full bg-gray-300" title="未綁定 LINE"></span>}
                                       </h4>
@@ -1050,6 +1112,108 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             </div>
         </div>
        )}
+
+      {/* Credit History Modal */}
+      {isHistoryModalOpen && viewingHistoryFor && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsHistoryModalOpen(false)}>
+            <div className="glass-panel w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
+                <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                    <div>
+                        <h3 className="font-bold text-xl dark:text-white">{viewingHistoryFor.name}</h3>
+                        <p className="text-xs text-gray-500">點數歷史紀錄</p>
+                    </div>
+                    <button onClick={() => setIsHistoryModalOpen(false)}><X className="text-gray-500"/></button>
+                </div>
+                <div className="p-4 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                    {userHistory.length === 0 ? (
+                        <div className="text-center py-12 text-gray-400">
+                            <History size={32} className="mx-auto mb-2 opacity-50"/>
+                            <p>無任何點數變動紀錄</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-3">
+                            {userHistory.map((item, index) => (
+                                <div key={index} className="flex items-center gap-4 p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl">
+                                    <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${item.change < 0 ? 'bg-red-100 text-red-500' : 'bg-green-100 text-green-600'}`}>
+                                        {item.change < 0 ? <TrendingDown size={20}/> : <TrendingUp size={20}/>}
+                                    </div>
+                                    <div className="flex-1">
+                                        <p className="font-bold text-gray-800 dark:text-gray-200">{item.description}</p>
+                                        <p className="text-xs text-gray-500 dark:text-gray-400">{item.details}</p>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className={`font-bold text-lg ${item.change < 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                            {item.change > 0 ? `+${item.change}` : item.change} 點
+                                        </p>
+                                        <p className="text-xs text-gray-400">{new Date(item.timestamp).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute:'2-digit' })}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+       )}
+
+        {/* Inventory Edit Modal */}
+       {isInventoryModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
+            <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                    <h3 className="font-bold text-xl dark:text-white">{editingInventory.id ? '編輯學員資料' : '新增學員資料'}</h3>
+                    <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-gray-500"/></button>
+                </div>
+                <div className="p-6">
+                    <form onSubmit={handleSubmitInventory} className="space-y-4">
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">姓名</label>
+                            <input type="text" required value={editingInventory.name || ''} onChange={e => setEditingInventory({...editingInventory, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                        </div>
+                         <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">電話</label>
+                            <input type="tel" value={editingInventory.phone || ''} onChange={e => setEditingInventory({...editingInventory, phone: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase">Email</label>
+                            <input type="email" value={editingInventory.email || ''} onChange={e => setEditingInventory({...editingInventory, email: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                        </div>
+                         <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase">私人課點數</label>
+                                <input type="number" value={editingInventory.credits?.private ?? 0} onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, private: Number(e.target.value)} })} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase">團體課點數</label>
+                                <input type="number" value={editingInventory.credits?.group ?? 0} onChange={e => setEditingInventory({...editingInventory, credits: {...editingInventory.credits, group: Number(e.target.value)} })} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2">
+                               LINE User ID 
+                               <button type="button" onClick={() => setIsLineIdLocked(!isLineIdLocked)} className="text-gray-400 hover:text-indigo-500">
+                                   {isLineIdLocked ? <Lock size={12}/> : <Unlock size={12}/>}
+                               </button>
+                            </label>
+                            <input 
+                                type="text" 
+                                value={editingInventory.lineUserId || ''} 
+                                onChange={e => setEditingInventory({...editingInventory, lineUserId: e.target.value})} 
+                                className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50"
+                                disabled={isLineIdLocked}
+                            />
+                        </div>
+
+                        <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4 flex items-center justify-center gap-2 hover:bg-indigo-700 transition-colors">
+                            <Save size={16}/> 儲存
+                        </button>
+                    </form>
+                </div>
+            </div>
+        </div>
+       )}
+
     </div>
   );
 };
