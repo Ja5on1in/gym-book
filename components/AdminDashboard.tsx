@@ -1,6 +1,8 @@
 
+
+
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -60,7 +62,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isLineIdLocked, setIsLineIdLocked] = useState(true);
 
   // Appointment Filter State
-  const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'anomaly' | 'audit'>('all');
+  const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'anomaly' | 'audit' | 'checked_in'>('all');
 
   // Export Modal State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -116,7 +118,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleRevertStatus = async (app: Appointment) => {
       if (currentUser.role !== 'manager') return;
-      if (!window.confirm(`確定要將 ${app.customer?.name || '此課程'} 的狀態從「已簽到」還原為「已確認」嗎？`)) return;
+      if (!window.confirm(`確定要將 ${app.customer?.name || '此課程'} 的狀態從「${app.status === 'checked_in' ? '已簽到' : '已完課'}」還原為「已確認」嗎？`)) return;
       
       try {
           await saveToFirestore('appointments', app.id, { ...app, status: 'confirmed' });
@@ -160,7 +162,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           ...statsData.rangeApps.map(a => [
               a.date, 
               a.time, 
-              a.status === 'completed' ? '已完課' : a.status === 'cancelled' ? '已取消' : '已預約',
+              a.status === 'completed' ? '已完課' : a.status === 'cancelled' ? '已取消' : a.status === 'checked_in' ? '已簽到' : '已預約',
               a.type,
               a.coachName,
               a.customer?.name || '',
@@ -294,11 +296,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             // Audit: Completed
             return app.status === 'completed';
         }
+        if (appointmentFilter === 'checked_in') {
+            // Pending: Checked In
+            return app.status === 'checked_in';
+        }
         return true;
     })
     .sort((a,b)=> { try { return new Date(`${b.date} ${b.time}`).getTime() - new Date(`${a.date} ${a.time}`).getTime() } catch(e){ return 0 } });
 
   const auditPendingCount = filteredApps.filter(a => a.status === 'completed').length;
+  const checkedInCount = filteredApps.filter(a => a.status === 'checked_in').length;
 
   return (
     <div className="max-w-6xl mx-auto p-4 pb-24">
@@ -310,6 +317,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <button onClick={onLogout} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shadow-sm"><LogOut size={16}/> 登出</button>
        </div>
        
+       {/* Checked In Alert */}
+       {checkedInCount > 0 && (
+           <div 
+             onClick={() => { setAdminTab('appointments'); setAppointmentFilter('checked_in'); }}
+             className="mb-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-lg cursor-pointer hover:scale-[1.01] transition-transform flex items-center justify-between animate-pulse"
+           >
+               <div className="flex items-center gap-3">
+                   <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
+                       <Timer size={20}/>
+                   </div>
+                   <div>
+                       <div className="font-bold text-lg">等待確認完課</div>
+                       <div className="text-sm opacity-90">有 {checkedInCount} 筆學生已簽到，請確認並扣點</div>
+                   </div>
+               </div>
+               <ChevronRight/>
+           </div>
+       )}
+
        {/* Audit Alert */}
        {currentUser.role === 'manager' && auditPendingCount > 0 && (
            <div 
@@ -373,10 +399,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     全部
                  </button>
                  <button 
+                    onClick={() => setAppointmentFilter('checked_in')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'checked_in' ? 'bg-orange-500 text-white shadow-md' : 'bg-orange-50 text-orange-600 dark:bg-orange-900/20 hover:bg-orange-100'}`}
+                 >
+                    <Timer size={16}/> 已簽到 (待扣點)
+                 </button>
+                 <button 
                     onClick={() => setAppointmentFilter('audit')}
                     className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'audit' ? 'bg-emerald-500 text-white shadow-md' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 hover:bg-emerald-100'}`}
                  >
-                    <ShieldCheck size={16}/> 已簽到/稽核
+                    <ShieldCheck size={16}/> 已完課/稽核
                  </button>
                  <button 
                     onClick={() => setAppointmentFilter('anomaly')}
@@ -405,6 +437,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  displayAppointments.map(app => {
                    const isAnomaly = app.status === 'confirmed' && isPastTime(app.date, app.time);
                    const isAudit = app.status === 'completed';
+                   const isCheckedIn = app.status === 'checked_in';
                    // Coach cannot edit/select audit items
                    const isLocked = isAudit && currentUser.role !== 'manager'; 
 
@@ -420,7 +453,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     ? 'border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-900/10'
                                     : isAudit
                                         ? 'border-emerald-200 dark:border-emerald-900/50 bg-emerald-50/30 dark:bg-emerald-900/10'
-                                        : 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700'
+                                        : isCheckedIn
+                                            ? 'border-orange-300 dark:border-orange-700 bg-orange-50/50 dark:bg-orange-900/20'
+                                            : 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700'
                             }
                             ${isLocked ? 'cursor-default opacity-80' : 'cursor-pointer'}
                         `}
@@ -445,7 +480,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                              )}
                           </div>
                           <div className="flex items-center gap-2">
-                              {isAudit && currentUser.role === 'manager' && (
+                              {/* Allow reverting status for manager */}
+                              {(isAudit || isCheckedIn) && currentUser.role === 'manager' && (
                                   <button 
                                     onClick={(e) => { e.stopPropagation(); handleRevertStatus(app); }}
                                     className="text-xs bg-white border border-gray-200 hover:bg-gray-50 text-gray-600 px-2 py-1 rounded-lg flex items-center gap-1 shadow-sm transition-colors"
@@ -456,10 +492,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className={`text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 ${
                                   app.status === 'cancelled' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 
                                   app.status === 'completed' ? 'bg-emerald-100 text-emerald-600 dark:bg-emerald-900/30 dark:text-emerald-400' :
+                                  app.status === 'checked_in' ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400' :
                                   'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
                               }`}>
                                   {app.status === 'completed' && <CheckCircle size={10}/>}
-                                  {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已簽到' : '已確認'}
+                                  {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課' : app.status === 'checked_in' ? '已簽到' : '已確認'}
                               </span>
                           </div>
                         </div>

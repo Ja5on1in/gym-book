@@ -1,4 +1,5 @@
 
+
 export interface User {
   id: string;
   name: string;
@@ -37,7 +38,7 @@ export interface Appointment {
   service?: Service | null;
   customer?: Customer | null;
   reason?: string;
-  status: 'confirmed' | 'cancelled' | 'completed'; // Added completed status
+  status: 'confirmed' | 'cancelled' | 'completed' | 'checked_in'; // Added checked_in status
   createdAt: string;
   cancelReason?: string;
   lineUserId?: string; // LINE LIFF Integration

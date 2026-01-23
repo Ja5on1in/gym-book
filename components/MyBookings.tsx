@@ -1,6 +1,8 @@
 
+
+
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info } from 'lucide-react';
+import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer } from 'lucide-react';
 import { Appointment, Coach } from '../types';
 
 interface MyBookingsProps {
@@ -60,12 +62,13 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
             const coach = coaches.find(c => c.id === app.coachId);
             const isCancelled = app.status === 'cancelled';
             const isCompleted = app.status === 'completed';
+            const isCheckedIn = app.status === 'checked_in';
             // Allow check-in if status is confirmed
             const canCheckIn = app.status === 'confirmed'; 
             const isUpcoming = new Date(app.date + ' ' + app.time) > new Date() && !isCancelled;
 
             return (
-              <div key={app.id} className={`glass-card p-5 rounded-2xl border-l-4 ${isCancelled ? 'border-l-red-400 opacity-70' : isCompleted ? 'border-l-gray-400' : 'border-l-green-500'}`}>
+              <div key={app.id} className={`glass-card p-5 rounded-2xl border-l-4 ${isCancelled ? 'border-l-red-400 opacity-70' : isCompleted ? 'border-l-gray-400' : isCheckedIn ? 'border-l-orange-500' : 'border-l-green-500'}`}>
                 <div className="flex justify-between items-start mb-3">
                   <div>
                     <div className="flex items-center gap-2 mb-1">
@@ -74,8 +77,9 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                     </div>
                     <div className="text-indigo-600 dark:text-indigo-400 font-bold">{app.service?.name || '課程'}</div>
                   </div>
-                  <div className={`px-3 py-1 rounded-full text-xs font-bold ${isCancelled ? 'bg-red-100 text-red-600' : isCompleted ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-600'}`}>
-                      {isCancelled ? '已取消' : isCompleted ? '已完課' : '預約成功'}
+                  <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1
+                      ${isCancelled ? 'bg-red-100 text-red-600' : isCompleted ? 'bg-gray-200 text-gray-600' : isCheckedIn ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                      {isCancelled ? '已取消' : isCompleted ? '已完課' : isCheckedIn ? <><Timer size={12}/> 等待確認</> : '預約成功'}
                   </div>
                 </div>
 
@@ -93,7 +97,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      </button>
                   )}
 
-                  {isUpcoming && !isCompleted && (
+                  {isUpcoming && !isCompleted && !isCheckedIn && (
                       <button 
                           onClick={() => setSelectedApp(app)}
                           className={`flex-1 mb-2 py-3 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-lg font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${!canCheckIn ? 'w-full' : ''}`}
@@ -106,6 +110,12 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                 {isCompleted && (
                     <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">
                         已完成簽到
+                    </div>
+                )}
+
+                {isCheckedIn && (
+                    <div className="w-full py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl text-sm font-bold text-center border border-orange-100 dark:border-orange-800">
+                        已簽到，請教練確認完課
                     </div>
                 )}
                 
@@ -145,7 +155,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <Info size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">簽到確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">確認要現在簽到嗎？</p>
+                 <p className="text-sm text-gray-500 text-center mb-6">簽到後請出示畫面給教練確認<br/><span className="text-xs text-orange-500 font-bold">(教練確認後才會扣除點數)</span></p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setCheckInConfirmApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>

@@ -1,6 +1,8 @@
 
+
+
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime } from '../utils';
@@ -44,6 +46,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
         </div>
         <div className="flex gap-2 text-xs text-gray-500">
           <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><div className="w-3 h-3 bg-gray-200 dark:bg-gray-700 pattern-diagonal rounded-full"></div><span>排休</span></div>
+          <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><div className="w-3 h-3 bg-orange-400 rounded-full animate-pulse"></div><span>待確認</span></div>
         </div>
       </div>
       
@@ -91,6 +94,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                             const colorClass = coach?.color || 'bg-gray-100 text-gray-800 border-gray-200';
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
+                            const isCheckedIn = app.status === 'checked_in';
                             
                             // Determine display text: Prefer customer name for private/client bookings
                             const displayText = (app.type === 'private' || (app.type as string) === 'client') 
@@ -105,12 +109,25 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                       ${colorClass} 
                                       ${isCompleted ? 'opacity-60 grayscale' : ''} 
                                       ${!isMine ? 'opacity-80' : ''}
+                                      ${isCheckedIn ? 'ring-2 ring-orange-400 ring-offset-1 dark:ring-offset-gray-900 animate-pulse' : ''}
                                    `}
                               >
                                   <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-bold truncate">{coach?.name || app.coachName}</span>
-                                    {/* Only Manager can force complete manually from here. Removed isPast check. */}
-                                    {isMine && !isCompleted && currentUser.role === 'manager' && (
+                                    
+                                    {/* Action Button: Check In confirm for Coach */}
+                                    {isMine && isCheckedIn && (
+                                        <button 
+                                            onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
+                                            className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
+                                            title="確認完課 (扣點)"
+                                        >
+                                            <AlertCircle size={12}/>
+                                        </button>
+                                    )}
+
+                                    {/* Only Manager can force complete manually from here (Legacy/Force) */}
+                                    {isMine && !isCompleted && !isCheckedIn && currentUser.role === 'manager' && (
                                       <button 
                                         onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
                                         className="bg-white/60 hover:bg-white rounded-full p-0.5 text-green-700 transition-colors shadow-sm" title="強制結課"
@@ -121,6 +138,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     {isMine && isCompleted && <CheckCircle size={12} className="text-green-800"/>}
                                   </div>
                                   <div className="truncate font-medium opacity-90">{displayText}</div>
+                                  {isCheckedIn && <div className="text-[9px] font-bold text-orange-600 mt-0.5">等待確認</div>}
                               </div>
                             );
                         })}

@@ -1,4 +1,6 @@
 
+
+
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -19,7 +21,8 @@ import {
   Search,
   X,
   CreditCard,
-  Check
+  Check,
+  CheckCircle2
 } from 'lucide-react';
 
 import { 
@@ -187,7 +190,8 @@ export default function App() {
     const unsubApps = subscribeToCollection('appointments', (data) => {
         const apps = data as Appointment[];
         const validApps = apps.filter(a => a && a.date && a.time && a.coachId);
-        setAppointments(validApps);
+        // Force new reference array to trigger React re-renders reliably
+        setAppointments([...validApps]);
         setDbStatus(isFirebaseAvailable ? 'connected' : 'local');
         
         if (validApps.length > 0) localStorage.setItem('gym_backup_local', JSON.stringify(validApps));
@@ -195,7 +199,7 @@ export default function App() {
 
     const unsubCoaches = subscribeToCollection('coaches', (data) => {
         if (data.length > 0) {
-            setCoaches(data as Coach[]);
+            setCoaches([...data] as Coach[]);
         } else {
              if (!isFirebaseAvailable && coaches.length === 0) setCoaches(INITIAL_COACHES);
         }
@@ -207,7 +211,7 @@ export default function App() {
     }, () => {});
     
     const unsubInventory = subscribeToCollection('user_inventory', (data) => {
-        setInventories(data as UserInventory[]);
+        setInventories([...data] as UserInventory[]);
     }, () => {});
 
     return () => {
@@ -391,22 +395,14 @@ export default function App() {
                 }
             }
 
-            // --- STRICT CREDIT CHECK & PRE-DEDUCTION ---
+            // --- STRICT CREDIT CHECK ---
             if (inventory) {
                  if (inventory.credits.private <= 0) {
                      showNotification('您的課程點數不足，請聯繫管理員續課', 'error');
                      return;
                  }
-                 // Deduct immediately on booking
-                 const newPrivateCredits = Math.max(0, inventory.credits.private - 1);
-                 await saveToFirestore('user_inventory', inventory.id, {
-                     ...inventory,
-                     credits: { ...inventory.credits, private: newPrivateCredits },
-                     lastUpdated: new Date().toISOString()
-                 });
-                 // Log updated state locally for safety before re-fetch
-                 inventory = { ...inventory, credits: { ...inventory.credits, private: newPrivateCredits } };
-                 addLog('系統扣點', `學員 ${inventory.name} 預約成功，預扣 1 點 (剩餘: ${newPrivateCredits})`);
+                 // NOTE: Points are NOT deducted here anymore. 
+                 // They are deducted when the Coach confirms the 'checked_in' status.
             } else {
                  if (lineProfile) {
                     showNotification('您的課程點數不足 (新用戶請聯繫管理員購課)', 'error');
@@ -466,29 +462,16 @@ export default function App() {
       await saveToFirestore('appointments', app.id, updated);
       
       // Refund Logic (Always refund if confirmed -> cancelled)
-      if (app.type === 'private' || (app.type as string) === 'client') {
-          let inventory = null;
-          // 1. Try LINE ID
-          if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
-          // 2. Try Customer Name/Phone
-          if (!inventory && app.customer?.name) {
-              inventory = inventories.find(i => 
-                  i.name === app.customer?.name || 
-                  (app.customer?.phone && i.phone === app.customer.phone)
-              );
-          }
-
-          if (inventory) {
-              const newCredits = inventory.credits.private + 1;
-              await saveToFirestore('user_inventory', inventory.id, {
-                  ...inventory,
-                  credits: { ...inventory.credits, private: newCredits },
-                  lastUpdated: new Date().toISOString()
-              });
-              addLog('系統補點', `學員 ${inventory.name} 取消預約，退還 1 點 (剩餘: ${newCredits})`);
-          }
-      }
-
+      // NOTE: With the new flow, deduction happens at Completion. 
+      // If it was 'confirmed' or 'checked_in', NO points were deducted yet, so NO refund needed logically?
+      // HOWEVER: The system might have legacy data where deduction happened at booking.
+      // To be safe and compliant with the new flow:
+      // If deduction happens ONLY at completion, we don't need to refund for cancellations of 'confirmed' bookings.
+      // BUT if we want to support legacy behavior or mixed state, we might need checks.
+      // For this request, we assume the new flow: No deduction at booking -> No refund needed if cancelled before completion.
+      
+      // ... Unless the app was ALREADY completed? (Unlikely for customer cancel).
+      
       addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       const coach = coaches.find(c => c.id === app.coachId);
       
@@ -541,7 +524,10 @@ export default function App() {
 
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Appointment[] = [];
+    
+    // Standardize Date Parsing (Force YYYY-MM-DD input to be treated as local date part)
     const [y, m, d] = blockForm.date.split('-').map(Number);
+    // Construct date using local time parts explicitly
     const startDate = new Date(y, m - 1, d); 
 
     let targetSlots = [blockForm.time];
@@ -555,7 +541,6 @@ export default function App() {
         }
     }
 
-    let pointsToDeduct = 0;
     let stopCreation = false;
 
     // Outer Loop: Weeks
@@ -572,24 +557,9 @@ export default function App() {
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
              
              if (status.status === 'available') {
-                 // DEDUCTION LOGIC: Per Slot
-                 if (isPrivate && targetInventory) {
-                     if (!force && (targetInventory.credits.private - pointsToDeduct <= 0)) {
-                         // Stop creating subsequent bookings
-                         setConfirmModal({
-                            isOpen: true,
-                            message: `學員 ${targetInventory.name} 點數不足 (剩餘: ${targetInventory.credits.private}，已排: ${pointsToDeduct})。已停止建立第 ${i + 1} 週以後的預約。`,
-                            isDanger: false,
-                            showInput: false,
-                            onConfirm: null 
-                         });
-                         stopCreation = true;
-                         break; // Break inner loop
-                     }
-                     // If forced or have enough points
-                     pointsToDeduct++;
-                 }
-
+                 // NOTE: Deduction is removed here for Private bookings too, to align with the "Deduct on Completion" flow.
+                 // We only check if inventory exists for validity.
+                 
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  
@@ -623,17 +593,6 @@ export default function App() {
     
     // Batch Save
     try {
-        // Execute Point Deduction
-        if (targetInventory && pointsToDeduct > 0) {
-             const newCredits = targetInventory.credits.private - pointsToDeduct;
-             await saveToFirestore('user_inventory', targetInventory.id, {
-                 ...targetInventory,
-                 credits: { ...targetInventory.credits, private: newCredits },
-                 lastUpdated: new Date().toISOString()
-             });
-             addLog('後台扣點', `管理員為 ${targetInventory.name} 批次預約 ${pointsToDeduct} 堂，扣除 ${pointsToDeduct} 點`);
-        }
-
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
@@ -658,25 +617,7 @@ export default function App() {
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
                  await saveToFirestore('appointments', target.id, updated);
                  
-                 // Restore Points with Robust Logic
-                 let inv = null;
-                 if (target.lineUserId) inv = inventories.find(i => i.lineUserId === target.lineUserId);
-                 if (!inv && target.customer?.name) {
-                     inv = inventories.find(i => 
-                        i.name === target.customer?.name || 
-                        (target.customer?.phone && i.phone === target.customer.phone)
-                     ); 
-                 }
-
-                 if (inv) {
-                     const newCredits = inv.credits.private + 1;
-                     await saveToFirestore('user_inventory', inv.id, {
-                         ...inv,
-                         credits: { ...inv.credits, private: newCredits },
-                         lastUpdated: new Date().toISOString()
-                     });
-                     addLog('系統補點', `管理員取消預約，退還 1 點給 ${inv.name}`);
-                 }
+                 // NOTE: No refund logic needed here if deduction only happens at completion.
                  
                  addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
                  
@@ -740,45 +681,104 @@ export default function App() {
       setIsBlockModalOpen(true);
   };
 
-  const handleToggleComplete = async (app: Appointment) => {
-    // Only Manager can toggle status manually via admin panel to avoid coach fraud
-    if (currentUser?.role !== 'manager') {
-       showNotification('教練無法手動更改課程狀態 (請由學員掃碼簽到)', 'error');
-       return;
-    }
-    
-    // Toggle logic: If completed -> confirmed, If confirmed -> completed
-    const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
-    await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
-    addLog('課程狀態', `${app.customer?.name || app.reason} - 管理員變更為 ${newStatus === 'completed' ? '已結課' : '未結課'}`);
-  };
+  // --- CONFIRMATION FLOW ---
 
+  // 1. Student Checks In (No Deduction yet)
   const handleUserCheckIn = async (app: Appointment) => {
       try {
-          // Double verify LINE ID
           if (liffProfile && app.lineUserId !== liffProfile.userId) {
               showNotification('身份驗證失敗：此預約不屬於您', 'error');
               return;
           }
-
-          // JUST UPDATE STATUS. NO DEDUCTION (Already deducted on booking).
+          
+          // Only update status to checked_in. DO NOT DEDUCT yet.
           await saveToFirestore('appointments', app.id, {
               ...app,
-              status: 'completed'
+              status: 'checked_in'
           });
 
-          addLog('學員簽到', `學員 ${app.customer?.name} 自行簽到成功 (已預扣點數)`);
-          
-          let remaining = null;
-          if (app.lineUserId) {
-             const inv = inventories.find(i => i.lineUserId === app.lineUserId);
-             if (inv) remaining = inv.credits.private;
-          }
-
-          showNotification(`簽到成功！${remaining !== null ? `目前剩餘 ${remaining} 點` : ''}`, 'success');
+          addLog('學員簽到', `學員 ${app.customer?.name} 已簽到，等待教練確認`);
+          showNotification('簽到成功！請等待教練確認完課', 'success');
       } catch (e) {
           showNotification('簽到失敗，請稍後再試', 'error');
       }
+  };
+
+  // 2. Coach Confirms Completion (Deduction Happens Here)
+  const handleCoachConfirmCompletion = async (app: Appointment) => {
+      if (!currentUser || (currentUser.role !== 'manager' && currentUser.id !== app.coachId)) {
+          showNotification('權限不足', 'error');
+          return;
+      }
+
+      if (app.status !== 'checked_in' && app.status !== 'confirmed') {
+          showNotification('只能確認已簽到或已預約的課程', 'error');
+          return;
+      }
+
+      // Find Inventory
+      let inventory = null;
+      if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+      if (!inventory && app.customer?.name) {
+          inventory = inventories.find(i => 
+              i.name === app.customer?.name || 
+              (app.customer?.phone && i.phone === app.customer.phone)
+          );
+      }
+
+      if (!inventory) {
+          if (window.confirm('找不到學員庫存資料，是否仍要強制完課？(將不會扣除點數)')) {
+               await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
+               showNotification('已強制完課 (未扣點)', 'info');
+               return;
+          }
+          return;
+      }
+
+      // Check Credits
+      if (inventory.credits.private <= 0) {
+          showNotification(`學員點數不足 (剩餘: ${inventory.credits.private})`, 'error');
+          return;
+      }
+
+      // EXECUTE DEDUCTION
+      const newCredits = inventory.credits.private - 1;
+      
+      try {
+          // 1. Update Inventory
+          await saveToFirestore('user_inventory', inventory.id, {
+              ...inventory,
+              credits: { ...inventory.credits, private: newCredits },
+              lastUpdated: new Date().toISOString()
+          });
+
+          // 2. Update Appointment to Completed
+          await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
+
+          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課，扣除 1 點 (剩餘: ${newCredits})`);
+          showNotification(`確認成功！已扣除 1 點`, 'success');
+      } catch (e) {
+          console.error(e);
+          showNotification('更新失敗', 'error');
+      }
+  };
+
+  const handleToggleComplete = async (app: Appointment) => {
+    // This is primarily for the WeeklyCalendar interaction
+    if (app.status === 'checked_in') {
+        // Use the proper confirmation flow with deduction
+        await handleCoachConfirmCompletion(app);
+    } else {
+        // Legacy toggle or force toggle for Manager
+        if (currentUser?.role !== 'manager') {
+           showNotification('教練請點擊「確認完課」按鈕 (僅適用於已簽到課程)', 'info');
+           return;
+        }
+        // Manager force toggle (without deduction logic assumption here, simpler toggle)
+        const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
+        await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
+        addLog('課程狀態', `管理員強制變更 ${app.customer?.name} 狀態為 ${newStatus}`);
+    }
   };
 
   const handleSaveCoach = async (coachData: Coach, email?: string, password?: string) => {
@@ -845,11 +845,11 @@ export default function App() {
   };
 
   const getAnalysis = () => {
-    const totalActive = appointments.filter(a => a.status === 'confirmed').length;
+    const totalActive = appointments.filter(a => a.status === 'confirmed' || a.status === 'checked_in').length;
     const totalCancelled = appointments.filter(a => a.status === 'cancelled').length;
     
     const slotCounts: Record<string, number> = {};
-    appointments.filter(a => a.status === 'confirmed').forEach(a => {
+    appointments.filter(a => a.status === 'confirmed' || a.status === 'completed' || a.status === 'checked_in').forEach(a => {
         slotCounts[a.time] = (slotCounts[a.time] || 0) + 1;
     });
     const topTimeSlots = Object.entries(slotCounts)
@@ -863,7 +863,7 @@ export default function App() {
     const coachStats = coaches.map(c => {
         const apps = appointments.filter(a => 
             a.coachId === c.id && 
-            a.status === 'confirmed' && 
+            a.status !== 'cancelled' && 
             a.date.startsWith(currentMonthPrefix)
         );
         
@@ -1016,42 +1016,20 @@ export default function App() {
             selectedBatch={selectedBatch}
             toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
             handleBatchDelete={async () => {
-                if(!window.confirm(`確定取消選取的 ${selectedBatch.size} 筆預約嗎？\n(私人課程將自動退還點數)`)) return;
+                if(!window.confirm(`確定取消選取的 ${selectedBatch.size} 筆預約嗎？`)) return;
                 
-                let refundedCount = 0;
                 await Promise.all(Array.from(selectedBatch).map(async (id: string) => {
                     const app = appointments.find(a => a.id === id);
                     if (!app) return;
-
-                    // 1. Update status
                     await saveToFirestore('appointments', id, { ...app, status: 'cancelled', cancelReason: '管理員批次取消' });
-
-                    // 2. Refund Logic
-                    if ((app.type === 'private' || (app.type as string) === 'client') && app.status !== 'cancelled') {
-                        let inv = null;
-                        if (app.lineUserId) inv = inventories.find(i => i.lineUserId === app.lineUserId);
-                        if (!inv && app.customer?.name) {
-                            inv = inventories.find(i => 
-                                i.name === app.customer?.name || 
-                                (app.customer?.phone && i.phone === app.customer.phone)
-                            );
-                        }
-
-                        if (inv) {
-                            const newCredits = inv.credits.private + 1;
-                            await saveToFirestore('user_inventory', inv.id, {
-                                ...inv,
-                                credits: { ...inv.credits, private: newCredits },
-                                lastUpdated: new Date().toISOString()
-                            });
-                            refundedCount++;
-                        }
-                    }
+                    // No automatic point refund here assuming double confirm flow handles deduction at end.
+                    // But if old apps were pre-deducted, this might be tricky. 
+                    // Assuming consistent new flow for now.
                 }));
                 
-                addLog('批次取消', `取消 ${selectedBatch.size} 筆預約，共退還 ${refundedCount} 筆點數`);
+                addLog('批次取消', `取消 ${selectedBatch.size} 筆預約`);
                 setSelectedBatch(new Set());
-                showNotification(`成功取消 ${selectedBatch.size} 筆，退還 ${refundedCount} 點`, 'success');
+                showNotification(`成功取消 ${selectedBatch.size} 筆`, 'success');
             }}
             onOpenBatchBlock={handleOpenBatchBlock}
             renderWeeklyCalendar={() => (

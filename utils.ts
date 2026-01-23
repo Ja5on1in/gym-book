@@ -1,5 +1,6 @@
 
 
+
 import { Coach, Appointment, SlotStatus } from './types';
 
 export const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
@@ -26,7 +27,16 @@ export const formatDateTime = (isoString: string) => {
   try {
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return '-';
-    return `${d.getFullYear()}/${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+    // Force Taipei Time display
+    return d.toLocaleString('zh-TW', { 
+        timeZone: 'Asia/Taipei',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    });
   } catch (e) { return '-'; }
 };
 
