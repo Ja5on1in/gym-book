@@ -336,7 +336,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {/* Checked In Alert - UPDATED UI */}
        {auditPendingCount > 0 && (
            <div 
-             className="mb-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between animate-pulse"
+             className="mb-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between animate-pulse cursor-pointer hover:scale-[1.01] transition-transform"
+             onClick={() => { setAdminTab('appointments'); setStatusFilter('checked_in'); }}
            >
                <div className="flex items-center gap-3">
                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm">
@@ -347,12 +348,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        <div className="text-sm opacity-90">有 {auditPendingCount} 筆學生已簽到，請核實</div>
                    </div>
                </div>
-               <button 
-                  onClick={() => { setAdminTab('appointments'); setStatusFilter('checked_in'); }}
-                  className="px-4 py-2 bg-white text-orange-600 rounded-xl font-bold text-sm shadow-md hover:bg-orange-50 transition-colors"
-               >
-                  立即查看
-               </button>
+               <div className="bg-white/20 p-2 rounded-full">
+                  <ChevronRight/>
+               </div>
            </div>
        )}
 
@@ -513,7 +511,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <div className="flex gap-2 mr-2">
                                       <button 
                                           onClick={(e) => { e.stopPropagation(); onConfirmCompletion(app); }}
-                                          className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-md hover:bg-indigo-700 transition-colors"
+                                          className="text-xs bg-indigo-600 text-white px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-md hover:bg-indigo-700 transition-colors animate-pulse"
                                       >
                                           <CheckCircle size={14}/> 核實完課
                                       </button>
@@ -521,7 +519,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                           onClick={(e) => { e.stopPropagation(); onCancelAppointment(app, '管理員核實取消(誤觸)'); }}
                                           className="text-xs bg-white border border-gray-200 text-gray-500 px-3 py-1.5 rounded-lg flex items-center gap-1 shadow-sm hover:bg-gray-100 transition-colors"
                                       >
-                                          <X size={14}/> 誤觸取消
+                                          <X size={14}/>
                                       </button>
                                   </div>
                               )}

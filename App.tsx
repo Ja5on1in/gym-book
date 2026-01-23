@@ -29,6 +29,7 @@ import {
     saveToFirestore, 
     deleteFromFirestore, 
     disableUserInFirestore, 
+    updateDocument, // Imported robust update
     isFirebaseAvailable, 
     loginWithEmail, 
     logout,
@@ -184,6 +185,7 @@ export default function App() {
       return () => unsubscribe();
   }, []);
 
+  // Robust Listener Cleanup
   useEffect(() => {
     const unsubApps = subscribeToCollection('appointments', (data) => {
         const apps = data as Appointment[];
@@ -212,11 +214,12 @@ export default function App() {
         setInventories([...data] as UserInventory[]);
     }, () => {});
 
+    // Cleanup function to prevent memory leaks or crashes on unmount
     return () => {
-        unsubApps();
-        unsubCoaches && unsubCoaches();
-        unsubLogs && unsubLogs();
-        unsubInventory && unsubInventory();
+        if (unsubApps) unsubApps();
+        if (unsubCoaches) unsubCoaches();
+        if (unsubLogs) unsubLogs();
+        if (unsubInventory) unsubInventory();
     };
   }, []);
 
@@ -306,7 +309,7 @@ export default function App() {
       const oldPrivate = oldInv ? oldInv.credits.private : '?';
       const oldGroup = oldInv ? oldInv.credits.group : '?';
 
-      await saveToFirestore('user_inventory', inventory.id, {
+      await updateDocument('user_inventory', inventory.id, {
           ...inventory,
           lastUpdated: new Date().toISOString()
       });
@@ -386,8 +389,7 @@ export default function App() {
                 // Enhancement: Automatic seamless linking
                 if (inventory) {
                     if (!inventory.lineUserId) {
-                        await saveToFirestore('user_inventory', inventory.id, {
-                            ...inventory,
+                        await updateDocument('user_inventory', inventory.id, {
                             lineUserId: lineProfile.userId,
                             lastUpdated: new Date().toISOString()
                         });
@@ -457,8 +459,11 @@ export default function App() {
       // Logic Update: Since we don't deduct on booking anymore, we DO NOT refund on cancel.
       // We only care if status is not already completed/cancelled.
 
-      const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
-      await saveToFirestore('appointments', app.id, updated);
+      // SAFE UPDATE using updateDocument
+      await updateDocument('appointments', app.id, { 
+          status: 'cancelled', 
+          cancelReason: reason 
+      });
       
       addLog('取消預約', `取消 ${app.customer?.name} - ${reason}`);
       const coach = coaches.find(c => c.id === app.coachId);
@@ -558,14 +563,15 @@ export default function App() {
                  // CRITICAL: Explicitly construct the appointment with potentially UPDATED date and time
                  // Preserve LINE ID from original app if available (prevents data loss on edit)
                  const op: Appointment = { 
+                     ...(isEditSingle ? originalApp : {}), // Spread original first to keep hidden fields
                      id, 
                      type: finalType as any, 
-                     date: dKey, // Sync Fix: Ensure date is taken from loop/form logic
-                     time: slot, // Sync Fix: Ensure time is taken from loop/form logic
+                     date: dKey, 
+                     time: slot, 
                      coachId: coach.id, 
                      coachName: coach.name, 
                      reason: blockForm.reason, 
-                     status: 'confirmed', 
+                     status: isEditSingle && originalApp ? originalApp.status : 'confirmed', 
                      customer: (finalType === 'private' && blockForm.customer) ? {
                          name: blockForm.customer.name,
                          phone: blockForm.customer.phone || "",
@@ -589,6 +595,7 @@ export default function App() {
     
     // Batch Save
     try {
+        // Use saveToFirestore (upsert) because we might be creating new IDs or overwriting specific ones fully
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
@@ -611,8 +618,10 @@ export default function App() {
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
                  // NO REFUND LOGIC here anymore as we don't deduct on booking
-                 const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
-                 await saveToFirestore('appointments', target.id, updated);
+                 await updateDocument('appointments', target.id, { 
+                     status: 'cancelled', 
+                     cancelReason: reason 
+                 });
                  
                  addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
                  sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
@@ -685,8 +694,7 @@ export default function App() {
               return;
           }
           
-          await saveToFirestore('appointments', app.id, {
-              ...app,
+          await updateDocument('appointments', app.id, {
               status: 'checked_in'
           });
 
@@ -729,8 +737,7 @@ export default function App() {
 
               if (inventory) {
                   const newCredits = inventory.credits.private - 1;
-                  await saveToFirestore('user_inventory', inventory.id, {
-                      ...inventory,
+                  await updateDocument('user_inventory', inventory.id, {
                       credits: { ...inventory.credits, private: newCredits },
                       lastUpdated: new Date().toISOString()
                   });
@@ -741,7 +748,7 @@ export default function App() {
           // ------------------------
 
           // Update Appointment to Completed
-          await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
+          await updateDocument('appointments', app.id, { status: 'completed' });
 
           addLog('完課確認', `員工 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
           showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
@@ -764,7 +771,7 @@ export default function App() {
         }
         // Manager force toggle (Does NOT auto-deduct here to avoid double deduction accidents, assume manual correction)
         const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
-        await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
+        await updateDocument('appointments', app.id, { status: newStatus });
         addLog('課程狀態', `管理員/櫃檯強制變更 ${app.customer?.name} 狀態為 ${newStatus}`);
     }
   };
