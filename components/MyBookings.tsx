@@ -1,16 +1,26 @@
-import React, { useState } from 'react';
-import { User, Calendar, Clock, AlertTriangle, User as UserIcon } from 'lucide-react';
+
+import React, { useState, useEffect } from 'react';
+import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle } from 'lucide-react';
 import { Appointment, Coach } from '../types';
+import { isCheckInWindow } from '../utils';
 
 interface MyBookingsProps {
   liffProfile: { userId: string; displayName: string } | null;
   appointments: Appointment[];
   coaches: Coach[];
   onCancel: (app: Appointment, reason: string) => void;
+  onCheckIn: (app: Appointment) => void;
 }
 
-const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel }) => {
+const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn }) => {
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
+
+  // Force re-render periodically to update check-in button state
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setTick(t => t + 1), 60000);
+    return () => clearInterval(timer);
+  }, []);
 
   if (!liffProfile) {
     return (
@@ -49,7 +59,8 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
           {myApps.map(app => {
             const coach = coaches.find(c => c.id === app.coachId);
             const isCancelled = app.status === 'cancelled';
-            const isCompleted = app.isCompleted;
+            const isCompleted = app.status === 'completed';
+            const canCheckIn = !isCancelled && !isCompleted && isCheckInWindow(app.date, app.time, app.service?.duration);
             const isUpcoming = new Date(app.date + ' ' + app.time) > new Date() && !isCancelled;
 
             return (
@@ -63,7 +74,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                     <div className="text-indigo-600 dark:text-indigo-400 font-bold">{app.service?.name || '課程'}</div>
                   </div>
                   <div className={`px-3 py-1 rounded-full text-xs font-bold ${isCancelled ? 'bg-red-100 text-red-600' : isCompleted ? 'bg-gray-200 text-gray-600' : 'bg-green-100 text-green-600'}`}>
-                      {isCancelled ? '已取消' : isCompleted ? '已完成' : '即將到來'}
+                      {isCancelled ? '已取消' : isCompleted ? '已完課' : '預約成功'}
                   </div>
                 </div>
 
@@ -71,7 +82,16 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                     <User size={14}/> 教練：{coach?.name || app.coachName}
                 </div>
 
-                {isUpcoming && (
+                {canCheckIn && (
+                   <button 
+                       onClick={() => onCheckIn(app)}
+                       className="w-full mb-2 py-3 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short"
+                   >
+                       <CheckCircle size={20}/> 立即簽到
+                   </button>
+                )}
+
+                {isUpcoming && !canCheckIn && (
                     <button 
                         onClick={() => setSelectedApp(app)}
                         className="w-full py-2 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-sm font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
@@ -79,6 +99,13 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                         取消預約
                     </button>
                 )}
+                
+                {isCompleted && (
+                    <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">
+                        已完成簽到
+                    </div>
+                )}
+                
                 {isCancelled && <div className="text-xs text-red-400">取消原因：{app.cancelReason}</div>}
               </div>
             );

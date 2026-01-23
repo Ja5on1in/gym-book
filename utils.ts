@@ -1,4 +1,5 @@
 
+
 import { Coach, Appointment, SlotStatus } from './types';
 
 export const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
@@ -34,6 +35,22 @@ export const isPastTime = (dateKey: string, time: string) => {
   const now = new Date();
   const target = new Date(`${dateKey}T${time}`);
   return target < now;
+};
+
+// Check if current time is within [Start - 30mins, End]
+export const isCheckInWindow = (dateKey: string, time: string, durationStr: string = '50 分鐘') => {
+  if (!dateKey || !time) return false;
+  const now = new Date();
+  const startTime = new Date(`${dateKey}T${time}`);
+  
+  // Calculate duration in minutes (simple parsing)
+  const durationMatch = durationStr.match(/\d+/);
+  const duration = durationMatch ? parseInt(durationMatch[0]) : 50;
+  
+  const endTime = new Date(startTime.getTime() + duration * 60000);
+  const checkInStart = new Date(startTime.getTime() - 30 * 60000); // 30 mins before
+
+  return now >= checkInStart && now <= endTime;
 };
 
 export const isCoachDayOff = (dateKey: string, coach: Coach) => {

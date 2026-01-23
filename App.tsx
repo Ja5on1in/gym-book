@@ -742,9 +742,43 @@ export default function App() {
   };
 
   const handleToggleComplete = async (app: Appointment) => {
-    const newVal = !app.isCompleted;
-    await saveToFirestore('appointments', app.id, { ...app, isCompleted: newVal });
-    addLog('課程狀態', `${app.customer?.name || app.reason} - ${newVal ? '已結課' : '未結課'}`);
+    // Only Manager can toggle status manually via admin panel to avoid coach fraud
+    if (currentUser?.role !== 'manager') {
+       showNotification('教練無法手動更改課程狀態 (請由學員掃碼簽到)', 'error');
+       return;
+    }
+    
+    // Toggle logic: If completed -> confirmed, If confirmed -> completed
+    const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
+    await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
+    addLog('課程狀態', `${app.customer?.name || app.reason} - 管理員變更為 ${newStatus === 'completed' ? '已結課' : '未結課'}`);
+  };
+
+  const handleUserCheckIn = async (app: Appointment) => {
+      try {
+          // Double verify LINE ID
+          if (liffProfile && app.lineUserId !== liffProfile.userId) {
+              showNotification('身份驗證失敗：此預約不屬於您', 'error');
+              return;
+          }
+
+          await saveToFirestore('appointments', app.id, {
+              ...app,
+              status: 'completed'
+          });
+
+          addLog('學員簽到', `學員 ${app.customer?.name} 自行簽到成功`);
+          
+          let remaining = null;
+          if (app.lineUserId) {
+             const inv = inventories.find(i => i.lineUserId === app.lineUserId);
+             if (inv) remaining = inv.credits.private;
+          }
+
+          showNotification(`簽到成功！${remaining !== null ? `目前剩餘 ${remaining} 點` : ''}`, 'success');
+      } catch (e) {
+          showNotification('簽到失敗，請稍後再試', 'error');
+      }
   };
 
   const handleSaveCoach = async (coachData: Coach, email?: string, password?: string) => {
@@ -906,6 +940,7 @@ export default function App() {
                   appointments={appointments}
                   coaches={coaches}
                   onCancel={handleCustomerCancel}
+                  onCheckIn={handleUserCheckIn}
               />
           );
       }

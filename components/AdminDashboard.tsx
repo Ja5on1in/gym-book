@@ -1,10 +1,9 @@
 
-
 import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertCircle } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
-import WeeklyCalendar from './WeeklyCalendar';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
+import { isPastTime } from '../utils';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -58,6 +57,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingInventory, setEditingInventory] = useState<Partial<UserInventory>>({});
   const [isLineIdLocked, setIsLineIdLocked] = useState(true);
+
+  // Appointment Filter State
+  const [appointmentFilter, setAppointmentFilter] = useState<'all' | 'anomaly'>('all');
 
   const filteredApps = appointments.filter(a => currentUser.role==='manager' || a.coachId === currentUser.id);
 
@@ -141,13 +143,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // --- Inventory Handlers ---
   const handleOpenInventoryModal = (inv?: UserInventory) => {
-      // Permission check just in case, though UI hides buttons
-      if (currentUser.role !== 'manager' && !inv) return; 
-      // Coaches can view details but the save button will be hidden/disabled or we just let them see the row data without modal?
-      // For simplicity, if manager, allow edit. If coach, maybe just don't open modal or open in read-only.
-      // Current requirement says "remove edit buttons", so coach shouldn't reach here easily.
-      // But if they do, we block writes.
-      
       if (currentUser.role !== 'manager') return;
 
       if (inv) {
@@ -189,6 +184,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       (i.phone && i.phone.includes(searchQuery)) ||
       (i.lineUserId && i.lineUserId.includes(searchQuery))
   );
+
+  // Appointment List Logic with Anomaly Filter
+  const displayAppointments = filteredApps
+    .filter(app => {
+        if (appointmentFilter === 'anomaly') {
+            return app.status === 'confirmed' && isPastTime(app.date, app.time);
+        }
+        return true;
+    })
+    .sort((a,b)=> { try { return new Date(`${a.date} ${a.time}`).getTime() - new Date(`${b.date} ${b.time}`).getTime() } catch(e){ return 0 } });
 
   return (
     <div className="max-w-6xl mx-auto p-4 pb-24">
@@ -233,51 +238,91 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        
        {adminTab === 'appointments' && (
          <div className="glass-panel rounded-3xl shadow-lg p-6">
-           <div className="flex justify-between mb-6">
+           <div className="flex flex-col md:flex-row justify-between mb-6 gap-4 items-start md:items-center">
              <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
-             {selectedBatch.size > 0 && (
-               <button onClick={handleBatchDelete} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn">
-                 <Trash2 size={16}/> 取消預約 (退點) ({selectedBatch.size})
-               </button>
-             )}
+             
+             <div className="flex flex-wrap gap-2">
+                 <button 
+                    onClick={() => setAppointmentFilter('all')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors ${appointmentFilter === 'all' ? 'bg-indigo-600 text-white shadow-md' : 'bg-gray-100 dark:bg-gray-800 text-gray-500 hover:bg-gray-200'}`}
+                 >
+                    全部
+                 </button>
+                 <button 
+                    onClick={() => setAppointmentFilter('anomaly')}
+                    className={`px-4 py-2 rounded-xl text-sm font-bold transition-colors flex items-center gap-2 ${appointmentFilter === 'anomaly' ? 'bg-red-500 text-white shadow-md' : 'bg-red-50 text-red-500 dark:bg-red-900/20 hover:bg-red-100'}`}
+                 >
+                    <AlertTriangle size={16}/> 異常 (過期未簽)
+                 </button>
+
+                 {selectedBatch.size > 0 && (
+                   <button onClick={handleBatchDelete} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn ml-2">
+                     <Trash2 size={16}/> 刪除選取 ({selectedBatch.size})
+                   </button>
+                 )}
+             </div>
            </div>
+
            <div className="space-y-3">
-             {filteredApps.sort((a,b)=> { try { return new Date(`${a.date} ${a.time}`).getTime() - new Date(`${b.date} ${b.time}`).getTime() } catch(e){ return 0 } }).map(app => (
-               <div 
-                    key={app.id} 
-                    onClick={() => toggleBatchSelect(app.id)}
-                    className={`
-                        glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all cursor-pointer select-none
-                        ${selectedBatch.has(app.id) 
-                            ? 'border-2 border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
-                            : 'hover:border-indigo-300 dark:hover:border-indigo-700'
-                        }
-                    `}
-                >
-                  <div className={`
-                        w-5 h-5 rounded border flex items-center justify-center transition-colors
-                        ${selectedBatch.has(app.id) ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600'}
-                  `}>
-                      {selectedBatch.has(app.id) && <X size={14} className="text-white rotate-45" strokeWidth={3} />}
-                  </div>
-                  
-                  <div className="flex-1 pointer-events-none">
-                    <div className="flex justify-between items-center mb-1">
-                      <div className="flex items-center gap-3">
-                         <span className="font-bold text-lg dark:text-white">{app.date}</span>
-                         <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-sm font-medium">{app.time}</span>
+             {displayAppointments.length === 0 ? (
+                 <div className="text-center py-12 text-gray-400">
+                     <div className="w-16 h-16 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-3">
+                         <List size={32} className="opacity-50"/>
+                     </div>
+                     <p>沒有符合條件的預約</p>
+                 </div>
+             ) : (
+                 displayAppointments.map(app => {
+                   const isAnomaly = app.status === 'confirmed' && isPastTime(app.date, app.time);
+                   
+                   return (
+                   <div 
+                        key={app.id} 
+                        onClick={() => toggleBatchSelect(app.id)}
+                        className={`
+                            glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all cursor-pointer select-none border
+                            ${selectedBatch.has(app.id) 
+                                ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
+                                : isAnomaly 
+                                    ? 'border-red-200 dark:border-red-900/50 bg-red-50/30 dark:bg-red-900/10'
+                                    : 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700'
+                            }
+                        `}
+                    >
+                      <div className={`
+                            w-5 h-5 rounded border flex items-center justify-center transition-colors
+                            ${selectedBatch.has(app.id) ? 'bg-indigo-600 border-indigo-600' : 'border-gray-300 bg-white dark:bg-gray-800 dark:border-gray-600'}
+                      `}>
+                          {selectedBatch.has(app.id) && <X size={14} className="text-white rotate-45" strokeWidth={3} />}
                       </div>
-                      <span className={`text-xs px-3 py-1 rounded-full font-bold ${app.status==='cancelled'?'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400':'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'}`}>
-                          {app.status === 'cancelled' ? '已取消' : '已確認'}
-                      </span>
-                    </div>
-                    <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
-                        <span>{coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除教練)'}</span>
-                        <span className="font-medium text-indigo-600 dark:text-indigo-400">{(app.type as string) ==='client' ? app?.customer?.name : app.reason}</span>
-                    </div>
-                  </div>
-               </div>
-             ))}
+                      
+                      <div className="flex-1 pointer-events-none">
+                        <div className="flex justify-between items-center mb-1">
+                          <div className="flex items-center gap-3">
+                             <span className="font-bold text-lg dark:text-white">{app.date}</span>
+                             <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-sm font-medium">{app.time}</span>
+                             {isAnomaly && (
+                                 <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
+                                     <AlertTriangle size={10}/> 未簽到
+                                 </span>
+                             )}
+                          </div>
+                          <span className={`text-xs px-3 py-1 rounded-full font-bold ${
+                              app.status === 'cancelled' ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400' : 
+                              app.status === 'completed' ? 'bg-gray-200 text-gray-600 dark:bg-gray-700 dark:text-gray-300' :
+                              'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
+                          }`}>
+                              {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已簽到' : '已確認'}
+                          </span>
+                        </div>
+                        <div className="flex justify-between text-sm text-gray-500 dark:text-gray-400">
+                            <span>{coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除教練)'}</span>
+                            <span className="font-medium text-indigo-600 dark:text-indigo-400">{(app.type as string) ==='client' ? app?.customer?.name : app.reason}</span>
+                        </div>
+                      </div>
+                   </div>
+                 )})
+             )}
            </div>
          </div>
        )}

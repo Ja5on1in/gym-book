@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2 } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime } from '../utils';
@@ -90,6 +90,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                             const coach = coaches.find(c => c.id === app.coachId);
                             const colorClass = coach?.color || 'bg-gray-100 text-gray-800 border-gray-200';
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
+                            const isCompleted = app.status === 'completed';
                             
                             // Determine display text: Prefer customer name for private/client bookings
                             const displayText = (app.type === 'private' || (app.type as string) === 'client') 
@@ -102,21 +103,22 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                    className={`
                                       text-[11px] p-2 rounded-xl shadow-sm border border-black/5 hover:scale-[1.02] transition-transform
                                       ${colorClass} 
-                                      ${app.isCompleted ? 'opacity-60 grayscale' : ''} 
+                                      ${isCompleted ? 'opacity-60 grayscale' : ''} 
                                       ${!isMine ? 'opacity-80' : ''}
                                    `}
                               >
                                   <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-bold truncate">{coach?.name || app.coachName}</span>
-                                    {isMine && isPast && !app.isCompleted && (
+                                    {/* Only Manager can force complete manually from here */}
+                                    {isMine && isPast && !isCompleted && currentUser.role === 'manager' && (
                                       <button 
                                         onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
-                                        className="bg-white/60 hover:bg-white rounded-full p-0.5 text-green-700 transition-colors shadow-sm" title="確認結課"
+                                        className="bg-white/60 hover:bg-white rounded-full p-0.5 text-green-700 transition-colors shadow-sm" title="強制結課"
                                       >
                                         <CheckCircle size={12}/>
                                       </button>
                                     )}
-                                    {isMine && app.isCompleted && <CheckCircle size={12} className="text-green-800"/>}
+                                    {isMine && isCompleted && <CheckCircle size={12} className="text-green-800"/>}
                                   </div>
                                   <div className="truncate font-medium opacity-90">{displayText}</div>
                               </div>
@@ -135,8 +137,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                         
                         {!isOff && visibleApps.length === 0 && (
                             <div className="hidden group-hover:flex w-full h-full items-center justify-center">
-                                <div className="w-6 h-6 rounded-full bg-indigo-50 dark:bg-gray-700 text-indigo-400 flex items-center justify-center shadow-sm opacity-0 group-hover:opacity-100 transition-opacity transform scale-0 group-hover:scale-100">
-                                    +
+                                <div className="w-6 h-6 rounded-full bg-indigo-50 dark:bg-gray-700 text-indigo-500 flex items-center justify-center">
+                                    <Plus size={14} strokeWidth={3}/>
                                 </div>
                             </div>
                         )}

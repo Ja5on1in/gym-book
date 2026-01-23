@@ -37,9 +37,8 @@ export interface Appointment {
   service?: Service | null;
   customer?: Customer | null;
   reason?: string;
-  status: 'confirmed' | 'cancelled';
+  status: 'confirmed' | 'cancelled' | 'completed'; // Added completed status
   createdAt: string;
-  isCompleted?: boolean;
   cancelReason?: string;
   lineUserId?: string; // LINE LIFF Integration
   lineName?: string;   // LINE LIFF Integration
