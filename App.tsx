@@ -297,8 +297,8 @@ export default function App() {
 
   // Inventory Management Actions
   const handleUpdateInventory = async (inventory: UserInventory) => {
-      if (currentUser?.role !== 'manager') {
-          showNotification('只有管理員可以修改點數', 'error');
+      if (currentUser?.role !== 'manager' && currentUser?.role !== 'receptionist') {
+          showNotification('只有管理員或櫃檯可以修改點數', 'error');
           return;
       }
       // Find old inventory for logging
@@ -361,7 +361,7 @@ export default function App() {
       addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
   };
 
-  // --- SAFE BOOKING SUBMISSION (PRE-DEDUCT) ---
+  // --- SAFE BOOKING SUBMISSION (NO DEDUCTION UNTIL COMPLETION) ---
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -397,27 +397,15 @@ export default function App() {
                 }
             }
 
-            // --- STRICT CREDIT CHECK & PRE-DEDUCT ---
+            // --- REMOVED STRICT CREDIT BLOCK ---
             if (inventory) {
                  if (inventory.credits.private <= 0) {
-                     showNotification('您的課程點數不足，請聯繫管理員續課', 'error');
-                     return;
+                     // Just a warning, proceed with booking
+                     showNotification('提醒：您的點數不足，請記得補購點數', 'info');
                  }
-                 
-                 // [Logic Update] Pre-deduct credits IMMEDIATELY upon booking
-                 const newCredits = inventory.credits.private - 1;
-                 await saveToFirestore('user_inventory', inventory.id, {
-                     ...inventory,
-                     credits: { ...inventory.credits, private: newCredits },
-                     lastUpdated: new Date().toISOString()
-                 });
-                 // Update local reference just in case
-                 inventory = { ...inventory, credits: { ...inventory.credits, private: newCredits } };
-
             } else {
                  if (lineProfile) {
-                    showNotification('您的課程點數不足 (新用戶請聯繫管理員購課)', 'error');
-                    return;
+                    showNotification('提醒：新用戶請聯繫管理員購課', 'info');
                  }
             }
             // ---------------------------
@@ -442,7 +430,7 @@ export default function App() {
         
         // 1. Save to Database
         await saveToFirestore('appointments', id, newApp);
-        addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} ${lineProfile ? '(已預扣 1 點)' : ''}`);
+        addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} (尚未扣點)`);
         
         // 2. Execute Webhook
         const webhookPayload = {
@@ -457,7 +445,7 @@ export default function App() {
         sendToGoogleScript(webhookPayload).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
-        showNotification('預約成功！(已扣除 1 點課程)', 'success');
+        showNotification('預約成功！(上課完成後將扣除點數)', 'success');
         
     } catch (error: any) {
         console.error("Booking Error:", error);
@@ -466,25 +454,8 @@ export default function App() {
   };
 
   const handleCustomerCancel = async (app: Appointment, reason: string) => {
-      // Refund Logic: Check if app was confirmed/checked_in, implies credit was deducted.
-      // Must refund.
-      if (app.status === 'confirmed' || app.status === 'checked_in') {
-          let inventory = null;
-          if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
-          if (!inventory && app.customer?.name) {
-              inventory = inventories.find(i => i.name === app.customer?.name || (app.customer?.phone && i.phone === app.customer?.phone));
-          }
-
-          if (inventory) {
-               const newCredits = inventory.credits.private + 1;
-               await saveToFirestore('user_inventory', inventory.id, {
-                   ...inventory,
-                   credits: { ...inventory.credits, private: newCredits },
-                   lastUpdated: new Date().toISOString()
-               });
-               addLog('取消返還', `取消課程，退還 ${app.customer?.name} 1 點 (目前: ${newCredits})`);
-          }
-      }
+      // Logic Update: Since we don't deduct on booking anymore, we DO NOT refund on cancel.
+      // We only care if status is not already completed/cancelled.
 
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
@@ -504,7 +475,7 @@ export default function App() {
           time: app.time
       }).catch(e => console.warn("Cancel webhook failed", e));
       
-      showNotification('已取消預約 (點數已退還)', 'info');
+      showNotification('已取消預約', 'info');
   };
 
   const resetBooking = () => {
@@ -515,7 +486,7 @@ export default function App() {
   const handleSaveBlock = async (e: React.FormEvent, force: boolean = false) => {
     if(e) e.preventDefault();
     if (!currentUser) return;
-    const coach = coaches.find(c => c.id === (currentUser.role === 'manager' ? blockForm.coachId : currentUser.id));
+    const coach = coaches.find(c => c.id === (['manager', 'receptionist'].includes(currentUser.role) ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
     // Normalize Type
@@ -537,13 +508,10 @@ export default function App() {
             (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true)
         );
         
-        // ADMIN DEDUCTION CHECK: If admin adds a private class manually, we should check/deduct points too?
-        // Prompt implies "Any booking". Let's apply deduction if inventory exists.
+        // Warn only, don't block
         if (targetInventory) {
              if (targetInventory.credits.private <= 0) {
-                 if (!window.confirm(`學員 ${targetInventory.name} 點數不足 (0)，確定要強制預約嗎？(將變成負數)`)) {
-                     return;
-                 }
+                 showNotification(`學員 ${targetInventory.name} 點數不足 (0)，仍可預約`, 'info');
              }
         }
     }
@@ -551,14 +519,13 @@ export default function App() {
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Appointment[] = [];
     
-    // Standardize Date Parsing (Force YYYY-MM-DD input to be treated as local date part)
+    // Standardize Date Parsing
     const [y, m, d] = blockForm.date.split('-').map(Number);
-    // Construct date using local time parts explicitly
     const startDate = new Date(y, m - 1, d); 
 
     let targetSlots = [blockForm.time];
 
-    // Batch Slot Logic (Time Range)
+    // Batch Slot Logic
     if (isBatchMode && blockForm.endTime) {
         const startIndex = ALL_TIME_SLOTS.indexOf(blockForm.time);
         const endIndex = ALL_TIME_SLOTS.indexOf(blockForm.endTime);
@@ -568,7 +535,6 @@ export default function App() {
     }
 
     let stopCreation = false;
-    let deductedCount = 0;
 
     // Outer Loop: Weeks
     for (let i = 0; i < repeat; i++) {
@@ -586,11 +552,6 @@ export default function App() {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  
-                 // Deduct logic for private booking in loop
-                 if (targetInventory && isPrivate) {
-                     deductedCount++;
-                 }
-
                  batchOps.push({ 
                      id, 
                      type: finalType as any, 
@@ -619,18 +580,8 @@ export default function App() {
     
     // Batch Save
     try {
-        // Apply deductions if any
-        if (targetInventory && deductedCount > 0) {
-             const newCredits = targetInventory.credits.private - deductedCount;
-             await saveToFirestore('user_inventory', targetInventory.id, {
-                 ...targetInventory,
-                 credits: { ...targetInventory.credits, private: newCredits },
-                 lastUpdated: new Date().toISOString()
-             });
-        }
-
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
-        addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄 (已扣除 ${deductedCount} 點)`);
+        addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
         setIsBlockModalOpen(false);
     } catch (e) {
@@ -650,30 +601,14 @@ export default function App() {
          setConfirmModal({
              isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
-                 // REFUND LOGIC for Admin Cancel
-                 if (target.status === 'confirmed' || target.status === 'checked_in') {
-                      let inventory = null;
-                      if (target.lineUserId) inventory = inventories.find(i => i.lineUserId === target.lineUserId);
-                      if (!inventory && target.customer?.name) {
-                          inventory = inventories.find(i => i.name === target.customer?.name);
-                      }
-                      if (inventory) {
-                          const newCredits = inventory.credits.private + 1;
-                          await saveToFirestore('user_inventory', inventory.id, {
-                              ...inventory,
-                              credits: { ...inventory.credits, private: newCredits },
-                              lastUpdated: new Date().toISOString()
-                          });
-                      }
-                 }
-
+                 // NO REFUND LOGIC here anymore as we don't deduct on booking
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
                  await saveToFirestore('appointments', target.id, updated);
                  
-                 addLog('取消預約', `取消 ${target.customer?.name} - ${reason} (已退還點數)`);
+                 addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
                  sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
                  
-                 showNotification('已取消並退還點數', 'info');
+                 showNotification('已取消', 'info');
                  setIsBlockModalOpen(false);
              }
          });
@@ -687,7 +622,8 @@ export default function App() {
 
   const handleSlotClick = (date: string, time: string) => {
       if (!currentUser) return;
-      const targetCoachId = currentUser.role === 'manager' ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
+      // Allow receptionists to select any coach
+      const targetCoachId = (['manager', 'receptionist'].includes(currentUser.role)) ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
       if (!targetCoachId) { showNotification('無教練資料', 'error'); return; }
 
       const coach = coaches.find(c => c.id === targetCoachId);
@@ -702,7 +638,7 @@ export default function App() {
 
   const handleOpenBatchBlock = () => {
       if (!currentUser) return;
-      const targetCoachId = currentUser.role === 'manager' ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
+      const targetCoachId = (['manager', 'receptionist'].includes(currentUser.role)) ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
       const today = new Date();
       const dateStr = formatDateKey(today.getFullYear(), today.getMonth(), today.getDate());
       
@@ -730,7 +666,7 @@ export default function App() {
       setIsBlockModalOpen(true);
   };
 
-  // --- CONFIRMATION FLOW ---
+  // --- CONFIRMATION FLOW (DOUBLE VERIFICATION & DEDUCTION) ---
 
   // 1. Student Checks In (Status Only, No Deduction)
   const handleUserCheckIn = async (app: Appointment) => {
@@ -746,15 +682,15 @@ export default function App() {
           });
 
           addLog('學員簽到', `學員 ${app.customer?.name} 已簽到，等待教練確認`);
-          showNotification('簽到成功！', 'success');
+          showNotification('簽到成功！請告知教練。', 'success');
       } catch (e) {
           showNotification('簽到失敗，請稍後再試', 'error');
       }
   };
 
-  // 2. Coach Confirms Completion (Status Only, No Deduction)
+  // 2. Coach Confirms Completion (ACTUAL DEDUCTION HERE)
   const handleCoachConfirmCompletion = async (app: Appointment) => {
-      if (!currentUser || (currentUser.role !== 'manager' && currentUser.id !== app.coachId)) {
+      if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
           showNotification('權限不足', 'error');
           return;
       }
@@ -765,11 +701,36 @@ export default function App() {
       }
 
       try {
+          // --- DEDUCTION LOGIC ---
+          let deducted = false;
+          let remaining = '?';
+          
+          // Only deduct for private sessions
+          if (app.type === 'private' || (app.type as string) === 'client') {
+              let inventory = null;
+              if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+              if (!inventory && app.customer?.name) {
+                  inventory = inventories.find(i => i.name === app.customer?.name || (app.customer?.phone && i.phone === app.customer?.phone));
+              }
+
+              if (inventory) {
+                  const newCredits = inventory.credits.private - 1;
+                  await saveToFirestore('user_inventory', inventory.id, {
+                      ...inventory,
+                      credits: { ...inventory.credits, private: newCredits },
+                      lastUpdated: new Date().toISOString()
+                  });
+                  remaining = newCredits.toString();
+                  deducted = true;
+              }
+          }
+          // ------------------------
+
           // Update Appointment to Completed
           await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
 
-          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 (已預扣)`);
-          showNotification(`確認完課成功`, 'success');
+          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
+          showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
       } catch (e) {
           console.error(e);
           showNotification('更新失敗', 'error');
@@ -779,18 +740,18 @@ export default function App() {
   const handleToggleComplete = async (app: Appointment) => {
     // This is primarily for the WeeklyCalendar interaction
     if (app.status === 'checked_in') {
-        // Use the proper confirmation flow
+        // Use the proper confirmation flow which deducts points
         await handleCoachConfirmCompletion(app);
     } else {
         // Legacy toggle or force toggle for Manager
-        if (currentUser?.role !== 'manager') {
+        if (currentUser?.role !== 'manager' && currentUser?.role !== 'receptionist') {
            showNotification('教練請點擊「確認完課」按鈕 (僅適用於已簽到課程)', 'info');
            return;
         }
-        // Manager force toggle
+        // Manager force toggle (Does NOT auto-deduct here to avoid double deduction accidents, assume manual correction)
         const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
         await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
-        addLog('課程狀態', `管理員強制變更 ${app.customer?.name} 狀態為 ${newStatus}`);
+        addLog('課程狀態', `管理員/櫃檯強制變更 ${app.customer?.name} 狀態為 ${newStatus}`);
     }
   };
 
@@ -1034,7 +995,6 @@ export default function App() {
                 await Promise.all(Array.from(selectedBatch).map(async (id: string) => {
                     const app = appointments.find(a => a.id === id);
                     if (!app) return;
-                    // Trigger cancel logic (refund) for each
                     await handleCustomerCancel(app, '管理員批次取消'); 
                 }));
                 
@@ -1184,7 +1144,7 @@ export default function App() {
                                    <option value="group">團體課程 (Group)</option>
                                </select>
                            </div>
-                           {currentUser?.role === 'manager' && (
+                           {['manager', 'receptionist'].includes(currentUser?.role) && (
                                <div>
                                    <label className="text-xs font-bold text-gray-500 uppercase">指定教練</label>
                                    <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})}>

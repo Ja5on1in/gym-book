@@ -73,7 +73,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [statsStartDate, setStatsStartDate] = useState(formatDateKey(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate()));
   const [statsEndDate, setStatsEndDate] = useState(formatDateKey(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate()));
 
-  const filteredApps = appointments.filter(a => currentUser.role==='manager' || a.coachId === currentUser.id);
+  const filteredApps = appointments.filter(a => currentUser.role==='manager' || currentUser.role==='receptionist' || a.coachId === currentUser.id);
 
   // --- Analysis Calculation (Local with Date Range) ---
   const statsData = useMemo(() => {
@@ -181,7 +181,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const handleExportCancelCsv = () => {
     const cancelledApps = appointments.filter(a => 
       a.status === 'cancelled' && 
-      (currentUser.role === 'manager' || a.coachId === currentUser.id)
+      (currentUser.role === 'manager' || currentUser.role === 'receptionist' || a.coachId === currentUser.id)
     );
     const header = "預約日期,時間,教練,客戶名稱,取消原因";
     const rows = cancelledApps.map(a => 
@@ -241,7 +241,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // --- Inventory Handlers ---
   const handleOpenInventoryModal = (inv?: UserInventory) => {
-      if (currentUser.role !== 'manager') return;
+      if (currentUser.role !== 'manager' && currentUser.role !== 'receptionist') return;
 
       if (inv) {
           setEditingInventory({ ...inv });
@@ -261,7 +261,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleSubmitInventory = (e: React.FormEvent) => {
       e.preventDefault();
-      if (currentUser.role !== 'manager') return;
+      if (currentUser.role !== 'manager' && currentUser.role !== 'receptionist') return;
       if (!editingInventory.name) return;
       
       const inventoryToSave = {
@@ -513,7 +513,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {adminTab === 'inventory' && (
           <div className="glass-panel rounded-3xl shadow-lg p-6">
               <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-                  <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 庫存管理 {currentUser.role !== 'manager' && <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full ml-2">檢視模式</span>}</h3>
+                  <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 庫存管理 {currentUser.role !== 'manager' && currentUser.role !== 'receptionist' && <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full ml-2">檢視模式</span>}</h3>
                   <div className="flex gap-2 w-full md:w-auto">
                       <div className="relative flex-1 md:flex-initial">
                           <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
@@ -525,8 +525,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onChange={e => setSearchQuery(e.target.value)}
                           />
                       </div>
-                      {/* Only Manager can Add */}
-                      {currentUser.role === 'manager' && (
+                      {/* Only Manager/Receptionist can Add */}
+                      {['manager', 'receptionist'].includes(currentUser.role) && (
                           <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all flex items-center gap-2 whitespace-nowrap">
                               <Plus size={16}/> 新增學員
                           </button>
@@ -539,7 +539,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50/50 dark:bg-gray-800/30 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
                           <UserIcon size={48} className="mx-auto mb-4 opacity-50"/>
                           <p className="font-medium">找不到符合的學員資料</p>
-                          {currentUser.role === 'manager' && (
+                          {['manager', 'receptionist'].includes(currentUser.role) && (
                             <button onClick={() => handleOpenInventoryModal()} className="mt-4 text-indigo-500 font-bold hover:underline">新增一筆？</button>
                           )}
                       </div>
@@ -554,8 +554,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       </h4>
                                       <p className="text-xs text-gray-500 dark:text-gray-400">{inv.phone || '無電話'}</p>
                                   </div>
-                                  {/* Only Manager can Edit/Delete */}
-                                  {currentUser.role === 'manager' && (
+                                  {/* Only Manager/Receptionist can Edit/Delete */}
+                                  {['manager', 'receptionist'].includes(currentUser.role) && (
                                       <div className="flex gap-1">
                                           <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
                                           <button onClick={() => { if(window.confirm(`確定刪除 ${inv.name} 嗎？此動作無法復原。`)) onDeleteInventory(inv.id) }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
@@ -913,6 +913,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
                                 <option value="coach">教練 (Coach)</option>
                                 <option value="manager">主管 (Manager)</option>
+                                <option value="receptionist">櫃檯 (Receptionist)</option>
                             </select>
                         </div>
                         

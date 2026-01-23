@@ -3,7 +3,7 @@
 export interface User {
   id: string;
   name: string;
-  role: 'manager' | 'coach' | 'staff'; // Added staff for flexibility
+  role: 'manager' | 'coach' | 'staff' | 'receptionist'; // Added receptionist
   email?: string;
   photoURL?: string;
   color?: string;

@@ -133,7 +133,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <AlertTriangle size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">取消預約確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？<br/>(將會退還 1 點課程點數)</p>
+                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？</p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setSelectedApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
@@ -154,7 +154,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <Info size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">簽到確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">簽到後請出示畫面給教練確認<br/><span className="text-xs text-gray-400 font-bold">(點數已於預約時扣除)</span></p>
+                 <p className="text-sm text-gray-500 text-center mb-6">簽到後請出示畫面給教練確認<br/><span className="text-xs text-gray-400 font-bold">(確認完課後將扣除點數)</span></p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setCheckInConfirmApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
