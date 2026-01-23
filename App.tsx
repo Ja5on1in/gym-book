@@ -553,11 +553,12 @@ export default function App() {
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  
                  // CRITICAL: Explicitly construct the appointment with potentially UPDATED date and time
+                 // This ensures edits to time/date are reflected correctly in the DB
                  const op: Appointment = { 
                      id, 
                      type: finalType as any, 
-                     date: dKey, // Sync Fix: Ensure date is taken from loop/form
-                     time: slot, // Sync Fix: Ensure time is taken from loop/form
+                     date: dKey, // Sync Fix: Ensure date is taken from loop/form logic
+                     time: slot, // Sync Fix: Ensure time is taken from loop/form logic
                      coachId: coach.id, 
                      coachName: coach.name, 
                      reason: blockForm.reason, 
@@ -693,14 +694,8 @@ export default function App() {
 
   // 2. Coach Confirms Completion (ACTUAL DEDUCTION HERE)
   const handleCoachConfirmCompletion = async (app: Appointment) => {
-      if (!currentUser) return;
-
-      // Permission Logic: Manager/Receptionist can confirm ANY; Coach can only confirm OWN.
-      const isManagerOrReceptionist = ['manager', 'receptionist'].includes(currentUser.role);
-      const isOwnClass = currentUser.id === app.coachId;
-
-      if (!isManagerOrReceptionist && !isOwnClass) {
-          showNotification('權限不足：您只能核實自己的課程', 'error');
+      if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
+          showNotification('權限不足', 'error');
           return;
       }
 
@@ -1030,6 +1025,7 @@ export default function App() {
             onSaveInventory={handleSaveInventory}
             onDeleteInventory={handleDeleteInventory}
             onCancelAppointment={handleCustomerCancel} // New Prop
+            onConfirmCompletion={handleToggleComplete} // New Prop for list actions
          />
       );
   };

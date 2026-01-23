@@ -32,8 +32,9 @@ interface AdminDashboardProps {
   onUpdateInventory: (inv: UserInventory) => void;
   onDeleteInventory: (id: string) => void;
   onSaveInventory: (inv: UserInventory) => void;
-  // New: Cancel Handler for direct action
+  // New: Handlers for direct action
   onCancelAppointment: (app: Appointment, reason: string) => void;
+  onConfirmCompletion: (app: Appointment) => void;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -41,7 +42,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   appointments, selectedBatch, toggleBatchSelect, handleBatchDelete,
   handleExportJson, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
-  inventories, onDeleteInventory, onSaveInventory, onCancelAppointment
+  inventories, onDeleteInventory, onSaveInventory, onCancelAppointment, onConfirmCompletion
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -332,7 +333,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           <button onClick={onLogout} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors shadow-sm"><LogOut size={16}/> 登出</button>
        </div>
        
-       {/* Checked In Alert */}
+       {/* Checked In Alert - UPDATED UI */}
        {auditPendingCount > 0 && (
            <div 
              className="mb-6 bg-gradient-to-r from-orange-500 to-amber-500 rounded-2xl p-4 text-white shadow-lg flex items-center justify-between animate-pulse"
@@ -511,7 +512,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               {isCheckedIn && (
                                   <div className="flex gap-2 mr-2">
                                       <button 
-                                          onClick={(e) => { e.stopPropagation(); renderWeeklyCalendar().props.onToggleComplete(app); }}
+                                          onClick={(e) => { e.stopPropagation(); onConfirmCompletion(app); }}
                                           className="text-xs bg-emerald-500 text-white px-3 py-1 rounded-lg flex items-center gap-1 shadow-md hover:bg-emerald-600 transition-colors"
                                       >
                                           <CheckCircle size={12}/> 確認扣點
@@ -556,147 +557,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
              )}
            </div>
          </div>
-       )}
-
-       {adminTab === 'inventory' && (
-          <div className="glass-panel rounded-3xl shadow-lg p-6">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-                  <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard className="text-indigo-500"/> 庫存管理 {currentUser.role !== 'manager' && currentUser.role !== 'receptionist' && <span className="text-xs text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-1 rounded-full ml-2">檢視模式</span>}</h3>
-                  <div className="flex gap-2 w-full md:w-auto">
-                      <div className="relative flex-1 md:flex-initial">
-                          <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>
-                          <input 
-                              type="text" 
-                              placeholder="搜尋姓名、電話或 ID..." 
-                              className="pl-10 pr-4 py-2 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl w-full md:w-64 focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white"
-                              value={searchQuery}
-                              onChange={e => setSearchQuery(e.target.value)}
-                          />
-                      </div>
-                      {/* Only Manager/Receptionist can Add */}
-                      {['manager', 'receptionist'].includes(currentUser.role) && (
-                          <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all flex items-center gap-2 whitespace-nowrap">
-                              <Plus size={16}/> 新增學員
-                          </button>
-                      )}
-                  </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {filteredInventories.length === 0 ? (
-                      <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50/50 dark:bg-gray-800/30 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
-                          <UserIcon size={48} className="mx-auto mb-4 opacity-50"/>
-                          <p className="font-medium">找不到符合的學員資料</p>
-                          {['manager', 'receptionist'].includes(currentUser.role) && (
-                            <button onClick={() => handleOpenInventoryModal()} className="mt-4 text-indigo-500 font-bold hover:underline">新增一筆？</button>
-                          )}
-                      </div>
-                  ) : (
-                      filteredInventories.map(inv => (
-                          <div key={inv.id} className="glass-card p-5 rounded-2xl border border-gray-100 dark:border-gray-700 hover:shadow-lg transition-all group">
-                              <div className="flex justify-between items-start mb-3">
-                                  <div>
-                                      <h4 className="font-bold text-lg dark:text-white flex items-center gap-2">
-                                          {inv.name}
-                                          {inv.lineUserId ? <span className="w-2 h-2 rounded-full bg-[#06C755]" title="已綁定 LINE"></span> : <span className="w-2 h-2 rounded-full bg-gray-300" title="未綁定 LINE"></span>}
-                                      </h4>
-                                      <p className="text-xs text-gray-500 dark:text-gray-400">{inv.phone || '無電話'}</p>
-                                  </div>
-                                  {/* Only Manager/Receptionist can Edit/Delete */}
-                                  {['manager', 'receptionist'].includes(currentUser.role) && (
-                                      <div className="flex gap-1">
-                                          <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
-                                          <button onClick={() => { if(window.confirm(`確定刪除 ${inv.name} 嗎？此動作無法復原。`)) onDeleteInventory(inv.id) }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
-                                      </div>
-                                  )}
-                              </div>
-                              
-                              <div className="grid grid-cols-2 gap-2 mb-3">
-                                  <div className="bg-indigo-50 dark:bg-indigo-900/20 p-2 rounded-xl text-center">
-                                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">私人課</div>
-                                      <div className={`font-bold text-lg ${inv.credits.private > 0 ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>{inv.credits.private}</div>
-                                  </div>
-                                  <div className="bg-orange-50 dark:bg-orange-900/20 p-2 rounded-xl text-center">
-                                      <div className="text-xs text-gray-500 dark:text-gray-400 uppercase">團課</div>
-                                      <div className={`font-bold text-lg ${inv.credits.group > 0 ? 'text-orange-600 dark:text-orange-400' : 'text-gray-400'}`}>{inv.credits.group}</div>
-                                  </div>
-                              </div>
-
-                              <div className="text-[10px] text-gray-400 text-right">
-                                  更新於: {new Date(inv.lastUpdated).toLocaleDateString()}
-                              </div>
-                          </div>
-                      ))
-                  )}
-              </div>
-          </div>
-       )}
-
-       {adminTab === 'analysis' && (
-          <div className="space-y-6 animate-slideUp">
-            
-            <div className="flex justify-end gap-3">
-               <button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
-               <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出區間報表</button>
-            </div>
-            
-            {/* Visual stats default to current range or whatever is in state, but inputs are hidden */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-               <div className="glass-panel p-6 rounded-3xl relative overflow-hidden">
-                  <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div>
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 (目前顯示: {statsStartDate}~{statsEndDate})</h4>
-                  <div className="space-y-3 relative z-10">
-                    {statsData.topTimeSlots.length > 0 ? statsData.topTimeSlots.map((s: any, i: number) => (
-                        <div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-white/40 dark:border-gray-700">
-                            <span className="font-bold text-orange-600 dark:text-orange-400">#{i+1} {s.time}</span>
-                            <span className="text-sm font-medium">{s.count} 堂</span>
-                        </div>
-                    )) : <div className="text-center text-gray-400 text-sm py-4">無數據</div>}
-                  </div>
-               </div>
-               
-               <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center">
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">狀態總覽</h4>
-                  <div className="grid grid-cols-3 gap-2 text-center divide-x divide-gray-200 dark:divide-gray-700">
-                     <div>
-                         <div className="text-3xl lg:text-4xl font-bold text-indigo-500 mb-1">{statsData.totalActive}</div>
-                         <div className="text-[10px] font-bold text-gray-400 uppercase">預約中</div>
-                     </div>
-                     <div>
-                         <div className="text-3xl lg:text-4xl font-bold text-emerald-500 mb-1">{statsData.totalCompleted}</div>
-                         <div className="text-[10px] font-bold text-gray-400 uppercase">已完課</div>
-                     </div>
-                     <div>
-                         <div className="text-3xl lg:text-4xl font-bold text-red-500 mb-1">{statsData.totalCancelled}</div>
-                         <div className="text-[10px] font-bold text-gray-400 uppercase">已取消</div>
-                     </div>
-                  </div>
-               </div>
-
-               <div className="glass-panel p-6 rounded-3xl md:col-span-1">
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計</h4>
-                  <div className="overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
-                      <div className="grid grid-cols-4 gap-2 text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">
-                          <span>教練</span>
-                          <span className="text-right">個人</span>
-                          <span className="text-right">團課</span>
-                          <span className="text-right">總計</span>
-                      </div>
-                      {(currentUser.role === 'manager' 
-                          ? statsData.coachStats 
-                          : statsData.coachStats.filter((s: any) => s.id === currentUser.id)
-                       ).map((c: any) => (
-                        <div key={c.id} className="grid grid-cols-4 gap-2 text-sm py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 items-center">
-                            <span className="truncate font-medium dark:text-gray-200">{c.name}</span>
-                            <span className="text-right text-gray-500">{c.personal}</span>
-                            <span className="text-right text-gray-500">{c.group}</span>
-                            <span className="text-right font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 rounded px-1">{c.total}</span>
-                        </div>
-                      ))}
-                  </div>
-               </div>
-            </div>
-          </div>
        )}
 
        {/* Export Date Range Modal */}
