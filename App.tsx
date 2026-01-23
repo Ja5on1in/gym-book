@@ -460,7 +460,7 @@ export default function App() {
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
       
-      addLog('取消預約', `取消 ${app.customer?.name} - ${reason}`);
+      addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       const coach = coaches.find(c => c.id === app.coachId);
       
       // Async webhook - Fire and forget
@@ -552,13 +552,11 @@ export default function App() {
                  const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
                  const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  
-                 // CRITICAL: Explicitly construct the appointment with potentially UPDATED date and time
-                 // This ensures edits to time/date are reflected correctly in the DB
-                 const op: Appointment = { 
+                 batchOps.push({ 
                      id, 
                      type: finalType as any, 
-                     date: dKey, // Sync Fix: Ensure date is taken from loop/form logic
-                     time: slot, // Sync Fix: Ensure time is taken from loop/form logic
+                     date: dKey, // CRITICAL: Ensure date is updated during iteration or single edit
+                     time: slot, // CRITICAL: Ensure time is updated
                      coachId: coach.id, 
                      coachName: coach.name, 
                      reason: blockForm.reason, 
@@ -570,9 +568,7 @@ export default function App() {
                      } : null,
                      createdAt: new Date().toISOString(),
                      lineUserId: targetInventory?.lineUserId || ""
-                 };
-                 
-                 batchOps.push(op);
+                 });
              }
         }
     }
@@ -733,7 +729,7 @@ export default function App() {
           // Update Appointment to Completed
           await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
 
-          addLog('完課確認', `員工 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
+          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
           showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
       } catch (e) {
           console.error(e);
@@ -747,7 +743,7 @@ export default function App() {
         // Use the proper confirmation flow which deducts points
         await handleCoachConfirmCompletion(app);
     } else {
-        // Legacy toggle or force toggle for Manager/Receptionist
+        // Legacy toggle or force toggle for Manager
         if (currentUser?.role !== 'manager' && currentUser?.role !== 'receptionist') {
            showNotification('教練請點擊「確認完課」按鈕 (僅適用於已簽到課程)', 'info');
            return;
@@ -1024,8 +1020,6 @@ export default function App() {
             onUpdateInventory={handleUpdateInventory}
             onSaveInventory={handleSaveInventory}
             onDeleteInventory={handleDeleteInventory}
-            onCancelAppointment={handleCustomerCancel} // New Prop
-            onConfirmCompletion={handleCoachConfirmCompletion} // New Prop for list actions
          />
       );
   };
