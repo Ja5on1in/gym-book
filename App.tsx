@@ -1,3 +1,5 @@
+
+
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -86,7 +88,7 @@ export default function App() {
 
   // Cleaned up initial state
   const [blockForm, setBlockForm] = useState<BlockFormState>({
-    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '1v1教練課', customer: null, repeatWeeks: 1
+    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, repeatWeeks: 1
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
   const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, message: string, onConfirm: ((reason?: string) => void) | null, isDanger: boolean, showInput: boolean}>({ isOpen: false, message: '', onConfirm: null, isDanger: false, showInput: false });
@@ -263,6 +265,13 @@ export default function App() {
       showNotification("已登出", "info");
   };
 
+  const handleLiffLogin = () => {
+      const liff = (window as any).liff;
+      if (liff && !liff.isLoggedIn()) {
+          liff.login({ redirectUri: window.location.href });
+      }
+  };
+
   // Inventory Management Actions
   const handleUpdateInventory = async (inventory: UserInventory) => {
       // Find old inventory for logging
@@ -318,7 +327,6 @@ export default function App() {
           id: profile.userId,
           lineUserId: profile.userId,
           name: profile.displayName,
-          // Fixed: Ensure safe defaults
           credits: { private: 0, group: 0 },
           lastUpdated: new Date().toISOString(),
       };
@@ -368,6 +376,27 @@ export default function App() {
                      showNotification('您的課程點數不足，請聯繫管理員續課', 'error');
                      return;
                  }
+            } else {
+                 // No inventory found but trying to book via LINE
+                 // For safety, require points or auto-registration
+                 // Currently we proceed to auto-register, but usually business rule requires payment first.
+                 // Assuming 0 points is allowed for new users? No, strict check says <= 0 blocks.
+                 // So new users with 0 points will be blocked above unless we give free trial.
+                 // If we want to allow 0 points for new users, modify the check.
+                 // Current logic: New users created below have 0 points.
+                 // FIX: Allow booking but set points to -1? Or Block?
+                 // Prompt request: "Deduction interception... if points <= 0, intercept."
+                 // So if new user has 0 points, they are blocked.
+                 
+                 // However, we need to create the user first to track them.
+                 // If we block here, they can't book.
+                 // Let's assume new users must contact admin.
+                 if (lineProfile) {
+                    // Try to see if we should create them just to show the error properly?
+                    // Or simply block.
+                    showNotification('您的課程點數不足 (新用戶請聯繫管理員購課)', 'error');
+                    return;
+                 }
             }
             // ---------------------------
 
@@ -379,17 +408,6 @@ export default function App() {
                     lastUpdated: new Date().toISOString()
                 });
                 addLog('系統扣點', `學員 ${inventory.name} 預約成功，扣除 1 點 (剩餘: ${newPrivateCredits})`);
-            } else {
-                // Auto register
-                await handleRegisterInventory(lineProfile);
-                const newId = lineProfile.userId;
-                // Add phone to the new inventory
-                await saveToFirestore('user_inventory', newId, {
-                    id: newId, lineUserId: newId, name: lineProfile.displayName,
-                    phone: formData.phone || "", // Safe fallback
-                    credits: { private: 0, group: 0 },
-                    lastUpdated: new Date().toISOString()
-                });
             }
         }
 
@@ -694,7 +712,7 @@ export default function App() {
           id: null, type: 'block', coachId: targetCoachId, 
           date: dateStr, 
           time: '09:00', endTime: '12:00',
-          reason: '內部事務', customer: null, repeatWeeks: 1 
+          reason: '內部訓練', customer: null, repeatWeeks: 1 
       });
       setDeleteConfirm(false); 
       setIsBatchMode(true);
@@ -897,6 +915,8 @@ export default function App() {
                 handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
                 inventories={inventories}
                 onRegisterUser={handleRegisterInventory}
+                liffProfile={liffProfile}
+                onLogin={handleLiffLogin}
               />
           );
       }
@@ -1186,6 +1206,7 @@ export default function App() {
                                                 onChange={(e) => {
                                                     const selectedInv = inventories.find(inv => inv.name === e.target.value);
                                                     if (selectedInv) {
+                                                        // Automatically fill name AND PHONE (crucial for linking)
                                                         setBlockForm({
                                                             ...blockForm,
                                                             customer: { 

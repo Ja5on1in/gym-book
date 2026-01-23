@@ -1,4 +1,5 @@
 
+
 import React, { useRef, useState } from 'react';
 import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertCircle } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
@@ -140,6 +141,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // --- Inventory Handlers ---
   const handleOpenInventoryModal = (inv?: UserInventory) => {
+      // Permission check just in case, though UI hides buttons
+      if (currentUser.role !== 'manager' && !inv) return; 
+
       if (inv) {
           setEditingInventory({ ...inv });
           setIsLineIdLocked(!!inv.lineUserId); // Lock if ID exists
@@ -286,9 +290,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               onChange={e => setSearchQuery(e.target.value)}
                           />
                       </div>
-                      <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all flex items-center gap-2 whitespace-nowrap">
-                          <Plus size={16}/> 新增學員
-                      </button>
+                      {/* Only Manager can Add */}
+                      {currentUser.role === 'manager' && (
+                          <button onClick={() => handleOpenInventoryModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all flex items-center gap-2 whitespace-nowrap">
+                              <Plus size={16}/> 新增學員
+                          </button>
+                      )}
                   </div>
               </div>
 
@@ -297,7 +304,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       <div className="col-span-full py-12 text-center text-gray-400 bg-gray-50/50 dark:bg-gray-800/30 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
                           <UserIcon size={48} className="mx-auto mb-4 opacity-50"/>
                           <p className="font-medium">找不到符合的學員資料</p>
-                          <button onClick={() => handleOpenInventoryModal()} className="mt-4 text-indigo-500 font-bold hover:underline">新增一筆？</button>
+                          {currentUser.role === 'manager' && (
+                            <button onClick={() => handleOpenInventoryModal()} className="mt-4 text-indigo-500 font-bold hover:underline">新增一筆？</button>
+                          )}
                       </div>
                   ) : (
                       filteredInventories.map(inv => (
@@ -310,10 +319,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       </h4>
                                       <p className="text-xs text-gray-500 dark:text-gray-400">{inv.phone || '無電話'}</p>
                                   </div>
-                                  <div className="flex gap-1">
-                                      <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
-                                      <button onClick={() => { if(window.confirm(`確定刪除 ${inv.name} 嗎？此動作無法復原。`)) onDeleteInventory(inv.id) }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
-                                  </div>
+                                  {/* Only Manager can Edit/Delete */}
+                                  {currentUser.role === 'manager' && (
+                                      <div className="flex gap-1">
+                                          <button onClick={() => handleOpenInventoryModal(inv)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                          <button onClick={() => { if(window.confirm(`確定刪除 ${inv.name} 嗎？此動作無法復原。`)) onDeleteInventory(inv.id) }} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                      </div>
+                                  )}
                               </div>
                               
                               <div className="grid grid-cols-2 gap-2 mb-3">

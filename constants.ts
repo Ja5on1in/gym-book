@@ -1,4 +1,5 @@
 
+
 import { Service, Coach } from './types';
 
 // Default initial coaches if DB is empty
@@ -17,7 +18,8 @@ const generateTimeSlots = () => {
 
 export const ALL_TIME_SLOTS = generateTimeSlots();
 
-export const BLOCK_REASONS = ['1v1教練課', '評估', '團課', '開會', '外出', '休假'];
+// Modified: Removed '1v1教練課' and '團課' as they are handled by the Type selector
+export const BLOCK_REASONS = ['評估', '開會', '外出', '休假', '內部訓練', '場地維護'];
 
 export const SERVICES: Service[] = [
     { id: 'assessment', name: '功能性檢測', duration: '60 分鐘', color: 'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900 dark:text-indigo-200 dark:border-indigo-700' }, 

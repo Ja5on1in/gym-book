@@ -1,5 +1,6 @@
 
-import React, { useState } from 'react';
+
+import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -17,7 +18,8 @@ import {
   Clock,
   ArrowRight,
   MessageCircle,
-  AlertCircle
+  AlertCircle,
+  LogIn
 } from 'lucide-react';
 import { Coach, Service, Customer, UserInventory } from '../types';
 import { SERVICES, ALL_TIME_SLOTS } from '../constants';
@@ -46,6 +48,9 @@ interface BookingWizardProps {
   // Inventory Props
   inventories: UserInventory[];
   onRegisterUser: (profile: {userId: string, displayName: string}) => Promise<void>;
+  // Login Props
+  liffProfile: { userId: string; displayName: string } | null;
+  onLogin: () => void;
 }
 
 const BookingWizard: React.FC<BookingWizardProps> = ({
@@ -53,7 +58,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
   selectedCoach, setSelectedCoach, selectedDate, setSelectedDate,
   selectedSlot, setSelectedSlot, formData, setFormData,
   coaches, appointments, onSubmit, reset, currentDate, handlePrevMonth, handleNextMonth,
-  inventories, onRegisterUser
+  inventories, onRegisterUser, liffProfile, onLogin
 }) => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -61,34 +66,35 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
   const dateKey = formatDateKey(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
   const isDayOff = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
 
+  // Auto-fill form data when logged in
+  useEffect(() => {
+    if (liffProfile) {
+        setFormData(prev => ({ ...prev, name: liffProfile.displayName }));
+    }
+  }, [liffProfile, setFormData]);
+
   const handleLineSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
       setIsVerifying(true);
       setAuthError(null);
       
-      const liff = (window as any).liff;
-
-      if (liff) {
+      if (liffProfile) {
           try {
-              if (!liff.isLoggedIn()) {
-                  liff.login({ redirectUri: window.location.href });
-                  return; 
-              }
-              const profile = await liff.getProfile();
-              const userInv = inventories.find(i => i.lineUserId === profile.userId);
+              const userInv = inventories.find(i => i.lineUserId === liffProfile.userId);
               
               if (!userInv) {
-                  await onRegisterUser({ userId: profile.userId, displayName: profile.displayName });
+                  await onRegisterUser({ userId: liffProfile.userId, displayName: liffProfile.displayName });
               }
 
               // Await the actual submission to Firebase
-              await onSubmit(e, { userId: profile.userId, displayName: profile.displayName });
+              await onSubmit(e, { userId: liffProfile.userId, displayName: liffProfile.displayName });
           } catch (err) {
               console.error("LIFF Error", err);
               await onSubmit(e); 
           }
       } else {
-          await onSubmit(e);
+          // Fallback if somehow bypassed
+           setAuthError('請先登入 LINE 以完成預約');
       }
       setIsVerifying(false);
   };
@@ -146,6 +152,24 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
     );
   };
 
+  // Step 0: Force Login
+  if (!liffProfile) {
+     return (
+        <div className="max-w-md mx-auto mt-12 animate-slideUp">
+             <div className="glass-panel p-10 rounded-3xl text-center shadow-xl">
+                 <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 dark:text-green-400">
+                     <MessageCircle size={36}/>
+                 </div>
+                 <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-3">歡迎使用 GymBooker</h2>
+                 <p className="text-gray-500 dark:text-gray-400 mb-8 leading-relaxed">為了提供完整的預約服務與點數紀錄，請先登入您的 LINE 帳號。</p>
+                 <button onClick={onLogin} className="w-full py-4 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold shadow-lg shadow-green-500/30 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2">
+                     <LogIn size={20}/> LINE 登入
+                 </button>
+             </div>
+        </div>
+     );
+  }
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-8">
@@ -162,7 +186,10 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
       {step === 1 && (
         <div className="space-y-4 animate-slideUp">
-          <h2 className="text-2xl font-bold text-gray-800 dark:text-white mb-6 text-center">選擇服務項目</h2>
+          <div className="flex items-center gap-2 mb-2">
+              <h2 className="text-2xl font-bold text-gray-800 dark:text-white">嗨，{liffProfile.displayName}！</h2>
+          </div>
+          <p className="text-gray-500 dark:text-gray-400 mb-4">今天想做什麼訓練呢？</p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(service => (
               <button
@@ -282,7 +309,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
         <div className="animate-slideUp">
            <div className="flex items-center gap-2 mb-6">
             <button onClick={() => setStep(3)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors text-gray-500"><ChevronLeft/></button>
-            <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex-1 text-center pr-10">填寫聯絡資料</h2>
+            <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex-1 text-center pr-10">確認聯絡資料</h2>
           </div>
 
           <form onSubmit={handleLineSubmit} className="space-y-4">
