@@ -296,48 +296,57 @@ export default function App() {
   };
 
   // Inventory Management Actions
-  const handleUpdateInventory = async (inventory: UserInventory) => {
-      if (currentUser?.role !== 'manager' && currentUser?.role !== 'receptionist') {
-          showNotification('只有管理員或櫃檯可以修改點數', 'error');
-          return;
-      }
-      // Find old inventory for logging
-      const oldInv = inventories.find(i => i.id === inventory.id);
-      const oldPrivate = oldInv ? oldInv.credits.private : '?';
-      const oldGroup = oldInv ? oldInv.credits.group : '?';
-
-      await saveToFirestore('user_inventory', inventory.id, {
-          ...inventory,
-          lastUpdated: new Date().toISOString()
-      });
-
-      addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${oldPrivate} -> ${inventory.credits.private}, 團課: ${oldGroup} -> ${inventory.credits.group}`);
-      showNotification('學員點數已更新', 'success');
-  };
-
   const handleSaveInventory = async (inventory: UserInventory) => {
       try {
-          // Check if ID exists, else create new ID
           const id = inventory.id || (inventory.lineUserId || (inventory.phone ? `phone_${inventory.phone}` : `manual_${Date.now()}`));
           
-          // Auto-merge if phone exists but different ID
+          const oldInv = inventories.find(i => i.id === id);
+          const isUpdate = !!oldInv;
+
           const existingByPhone = inventories.find(i => i.phone && i.phone === inventory.phone && i.id !== id);
           if (existingByPhone) {
               if (window.confirm(`發現相同電話號碼的學員: ${existingByPhone.name}。是否更新該學員資料而非新增？`)) {
                  await saveToFirestore('user_inventory', existingByPhone.id, { ...existingByPhone, ...inventory, id: existingByPhone.id, lastUpdated: new Date().toISOString() });
+                 
+                 const oldPrivate = existingByPhone.credits.private;
+                 const newPrivate = Number(inventory.credits?.private || 0);
+                 const oldGroup = existingByPhone.credits.group;
+                 const newGroup = Number(inventory.credits?.group || 0);
+
+                 if (oldPrivate !== newPrivate || oldGroup !== newGroup) {
+                    addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${oldPrivate} -> ${newPrivate}, 團課: ${oldGroup} -> ${newGroup}`);
+                 }
                  showNotification('已更新現有學員資料', 'success');
                  return;
               }
           }
 
           await saveToFirestore('user_inventory', id, { ...inventory, id, lastUpdated: new Date().toISOString() });
-          addLog('學員管理', `儲存學員資料: ${inventory.name}`);
-          showNotification('學員資料已儲存', 'success');
+          
+          if (isUpdate && oldInv) {
+              const oldPrivate = oldInv.credits.private;
+              const newPrivate = Number(inventory.credits?.private || 0);
+              const oldGroup = oldInv.credits.group;
+              const newGroup = Number(inventory.credits?.group || 0);
+
+              if (oldPrivate !== newPrivate || oldGroup !== newGroup) {
+                   addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${oldPrivate} -> ${newPrivate}, 團課: ${oldGroup} -> ${newGroup}`);
+                   showNotification('學員點數已更新', 'success');
+              } else {
+                   addLog('學員管理', `更新學員資料: ${inventory.name}`);
+                   showNotification('學員資料已更新', 'success');
+              }
+          } else {
+              addLog('學員管理', `新增學員資料: ${inventory.name}`);
+              showNotification('新學員已新增', 'success');
+          }
+
       } catch (e) {
           console.error(e);
           showNotification('儲存失敗', 'error');
       }
   };
+
 
   const handleDeleteInventory = async (id: string) => {
       try {
@@ -738,20 +747,25 @@ export default function App() {
   };
 
   const handleToggleComplete = async (app: Appointment) => {
-    // This is primarily for the WeeklyCalendar interaction
     if (app.status === 'checked_in') {
-        // Use the proper confirmation flow which deducts points
         await handleCoachConfirmCompletion(app);
     } else {
-        // Legacy toggle or force toggle for Manager
-        if (currentUser?.role !== 'manager' && currentUser?.role !== 'receptionist') {
-           showNotification('教練請點擊「確認完課」按鈕 (僅適用於已簽到課程)', 'info');
+        if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role))) {
+           showNotification('僅管理員或櫃檯可執行此操作', 'info');
            return;
         }
-        // Manager force toggle (Does NOT auto-deduct here to avoid double deduction accidents, assume manual correction)
+
         const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
-        await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
-        addLog('課程狀態', `管理員/櫃檯強制變更 ${app.customer?.name} 狀態為 ${newStatus}`);
+
+        if (newStatus === 'completed' && app.status !== 'completed') {
+            // Manager is forcing completion. Call the full confirmation logic which includes deduction.
+            await handleCoachConfirmCompletion(app);
+        } else if (newStatus === 'confirmed' && app.status === 'completed') {
+            // Manager is reverting a completed class.
+            await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
+            addLog('課程狀態', `管理員/櫃檯將 ${app.customer?.name} 狀態從 '已完課' 還原為 '已確認' (未退點)`);
+            showNotification('狀態已還原 (點數未自動退還)', 'info');
+        }
     }
   };
 
@@ -1017,7 +1031,6 @@ export default function App() {
                />
             )}
             inventories={inventories}
-            onUpdateInventory={handleUpdateInventory}
             onSaveInventory={handleSaveInventory}
             onDeleteInventory={handleDeleteInventory}
          />

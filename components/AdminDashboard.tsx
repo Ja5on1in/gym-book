@@ -1,6 +1,7 @@
 
 import React, { useRef, useState, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info, TrendingDown, TrendingUp } from 'lucide-react';
+// FIX: Import ChevronLeft icon.
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronLeft, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { isPastTime, formatDateKey } from '../utils';
@@ -29,7 +30,6 @@ interface AdminDashboardProps {
   onOpenBatchBlock: () => void;
   // Inventory Props
   inventories: UserInventory[];
-  onUpdateInventory: (inv: UserInventory) => void;
   onDeleteInventory: (id: string) => void;
   onSaveInventory: (inv: UserInventory) => void;
 }
@@ -70,13 +70,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [viewingHistoryFor, setViewingHistoryFor] = useState<UserInventory | null>(null);
 
-  // Analysis Date Range State (Hidden in UI unless exporting, defaults to current month for visual stats)
-  const today = new Date();
-  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1);
-  const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  
-  const [statsStartDate, setStatsStartDate] = useState(formatDateKey(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate()));
-  const [statsEndDate, setStatsEndDate] = useState(formatDateKey(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate()));
+  // Analysis Date Range State
+  const [analysisMonth, setAnalysisMonth] = useState(new Date());
+
+  const { statsStartDate, statsEndDate } = useMemo(() => {
+    const year = analysisMonth.getFullYear();
+    const month = analysisMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    return {
+        statsStartDate: formatDateKey(firstDay.getFullYear(), firstDay.getMonth(), firstDay.getDate()),
+        statsEndDate: formatDateKey(lastDay.getFullYear(), lastDay.getMonth(), lastDay.getDate())
+    };
+  }, [analysisMonth]);
 
   const filteredApps = appointments.filter(a => currentUser.role==='manager' || currentUser.role==='receptionist' || a.coachId === currentUser.id);
 
@@ -145,7 +151,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             log.details.includes(viewingHistoryFor.name)
         )
         .map(log => {
-            const match = log.details.match(/1v1: ([\d\?]+) -> (\d+)/);
+            const match = log.details.match(/1v1: ([\d\?]+) -> (-?[\d]+)/);
             let change = 0;
             if (match) {
                 const before = match[1] === '?' ? NaN : parseInt(match[1], 10);
@@ -168,6 +174,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
 
   // --- Handlers ---
+
+  const handlePrevMonth = () => {
+    setAnalysisMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1));
+  };
+  const handleNextMonth = () => {
+    const nextMonth = new Date(analysisMonth.getFullYear(), analysisMonth.getMonth() + 1, 1);
+    if (nextMonth > new Date()) return; // Don't allow navigating to the future
+    setAnalysisMonth(nextMonth);
+  };
 
   const handleRevertStatus = async (app: Appointment) => {
       if (currentUser.role !== 'manager') return;
@@ -671,16 +686,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {adminTab === 'analysis' && (
           <div className="space-y-6 animate-slideUp">
             
-            <div className="flex justify-end gap-3">
-               <button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
-               <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出區間報表</button>
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+                <div className="flex items-center gap-4 bg-white/50 dark:bg-gray-800/50 p-2 rounded-xl shadow-sm">
+                    <button onClick={handlePrevMonth} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors">
+                        <ChevronLeft size={20}/>
+                    </button>
+                    <span className="font-bold text-lg w-32 text-center text-gray-700 dark:text-gray-200">
+                        {analysisMonth.getFullYear()} 年 {analysisMonth.getMonth() + 1} 月
+                    </span>
+                    <button onClick={handleNextMonth} disabled={new Date(analysisMonth.getFullYear(), analysisMonth.getMonth() + 1, 1) > new Date()} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50">
+                        <ChevronRight size={20}/>
+                    </button>
+                </div>
+                <div className="flex gap-3">
+                   <button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
+                   <button onClick={handleExportRangeCsv} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出本月報表</button>
+                </div>
             </div>
             
-            {/* Visual stats default to current range or whatever is in state, but inputs are hidden */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                <div className="glass-panel p-6 rounded-3xl relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div>
-                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 (目前顯示: {statsStartDate}~{statsEndDate})</h4>
+                  <h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段</h4>
                   <div className="space-y-3 relative z-10">
                     {statsData.topTimeSlots.length > 0 ? statsData.topTimeSlots.map((s: any, i: number) => (
                         <div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-white/40 dark:border-gray-700">
