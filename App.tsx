@@ -1054,6 +1054,7 @@ export default function App() {
                 showNotification(`成功取消 ${selectedBatch.size} 筆`, 'success');
             }}
             onOpenBatchBlock={handleOpenBatchBlock}
+            onToggleComplete={handleToggleComplete} // Added prop
             renderWeeklyCalendar={() => (
                <WeeklyCalendar 
                   currentWeekStart={currentWeekStart}
@@ -1064,7 +1065,7 @@ export default function App() {
                   onSlotClick={handleSlotClick}
                   onAppointmentClick={handleAppointmentClick}
                   onToggleComplete={handleToggleComplete}
-                  isLoading={dbStatus === 'connecting'} // Pass loading state
+                  isLoading={dbStatus === 'connecting'} 
                />
             )}
             inventories={inventories}

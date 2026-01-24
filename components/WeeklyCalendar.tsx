@@ -1,6 +1,4 @@
 
-
-
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
@@ -23,6 +21,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   currentWeekStart, setCurrentWeekStart, currentUser, coaches, appointments, onSlotClick, onAppointmentClick, onToggleComplete, isLoading
 }) => {
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
+  const [selectedCoachId, setSelectedCoachId] = useState<string>('all');
   const weekDays = Array.from({length: 7}, (_, i) => addDays(currentWeekStart, i));
 
   return (
@@ -42,7 +41,17 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
               <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))} disabled={isLoading} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"><ChevronLeft size={20} className="text-gray-600 dark:text-gray-300"/></button>
               <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))} disabled={isLoading} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50"><ChevronRight size={20} className="text-gray-600 dark:text-gray-300"/></button>
           </div>
-          <span className="font-bold text-xl text-gray-800 dark:text-white tracking-tight">{currentWeekStart.getMonth()+1}月 {currentWeekStart.getDate()}日 <span className="text-sm font-normal text-gray-500">週</span></span>
+          <div className="flex items-center gap-2">
+              <span className="font-bold text-xl text-gray-800 dark:text-white tracking-tight mr-2">{currentWeekStart.getMonth()+1}月 {currentWeekStart.getDate()}日 <span className="text-sm font-normal text-gray-500">週</span></span>
+              <select 
+                  className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-3 py-2 text-sm font-bold outline-none shadow-sm focus:ring-2 focus:ring-indigo-500/50 dark:text-white cursor-pointer"
+                  value={selectedCoachId}
+                  onChange={(e) => setSelectedCoachId(e.target.value)}
+              >
+                  <option value="all">所有教練</option>
+                  {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+          </div>
         </div>
         <div className="flex gap-2 text-xs text-gray-500">
           <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><div className="w-3 h-3 bg-gray-200 dark:bg-gray-700 pattern-diagonal rounded-full"></div><span>排休</span></div>
@@ -71,12 +80,25 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
               <div className="p-2 text-center text-xs font-medium text-gray-400 border-r border-gray-100/50 dark:border-gray-700/50 flex items-center justify-center bg-white dark:bg-gray-900 sticky left-0 z-20 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">{time}</div>
               {weekDays.map((day) => {
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
-                const myCoach = currentUser.role === 'manager' ? null : coaches.find(c => c.id === currentUser.id);
-                const isOff = myCoach && isCoachDayOff(dateKey, myCoach);
                 
-                const slotApps = appointments.filter(a => a.date === dateKey && a.time === time && a.status !== 'cancelled');
+                // --- Logic Update for Coach Filtering ---
+                // If filter is active ('all' is not selected), we view the grid "as if" we are that coach
+                // If 'all', we default to user's role (manager sees all open, coach sees their own off times)
+                const targetCoach = selectedCoachId !== 'all' 
+                    ? coaches.find(c => c.id === selectedCoachId) 
+                    : (currentUser.role === 'manager' ? null : coaches.find(c => c.id === currentUser.id));
+
+                const isOff = targetCoach && isCoachDayOff(dateKey, targetCoach);
+                
+                const slotApps = appointments.filter(a => 
+                    a.date === dateKey && 
+                    a.time === time && 
+                    a.status !== 'cancelled' &&
+                    (selectedCoachId === 'all' || a.coachId === selectedCoachId)
+                );
+                // ----------------------------------------
+
                 const visibleApps = slotApps;
-                // isPastTime check removed from blocking logic for managers below
 
                 return (
                   <div 
@@ -118,7 +140,12 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     {/* Action Button: Check In confirm for Coach */}
                                     {isMine && isCheckedIn && (
                                         <button 
-                                            onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
+                                            onClick={(e) => { 
+                                                e.stopPropagation(); 
+                                                if(!isLoading && window.confirm('確認核實完課？這將正式扣除 1 點點數且無法輕易撤銷。')) {
+                                                    onToggleComplete(app); 
+                                                }
+                                            }}
                                             className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
                                             title="確認完課 (扣點)"
                                         >
