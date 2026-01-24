@@ -1,5 +1,4 @@
 
-
 export interface User {
   id: string;
   name: string;
@@ -94,6 +93,10 @@ export interface UserInventory {
       group: number;
   };
   lastUpdated: string;
+  // Health Profile Fields
+  goals?: string;
+  injuries?: string;
+  physicalNotes?: string;
 }
 
 // New: Workout Plan System

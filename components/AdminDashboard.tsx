@@ -275,7 +275,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        </div>
 
        {adminTab === 'calendar' && (<><div className="flex justify-end mb-4 animate-fadeIn"><button onClick={onOpenBatchBlock} className="flex items-center gap-2 bg-gray-800 text-white dark:bg-white dark:text-gray-900 px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity"><Layers size={16}/> 批次封鎖時段</button></div>{renderWeeklyCalendar()}</>)}
-       {adminTab === 'workout' && (<WorkoutPlans currentUser={currentUser} inventories={inventories} workoutPlans={workoutPlans} onSavePlan={onSaveWorkoutPlan} onDeletePlan={onDeleteWorkoutPlan} />)}
+       {adminTab === 'workout' && (<WorkoutPlans currentUser={currentUser} inventories={inventories} workoutPlans={workoutPlans} onSavePlan={onSaveWorkoutPlan} onDeletePlan={onDeleteWorkoutPlan} onSaveInventory={onSaveInventory}/>)}
        {adminTab === 'appointments' && (
          <div className="glass-panel rounded-3xl shadow-lg p-6">
            <div className="flex flex-col md:flex-row justify-between mb-6 gap-4 items-start md:items-center">
