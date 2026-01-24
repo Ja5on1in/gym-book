@@ -95,3 +95,35 @@ export interface UserInventory {
   };
   lastUpdated: string;
 }
+
+// New: Workout Plan System
+export interface Exercise {
+  id: string;
+  name: string;
+  category: string;
+}
+
+export interface WorkoutSet {
+  id: string;
+  reps: number;
+  weight: number;
+}
+
+export interface ExerciseLog {
+  id: string;
+  exerciseId: string;
+  exerciseName: string;
+  sets: WorkoutSet[];
+}
+
+export interface WorkoutPlan {
+  id: string;
+  userId: string; // Links to UserInventory id
+  userName: string;
+  coachId: string;
+  coachName: string;
+  date: string; // YYYY-MM-DD
+  name: string; // e.g., "胸部 & 三頭"
+  exercises: ExerciseLog[];
+  createdAt: string;
+}

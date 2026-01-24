@@ -39,7 +39,7 @@ import {
 import { onAuthStateChanged } from 'firebase/auth';
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
-import { User, Appointment, Coach, Log, Service, Customer, BlockFormState, UserInventory } from './types';
+import { User, Appointment, Coach, Log, Service, Customer, BlockFormState, UserInventory, WorkoutPlan } from './types';
 import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff } from './utils';
 
 import BookingWizard from './components/BookingWizard';
@@ -69,6 +69,7 @@ export default function App() {
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [inventories, setInventories] = useState<UserInventory[]>([]);
+  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]); // New State
 
   // Dates
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -188,11 +189,8 @@ export default function App() {
     const unsubApps = subscribeToCollection('appointments', (data) => {
         const apps = data as Appointment[];
         const validApps = apps.filter(a => a && a.date && a.time && a.coachId);
-        // FORCE NEW ARRAY REFERENCE to ensure UI updates, fixing bugs where UI shows old data
         setAppointments([...validApps]);
         setDbStatus(isFirebaseAvailable ? 'connected' : 'local');
-        
-        if (validApps.length > 0) localStorage.setItem('gym_backup_local', JSON.stringify(validApps));
     }, () => setDbStatus('error'));
 
     const unsubCoaches = subscribeToCollection('coaches', (data) => {
@@ -212,11 +210,17 @@ export default function App() {
         setInventories([...data] as UserInventory[]);
     }, () => {});
 
+    // New: Subscribe to workout plans
+    const unsubWorkoutPlans = subscribeToCollection('workout_plans', (data) => {
+        setWorkoutPlans([...data] as WorkoutPlan[]);
+    }, () => {});
+
     return () => {
         unsubApps();
         unsubCoaches && unsubCoaches();
         unsubLogs && unsubLogs();
         unsubInventory && unsubInventory();
+        unsubWorkoutPlans && unsubWorkoutPlans();
     };
   }, []);
 
@@ -256,7 +260,6 @@ export default function App() {
         const fd = new FormData();
         fd.append('data', JSON.stringify(data));
         fd.append('timestamp', new Date().toISOString());
-        // Non-blocking fetch
         fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: fd })
             .catch(e => console.warn("Webhook background error:", e));
     } catch (e) { 
@@ -368,6 +371,34 @@ export default function App() {
       };
       await saveToFirestore('user_inventory', profile.userId, newInventory);
       addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
+  };
+
+  // --- Workout Plan Actions ---
+  const handleSaveWorkoutPlan = async (plan: WorkoutPlan) => {
+      try {
+          const id = plan.id || `${Date.now()}`;
+          const planToSave = { 
+              ...plan, 
+              id, 
+              createdAt: plan.createdAt || new Date().toISOString() 
+          };
+          await saveToFirestore('workout_plans', id, planToSave);
+          addLog('課表管理', `儲存學員 ${plan.userName} 的課表 "${plan.name}"`);
+          showNotification('課表已儲存', 'success');
+      } catch (e) {
+          console.error(e);
+          showNotification('儲存課表失敗', 'error');
+      }
+  };
+
+  const handleDeleteWorkoutPlan = async (id: string) => {
+      try {
+          await deleteFromFirestore('workout_plans', id);
+          addLog('課表管理', `刪除課表 ID: ${id}`);
+          showNotification('課表已刪除', 'success');
+      } catch (e) {
+          showNotification('刪除失敗', 'error');
+      }
   };
 
   // --- SAFE BOOKING SUBMISSION (NO DEDUCTION UNTIL COMPLETION) ---
@@ -891,7 +922,7 @@ export default function App() {
   };
   
   const handleExportJson = () => {
-      const data = { appointments, coaches, logs, users: [] };
+      const data = { appointments, coaches, logs, users: [], inventories, workoutPlans };
       const blob = new Blob([JSON.stringify(data, null, 2)], {type : 'application/json'});
       const link = document.createElement('a');
       link.href = URL.createObjectURL(blob);
@@ -911,6 +942,12 @@ export default function App() {
               }
               if (data.coaches) {
                   await Promise.all(data.coaches.map((c: any) => saveToFirestore('coaches', c.id, c)));
+              }
+              if (data.inventories) {
+                  await Promise.all(data.inventories.map((i: any) => saveToFirestore('user_inventory', i.id, i)));
+              }
+              if (data.workoutPlans) {
+                  await Promise.all(data.workoutPlans.map((p: any) => saveToFirestore('workout_plans', p.id, p)));
               }
               showNotification("資料匯入成功", "success");
           } catch (error) {
@@ -1033,6 +1070,9 @@ export default function App() {
             inventories={inventories}
             onSaveInventory={handleSaveInventory}
             onDeleteInventory={handleDeleteInventory}
+            workoutPlans={workoutPlans}
+            onSaveWorkoutPlan={handleSaveWorkoutPlan}
+            onDeleteWorkoutPlan={handleDeleteWorkoutPlan}
          />
       );
   };
@@ -1149,7 +1189,6 @@ export default function App() {
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => {
                                    const newType = e.target.value as any;
                                    setBlockForm({...blockForm, type: newType});
-                                   // Reset customer if switching types to prevent bad state
                                    if(newType !== 'private') setMemberSearchTerm('');
                                }}>
                                    <option value="block">內部事務 (Block)</option>
