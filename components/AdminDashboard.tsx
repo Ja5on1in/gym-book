@@ -60,7 +60,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isLineIdLocked, setIsLineIdLocked] = useState(true);
 
   // Appointment Filter State (New)
-  const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'confirmed' | 'not_checked_in' | 'checked_in' | 'completed' | 'cancelled'>('all');
   const [appSearchTerm, setAppSearchTerm] = useState('');
 
   // Export Modal State
@@ -348,7 +348,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     .filter(app => {
         // Status Filter
         if (statusFilter !== 'all') {
-            if (statusFilter === 'confirmed') return app.status === 'confirmed';
+            const isPast = isPastTime(app.date, app.time);
+            if (statusFilter === 'not_checked_in') return app.status === 'confirmed' && isPast;
+            if (statusFilter === 'confirmed') return app.status === 'confirmed' && !isPast;
             if (statusFilter === 'checked_in') return app.status === 'checked_in';
             if (statusFilter === 'completed') return app.status === 'completed';
             if (statusFilter === 'cancelled') return app.status === 'cancelled';
@@ -400,7 +402,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
            </div>
        )}
 
-       {/* Audit Alert */}
+       {/* Audit Alert - Removed per user request */}
+       {/*
        {currentUser.role === 'manager' && auditPendingCount > 0 && (
            <div 
              onClick={() => { setAdminTab('appointments'); setStatusFilter('completed'); }}
@@ -418,6 +421,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                <ChevronRight/>
            </div>
        )}
+       */}
 
        <div className="glass-panel p-1 rounded-2xl flex gap-1 mb-8 overflow-x-auto mx-auto max-w-full md:max-w-fit shadow-lg custom-scrollbar">
           {['calendar','appointments','analysis','staff','inventory','settings','logs','help'].map(t => {
@@ -478,7 +482,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         onChange={e => setStatusFilter(e.target.value as any)}
                     >
                         <option value="all">所有狀態</option>
-                        <option value="confirmed">已確認 (未簽到)</option>
+                        <option value="confirmed">已預約 (未來)</option>
+                        <option value="not_checked_in">未簽到 (過期)</option>
                         <option value="checked_in">已簽到 (待核實)</option>
                         <option value="completed">已完課</option>
                         <option value="cancelled">已取消</option>
@@ -504,7 +509,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  </div>
              ) : (
                  displayAppointments.map(app => {
-                   const isAnomaly = app.status === 'confirmed' && isPastTime(app.date, app.time);
                    const isAudit = app.status === 'completed';
                    const isCheckedIn = app.status === 'checked_in';
                    // Coach cannot edit/select audit items
@@ -512,10 +516,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                    // Helper for status visual
                    const getStatusVisuals = () => {
+                       const isPast = isPastTime(app.date, app.time);
                        switch(app.status) {
                            case 'checked_in': return { bg: 'bg-orange-50 dark:bg-orange-900/10', border: 'border-orange-200 dark:border-orange-800', badge: 'bg-orange-100 text-orange-600', label: '已簽到' };
                            case 'completed': return { bg: 'bg-emerald-50 dark:bg-emerald-900/10', border: 'border-emerald-200 dark:border-emerald-800', badge: 'bg-emerald-100 text-emerald-600', label: '已完課' };
                            case 'cancelled': return { bg: 'bg-red-50 dark:bg-red-900/10', border: 'border-red-200 dark:border-red-800', badge: 'bg-red-100 text-red-600', label: '已取消' };
+                           case 'confirmed':
+                               if (isPast) {
+                                   return { bg: 'bg-yellow-50 dark:bg-yellow-900/10', border: 'border-yellow-200 dark:border-yellow-800', badge: 'bg-yellow-100 text-yellow-700', label: '未簽到' };
+                               }
+                               return { bg: 'bg-white dark:bg-gray-800', border: 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700', badge: 'bg-indigo-100 text-indigo-600', label: '已預約' };
                            default: return { bg: 'bg-white dark:bg-gray-800', border: 'border-transparent hover:border-indigo-300 dark:hover:border-indigo-700', badge: 'bg-indigo-100 text-indigo-600', label: '已預約' };
                        }
                    };
@@ -545,11 +555,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div className="flex items-center gap-3">
                              <span className="font-bold text-lg dark:text-white">{app.date}</span>
                              <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-sm font-medium">{app.time}</span>
-                             {isAnomaly && (
-                                 <span className="flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-full">
-                                     <AlertTriangle size={10}/> 未簽到
-                                 </span>
-                             )}
                           </div>
                           <div className="flex items-center gap-2">
                               {/* Allow reverting status for manager */}
@@ -564,6 +569,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <span className={`text-xs px-3 py-1 rounded-full font-bold flex items-center gap-1 ${visuals.badge}`}>
                                   {app.status === 'completed' && <CheckCircle size={10}/>}
                                   {app.status === 'checked_in' && <Timer size={10}/>}
+                                  {visuals.label === '未簽到' && <AlertTriangle size={10}/>}
                                   {visuals.label}
                               </span>
                           </div>
