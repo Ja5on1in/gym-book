@@ -1,7 +1,8 @@
 
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User, UserInventory, WorkoutPlan, ExerciseLog, Exercise } from '../types';
-import { Search, Plus, X, Trash2, Dumbbell, Calendar, Save, Edit, BookCopy, Activity, AlertTriangle, FileText, Check, Copy } from 'lucide-react';
+import { Search, Plus, X, Trash2, Dumbbell, Calendar, Save, Edit, BookCopy, Activity, AlertTriangle, Copy, FileText } from 'lucide-react';
 import { EXERCISE_LIST } from '../constants';
 import { formatDateKey } from '../utils';
 
@@ -129,7 +130,6 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
           }));
           
           handleUpdatePlan('exercises', exercisesCopy);
-          // Optional: append name
           if (!currentPlan.name?.includes('複製')) {
              handleUpdatePlan('name', `${lastPlan.name} (複製)`);
           }
@@ -218,7 +218,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
   const canSeeSensitive = ['manager', 'coach'].includes(currentUser.role);
 
   return (
-    <div className="glass-panel rounded-3xl shadow-lg p-6 animate-slideUp">
+    <div className="glass-panel rounded-3xl shadow-lg p-6 animate-slideUp border border-white/60">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
         <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Dumbbell className="text-indigo-500"/> 課表與學員檔案</h3>
         <div className="relative w-full md:w-1/3">
@@ -344,11 +344,11 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
         </div>
       )}
 
-      {/* Wide Modal for Editing */}
+      {/* Wide Modal for Editing - Upgraded Glassmorphism */}
       {isModalOpen && selectedUser && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/80 backdrop-blur-sm p-4">
-            <div className="glass-panel w-full max-w-6xl rounded-3xl shadow-2xl flex flex-col animate-slideUp border border-white/40 h-[90vh]">
-                <div className="bg-white/80 dark:bg-gray-900/80 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center backdrop-blur-md">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/40 backdrop-blur-sm p-4">
+            <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-6xl rounded-3xl shadow-2xl flex flex-col animate-slideUp border border-white/20 dark:border-slate-700/30 h-[90vh]">
+                <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center backdrop-blur-md">
                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
                         <Edit size={20} className="text-indigo-500"/> 
                         {currentPlan.id ? '編輯課表' : '建立新課表'} 
@@ -356,7 +356,6 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                         <span className="text-sm bg-gray-100 dark:bg-gray-800 px-3 py-1 rounded-full">{selectedUser.name}</span>
                     </h3>
                     <div className="flex gap-2">
-                        {/* Copy Last Workout Button */}
                         <button 
                             onClick={handleCopyLastWorkout}
                             className="text-xs bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/30 dark:text-blue-400 dark:hover:bg-blue-900/50 px-3 py-2 rounded-lg font-bold flex items-center gap-1 transition-colors"
@@ -460,7 +459,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                 </div>
 
                 {/* Footer Actions */}
-                <div className="bg-white/90 dark:bg-gray-900/90 p-4 border-t border-gray-100 dark:border-gray-700 flex flex-col md:flex-row gap-4 items-center backdrop-blur-md absolute bottom-0 w-full rounded-b-3xl z-20">
+                <div className="bg-white/90 dark:bg-slate-900/90 p-4 border-t border-gray-100 dark:border-gray-700 flex flex-col md:flex-row gap-4 items-center backdrop-blur-md absolute bottom-0 w-full rounded-b-3xl z-20">
                      <div ref={exercisePickerRef} className="relative flex-1 w-full">
                         <div className="relative">
                             <Dumbbell size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400"/>

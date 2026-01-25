@@ -935,8 +935,8 @@ export default function App() {
             onSaveInventory={handleSaveInventory}
             onDeleteInventory={handleDeleteInventory}
             workoutPlans={workoutPlans}
-            onSaveWorkoutPlan={handleSaveWorkoutPlan}
-            onDeleteWorkoutPlan={handleDeleteWorkoutPlan}
+            onSavePlan={handleSaveWorkoutPlan}
+            onDeletePlan={handleDeleteWorkoutPlan}
          />
       );
   };

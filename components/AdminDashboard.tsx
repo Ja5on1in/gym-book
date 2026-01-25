@@ -1,7 +1,9 @@
+
 import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, RotateCcw } from 'lucide-react';
-import { User, Appointment, Coach, Log, UserInventory } from '../types';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle } from 'lucide-react';
+import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
+import WorkoutPlans from './WorkoutPlans';
 
 interface AdminDashboardProps {
   currentUser: User;
@@ -27,9 +29,11 @@ interface AdminDashboardProps {
   inventories: UserInventory[];
   onSaveInventory: (inv: UserInventory) => void;
   onDeleteInventory: (id: string) => void;
-  workoutPlans: any[]; // Assuming workout logic handled in App or separate component
-  onSaveWorkoutPlan: any;
-  onDeleteWorkoutPlan: any;
+  workoutPlans: WorkoutPlan[];
+  onSavePlan: (plan: WorkoutPlan) => void;
+  onDeletePlan: (id: string) => void;
+  onSaveWorkoutPlan?: any; // Legacy prop support
+  onDeleteWorkoutPlan?: any; // Legacy prop support
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -37,7 +41,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   appointments, selectedBatch, toggleBatchSelect, handleBatchDelete,
   analysis, handleExportStatsCsv, handleExportJson, triggerImport, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
-  inventories, onSaveInventory, onDeleteInventory
+  inventories, onSaveInventory, onDeleteInventory,
+  workoutPlans, onSavePlan, onDeletePlan
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -54,10 +59,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Off Date Input State
   const [tempOffDate, setTempOffDate] = useState('');
 
-  // Inventory Editing
+  // Inventory Management State
   const [searchQuery, setSearchQuery] = useState('');
-  const [inventoryEditId, setInventoryEditId] = useState<string | null>(null);
-  const [editValues, setEditValues] = useState<{private: number, group: number}>({ private: 0, group: 0 });
+  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
+  const [editingInventory, setEditingInventory] = useState<UserInventory | null>(null);
+  const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string}>({ private: 0, group: 0, name: '', phone: '' });
 
   const filteredApps = appointments.filter(a => currentUser.role==='manager' || a.coachId === currentUser.id);
 
@@ -145,23 +151,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setIsCoachModalOpen(false);
   };
 
-  // Inventory Edit Handlers
-  const startEditingInventory = (inv: UserInventory) => {
-      setInventoryEditId(inv.id);
-      setEditValues({ private: inv.credits.private, group: inv.credits.group });
+  // Inventory Modal Handlers
+  const handleOpenInventoryModal = (inv: UserInventory) => {
+      setEditingInventory(inv);
+      setInventoryForm({
+          private: inv.credits.private,
+          group: inv.credits.group,
+          name: inv.name,
+          phone: inv.phone || ''
+      });
+      setIsInventoryModalOpen(true);
   };
 
-  const cancelEditingInventory = () => {
-      setInventoryEditId(null);
-  };
-
-  const saveInventoryChanges = (inv: UserInventory) => {
+  const handleSaveInventoryChanges = () => {
+      if (!editingInventory) return;
       onSaveInventory({
-          ...inv,
-          credits: { private: Number(editValues.private), group: Number(editValues.group) },
+          ...editingInventory,
+          credits: { private: Number(inventoryForm.private), group: Number(inventoryForm.group) },
+          name: inventoryForm.name,
+          phone: inventoryForm.phone,
           lastUpdated: new Date().toISOString()
       });
-      setInventoryEditId(null);
+      setIsInventoryModalOpen(false);
   };
 
   // Navigation Config
@@ -172,7 +183,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       ]},
       { category: '客戶管理', items: [
           { id: 'inventory', icon: CreditCard, label: '庫存管理' },
-          { id: 'workout', icon: Dumbbell, label: '課表' },
+          { id: 'workout', icon: Dumbbell, label: '訓練課表' },
       ]},
       { category: '系統設定', items: [
           { id: 'staff', icon: Users, label: '員工管理', role: 'manager' },
@@ -257,12 +268,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        </aside>
        
        {/* Main Content Area */}
-       <main className="flex-1 p-4 md:p-8 overflow-y-auto h-screen bg-slate-50/50 dark:bg-slate-900">
+       <main className="flex-1 p-4 md:p-8 overflow-y-auto h-screen bg-slate-50/50 dark:bg-slate-900 relative">
            {/* Mobile Sidebar Backdrop */}
            {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
 
            {/* Tab Content */}
-           <div className="max-w-7xl mx-auto animate-fadeIn">
+           <div className="max-w-7xl mx-auto animate-fadeIn pb-24">
                {adminTab === 'calendar' && (
                  <>
                     <div className="flex justify-between items-center mb-6">
@@ -326,6 +337,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  </div>
                )}
 
+               {adminTab === 'workout' && (
+                  <WorkoutPlans 
+                    currentUser={currentUser}
+                    inventories={inventories}
+                    workoutPlans={workoutPlans}
+                    onSavePlan={onSavePlan}
+                    onDeletePlan={onDeletePlan}
+                    onSaveInventory={onSaveInventory}
+                  />
+               )}
+
                {adminTab === 'inventory' && (
                   <div className="space-y-6">
                       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -344,55 +366,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {filteredInventories.map(inv => {
-                              const isEditing = inventoryEditId === inv.id;
                               const canEdit = ['manager', 'receptionist'].includes(currentUser.role);
-
                               return (
-                                  <div key={inv.id} className={`glass-card p-6 rounded-2xl border transition-all ${isEditing ? 'border-indigo-500 ring-2 ring-indigo-500/20' : 'border-slate-100 dark:border-slate-700 hover:shadow-lg'}`}>
+                                  <div 
+                                    key={inv.id} 
+                                    onClick={() => canEdit && handleOpenInventoryModal(inv)}
+                                    className={`glass-card p-6 rounded-2xl border border-slate-100 dark:border-slate-700 transition-all hover:shadow-lg hover:scale-[1.02] group ${canEdit ? 'cursor-pointer' : ''}`}
+                                  >
                                       <div className="flex justify-between items-start mb-4">
                                           <div>
-                                              <div className="font-bold text-lg dark:text-white">{inv.name}</div>
+                                              <div className="font-bold text-lg dark:text-white group-hover:text-indigo-600 transition-colors flex items-center gap-2">
+                                                  {inv.name}
+                                                  {canEdit && <Edit2 size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400"/>}
+                                              </div>
                                               <div className="text-xs text-slate-500">{inv.phone || '無電話'}</div>
                                           </div>
-                                          {canEdit && !isEditing && (
-                                              <button onClick={() => startEditingInventory(inv)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors">
-                                                  <Edit2 size={16}/>
-                                              </button>
-                                          )}
-                                          {canEdit && isEditing && (
-                                              <div className="flex gap-1">
-                                                  <button onClick={() => saveInventoryChanges(inv)} className="p-2 text-green-600 bg-green-50 rounded-lg hover:bg-green-100 transition-colors"><Save size={16}/></button>
-                                                  <button onClick={cancelEditingInventory} className="p-2 text-slate-400 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors"><RotateCcw size={16}/></button>
-                                              </div>
-                                          )}
                                       </div>
 
                                       <div className="grid grid-cols-2 gap-4">
-                                          <div className={`p-3 rounded-xl ${isEditing ? 'bg-white border-2 border-indigo-100' : 'bg-indigo-50 dark:bg-indigo-900/20'}`}>
+                                          <div className="p-3 rounded-xl bg-indigo-50 dark:bg-indigo-900/20">
                                               <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">私人課 (Private)</div>
-                                              {isEditing ? (
-                                                  <input 
-                                                      type="number" 
-                                                      className="w-full bg-transparent font-bold text-xl text-indigo-600 outline-none border-b border-indigo-200"
-                                                      value={editValues.private}
-                                                      onChange={e => setEditValues({...editValues, private: Number(e.target.value)})}
-                                                  />
-                                              ) : (
-                                                  <div className="font-bold text-2xl text-indigo-600 dark:text-indigo-400">{inv.credits.private}</div>
-                                              )}
+                                              <div className="font-bold text-2xl text-indigo-600 dark:text-indigo-400">{inv.credits.private}</div>
                                           </div>
-                                          <div className={`p-3 rounded-xl ${isEditing ? 'bg-white border-2 border-orange-100' : 'bg-orange-50 dark:bg-orange-900/20'}`}>
+                                          <div className="p-3 rounded-xl bg-orange-50 dark:bg-orange-900/20">
                                               <div className="text-[10px] font-bold text-slate-400 uppercase mb-1">團體課 (Group)</div>
-                                              {isEditing ? (
-                                                  <input 
-                                                      type="number" 
-                                                      className="w-full bg-transparent font-bold text-xl text-orange-600 outline-none border-b border-orange-200"
-                                                      value={editValues.group}
-                                                      onChange={e => setEditValues({...editValues, group: Number(e.target.value)})}
-                                                  />
-                                              ) : (
-                                                  <div className="font-bold text-2xl text-orange-600 dark:text-orange-400">{inv.credits.group}</div>
-                                              )}
+                                              <div className="font-bold text-2xl text-orange-600 dark:text-orange-400">{inv.credits.group}</div>
                                           </div>
                                       </div>
                                   </div>
@@ -592,11 +590,72 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                )}
 
-               {/* Coach Edit Modal */}
+               {adminTab === 'help' && (
+                   <div className="glass-panel rounded-3xl shadow-lg p-8 border border-white/60">
+                       <h3 className="font-bold text-2xl mb-8 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-4">
+                           <BookOpen className="text-indigo-500"/> 使用操作手冊
+                       </h3>
+                       
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                           <div className="space-y-6">
+                               <div className="p-6 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-800">
+                                   <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><CheckCircle size={20} className="text-indigo-600"/> 雙重核實扣點流程</h4>
+                                   <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                       <li><strong className="text-indigo-600">學員簽到</strong>：學員在「我的預約」中點擊「立即簽到」。</li>
+                                       <li><strong className="text-indigo-600">教練確認</strong>：課程結束後，教練在行事曆中點擊該課程（橘色閃爍狀態）。</li>
+                                       <li><strong className="text-indigo-600">系統扣點</strong>：點擊「確認核實完課」按鈕，系統將自動扣除學員 1 點庫存。</li>
+                                       <li><strong className="text-red-500">注意</strong>：若未經過此流程，點數將不會自動扣除。</li>
+                                   </ol>
+                               </div>
+
+                               <div className="p-6 bg-pink-50/50 dark:bg-pink-900/10 rounded-2xl border border-pink-100 dark:border-pink-800">
+                                   <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><Activity size={20} className="text-pink-600"/> 傷病史與健康檔案</h4>
+                                   <ul className="list-disc list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                       <li>進入 <strong className="text-slate-800 dark:text-white">訓練課表</strong> 分頁。</li>
+                                       <li>使用搜尋列輸入學員姓名或電話。</li>
+                                       <li>在左側面板中填寫「傷病史與禁忌」、「訓練目標」等資訊。</li>
+                                       <li>點擊 <span className="bg-indigo-600 text-white px-1.5 py-0.5 text-xs rounded">儲存</span> 按鈕以更新學員資料。</li>
+                                   </ul>
+                               </div>
+                           </div>
+
+                           <div className="space-y-6">
+                               <div className="p-6 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-2xl border border-emerald-100 dark:border-emerald-800">
+                                   <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><FileSpreadsheet size={20} className="text-emerald-600"/> 報表輸出與分析</h4>
+                                   <p className="text-sm text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">
+                                       在「營運分析」分頁中，您可以匯出兩種格式的報表：
+                                   </p>
+                                   <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
+                                       <li className="flex items-center gap-2"><FileSpreadsheet size={14} className="text-emerald-500"/> <strong>營運報表 (CSV)</strong>：包含教練課時統計、熱門時段數據。</li>
+                                       <li className="flex items-center gap-2"><FileWarning size={14} className="text-red-500"/> <strong>取消明細 (CSV)</strong>：匯出所有被取消的課程及其原因。</li>
+                                   </ul>
+                               </div>
+
+                               <div className="p-6 bg-slate-50 dark:bg-slate-800 rounded-2xl border border-slate-200 dark:border-slate-700">
+                                   <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><HelpCircle size={20} className="text-slate-500"/> 常見問題</h4>
+                                   <div className="space-y-3">
+                                       <div>
+                                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">如何修改庫存？</div>
+                                           <p className="text-sm text-slate-600 dark:text-slate-400">至「庫存管理」分頁，點擊該學員卡片即可手動調整點數。</p>
+                                       </div>
+                                       <div>
+                                           <div className="text-xs font-bold text-slate-500 uppercase mb-1">如何排休？</div>
+                                           <p className="text-sm text-slate-600 dark:text-slate-400">至「班表設定」調整每週固定休假，或在「員工管理」編輯特定日期休假。</p>
+                                       </div>
+                                   </div>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               )}
+
+               {/* Global Glassmorphism Modals */}
+               
+               {/* Coach Modal */}
                {isCoachModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}>
-                    <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                        <div className="bg-white/50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}>
+                    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center">
                             <h3 className="font-bold text-xl dark:text-white">{isNewCoach ? '新增員工資料' : '編輯員工資料'}</h3>
                             <button onClick={() => setIsCoachModalOpen(false)}><X className="text-slate-500"/></button>
                         </div>
@@ -611,6 +670,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
                                         <option value="coach">教練 (Coach)</option>
                                         <option value="manager">主管 (Manager)</option>
+                                        <option value="receptionist">櫃檯 (Receptionist)</option>
                                     </select>
                                 </div>
                                 
@@ -642,9 +702,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </div>
                                 </div>
 
-                                {/* Off Dates Management */}
-                                <div className="border-t border-slate-100 dark:border-slate-700 pt-4 mt-2">
-                                   <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2"><CalendarX size={14}/> 特定日期休假 (Off Dates)</label>
+                                <div className="border-t border-slate-100/50 dark:border-slate-700/50 pt-4 mt-2">
+                                   <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2"><CalendarX size={14}/> 特定日期休假</label>
                                    <div className="flex gap-2 mb-2">
                                        <input 
                                           type="date" 
@@ -667,18 +726,65 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                <button type="button" onClick={() => handleRemoveOffDate(date)} className="hover:text-red-700"><X size={12}/></button>
                                            </div>
                                        ))}
-                                       {(!editingCoach.offDates || editingCoach.offDates.length === 0) && (
-                                           <span className="text-xs text-slate-400 italic">無設定休假日</span>
-                                       )}
                                    </div>
                                 </div>
 
-                                <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4">儲存</button>
+                                <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4 hover:bg-indigo-700 transition-colors">儲存變更</button>
                             </form>
                         </div>
                     </div>
                 </div>
                )}
+
+               {/* Inventory Edit Modal */}
+               {isInventoryModalOpen && editingInventory && (
+                   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
+                       <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30" onClick={e => e.stopPropagation()}>
+                           <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center">
+                               <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard size={20} className="text-indigo-500"/> 修改庫存</h3>
+                               <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-slate-500"/></button>
+                           </div>
+                           <div className="p-6 space-y-4">
+                               <div className="glass-card p-3 rounded-xl bg-white/50 dark:bg-slate-800/50 mb-2">
+                                   <div className="text-xs text-slate-400 uppercase font-bold">學員資料</div>
+                                   <div className="font-bold text-lg dark:text-white">{inventoryForm.name}</div>
+                                   <div className="text-sm text-slate-500">{inventoryForm.phone}</div>
+                               </div>
+
+                               <div className="grid grid-cols-2 gap-4">
+                                   <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">私人課 (Private)</label>
+                                       <input 
+                                           type="number" 
+                                           className="w-full text-2xl font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-b-2 border-indigo-200 focus:border-indigo-500 outline-none p-2 rounded-t-lg text-center"
+                                           value={inventoryForm.private}
+                                           onChange={e => setInventoryForm({...inventoryForm, private: Number(e.target.value)})}
+                                       />
+                                   </div>
+                                   <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">團體課 (Group)</label>
+                                       <input 
+                                           type="number" 
+                                           className="w-full text-2xl font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-200 focus:border-orange-500 outline-none p-2 rounded-t-lg text-center"
+                                           value={inventoryForm.group}
+                                           onChange={e => setInventoryForm({...inventoryForm, group: Number(e.target.value)})}
+                                       />
+                                   </div>
+                               </div>
+
+                               <div className="pt-2">
+                                   <button 
+                                       onClick={handleSaveInventoryChanges}
+                                       className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
+                                   >
+                                       <Save size={18}/> 儲存修改
+                                   </button>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               )}
+
            </div>
        </main>
     </div>
