@@ -1,5 +1,4 @@
 
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User, UserInventory, WorkoutPlan, ExerciseLog, Exercise } from '../types';
 import { Search, Plus, X, Trash2, Dumbbell, Calendar, Save, Edit, BookCopy, Activity, AlertTriangle, Copy, FileText } from 'lucide-react';
@@ -226,7 +225,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
           <input 
             type="text" 
             placeholder="搜尋學員姓名/電話..." 
-            className="w-full pl-10 pr-4 py-2 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white" 
+            className="w-full pl-10 pr-4 py-2 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white glass-input" 
             value={searchTerm} 
             onChange={e => setSearchTerm(e.target.value)} 
           />

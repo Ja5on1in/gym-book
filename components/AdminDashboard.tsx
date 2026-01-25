@@ -357,7 +357,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               <input 
                                   type="text" 
                                   placeholder="搜尋學員姓名/電話..." 
-                                  className="pl-10 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 w-full md:w-64 focus:ring-2 focus:ring-indigo-500 outline-none"
+                                  className="pl-10 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 w-full md:w-64 focus:ring-2 focus:ring-indigo-500 outline-none glass-input"
                                   value={searchQuery}
                                   onChange={e => setSearchQuery(e.target.value)}
                               />

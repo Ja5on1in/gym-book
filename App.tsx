@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -15,7 +16,8 @@ import {
   Search,
   X,
   CreditCard,
-  CheckCircle2
+  CheckCircle2,
+  Edit3
 } from 'lucide-react';
 
 import { 
@@ -1105,7 +1107,7 @@ export default function App() {
                                <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => {
                                    const newType = e.target.value as any;
-                                   setBlockForm({...blockForm, type: newType});
+                                   setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
                                    if(newType !== 'private') setMemberSearchTerm('');
                                }}>
                                    <option value="block">內部事務 (Block)</option>
@@ -1150,9 +1152,9 @@ export default function App() {
                             </div>
                         )}
 
-                        {['block', 'group'].includes(blockForm.type) ? (
+                        {blockForm.type === 'block' && (
                             <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase">事項 / 課程名稱</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase">內部事項標籤</label>
                                 <div className="flex flex-wrap gap-2 mt-2">
                                     {BLOCK_REASONS.map(r => (
                                         <button type="button" key={r} onClick={() => setBlockForm({...blockForm, reason: r})}
@@ -1162,82 +1164,94 @@ export default function App() {
                                     ))}
                                 </div>
                             </div>
-                        ) : (
+                        )}
+
+                        {blockForm.type === 'group' && (
+                             <div>
+                                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Edit3 size={12}/> 課程名稱</label>
+                                 <input 
+                                     type="text" 
+                                     required 
+                                     className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" 
+                                     placeholder="例如：TRX 懸吊、瑜珈..." 
+                                     value={blockForm.reason} 
+                                     onChange={e => setBlockForm({...blockForm, reason: e.target.value})}
+                                 />
+                             </div>
+                        )}
+
+                        {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
                             <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all">
                                 <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
-                                {blockForm.type === 'private' ? (
-                                    <>
-                                        {blockForm.customer?.name ? (
-                                            <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
-                                                <div>
-                                                    <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                                        {blockForm.customer.name}
-                                                        {blockForm.customer.phone && <span className="text-xs text-slate-500 font-normal">({blockForm.customer.phone})</span>}
-                                                    </div>
-                                                    {(() => {
-                                                        const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
-                                                        if (linkedInv) {
-                                                            return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {linkedInv.credits.private} 堂</div>
-                                                        }
-                                                        return null;
-                                                    })()}
-                                                </div>
-                                                <button 
-                                                    type="button" 
-                                                    onClick={() => setBlockForm({...blockForm, customer: null})}
-                                                    className="p-2 bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
-                                                    title="重新選擇"
-                                                >
-                                                    <X size={16}/>
-                                                </button>
+                                {blockForm.customer?.name ? (
+                                    <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
+                                        <div>
+                                            <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                                {blockForm.customer.name}
+                                                {blockForm.customer.phone && <span className="text-xs text-slate-500 font-normal">({blockForm.customer.phone})</span>}
                                             </div>
-                                        ) : (
-                                            <div className="relative">
-                                                <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
-                                                <input 
-                                                    type="text" 
-                                                    className="w-full glass-input rounded-xl p-3 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
-                                                    placeholder="輸入關鍵字..."
-                                                    value={memberSearchTerm}
-                                                    onChange={(e) => setMemberSearchTerm(e.target.value)}
-                                                    autoFocus
-                                                />
-                                                {memberSearchTerm && !blockForm.customer && (
-                                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
-                                                        {filteredMembers.length > 0 ? (
-                                                            filteredMembers.map(m => (
-                                                                <div 
-                                                                    key={m.id} 
-                                                                    onClick={() => {
-                                                                        setBlockForm({
-                                                                            ...blockForm,
-                                                                            customer: { 
-                                                                                name: m.name, 
-                                                                                phone: m.phone || '', 
-                                                                                email: m.email || '' 
-                                                                            }
-                                                                        });
-                                                                        setMemberSearchTerm('');
-                                                                    }}
-                                                                    className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                                                >
-                                                                    <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
-                                                                    <div className="flex justify-between text-xs text-slate-500 mt-0.5">
-                                                                        <span>{m.phone || '無電話'}</span>
-                                                                        <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
-                                                                    </div>
-                                                                </div>
-                                                            ))
-                                                        ) : (
-                                                            <div className="p-4 text-center text-xs text-slate-400">找不到相符學員</div>
-                                                        )}
-                                                    </div>
+                                            {(() => {
+                                                const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
+                                                if (linkedInv) {
+                                                    return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {linkedInv.credits.private} 堂</div>
+                                                }
+                                                return null;
+                                            })()}
+                                        </div>
+                                        <button 
+                                            type="button" 
+                                            onClick={() => setBlockForm({...blockForm, customer: null})}
+                                            className="p-2 bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                                            title="重新選擇"
+                                        >
+                                            <X size={16}/>
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <div className="relative">
+                                        <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
+                                        <input 
+                                            type="text" 
+                                            className="w-full glass-input rounded-xl p-3 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                                            placeholder="輸入關鍵字..."
+                                            value={memberSearchTerm}
+                                            onChange={(e) => setMemberSearchTerm(e.target.value)}
+                                            autoFocus
+                                        />
+                                        {memberSearchTerm && !blockForm.customer && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
+                                                {filteredMembers.length > 0 ? (
+                                                    filteredMembers.map(m => (
+                                                        <div 
+                                                            key={m.id} 
+                                                            onClick={() => {
+                                                                setBlockForm({
+                                                                    ...blockForm,
+                                                                    customer: { 
+                                                                        name: m.name, 
+                                                                        phone: m.phone || '', 
+                                                                        email: m.email || '' 
+                                                                    }
+                                                                });
+                                                                setMemberSearchTerm('');
+                                                            }}
+                                                            className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0"
+                                                        >
+                                                            <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
+                                                            <div className="flex justify-between text-xs text-slate-500 mt-0.5">
+                                                                <span>{m.phone || '無電話'}</span>
+                                                                <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
+                                                            </div>
+                                                        </div>
+                                                    ))
+                                                ) : (
+                                                    <div className="p-4 text-center text-xs text-slate-400">找不到相符學員</div>
                                                 )}
                                             </div>
                                         )}
-                                        {!blockForm.customer?.name && <div className="text-[10px] text-red-400 mt-1">* 必須選擇現有學員</div>}
-                                    </>
-                                ) : null}
+                                    </div>
+                                )}
+                                {!blockForm.customer?.name && <div className="text-[10px] text-red-400 mt-1">* 必須選擇現有學員</div>}
                             </div>
                         )}
                         
