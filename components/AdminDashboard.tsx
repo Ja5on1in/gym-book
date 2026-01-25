@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
@@ -405,9 +404,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        `}>
            <div className="p-6">
                <h1 className="text-2xl font-bold dark:text-white mb-1 flex items-center gap-2 text-indigo-600">
-                   <LayoutDashboard className="fill-indigo-600 text-indigo-600"/> GymBooker
+                   <LayoutDashboard className="fill-indigo-600 text-indigo-600"/> 活力學苑預約系統
                </h1>
-               <div className="text-xs text-slate-500 font-medium px-1">Professional Admin</div>
+               <div className="text-xs text-slate-500 font-medium px-1">管理後台</div>
            </div>
 
            <div className="px-4 py-2">
@@ -698,9 +697,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="space-y-6">
                       <div className="glass-panel rounded-3xl shadow-lg p-6 border border-white/60">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Users className="text-indigo-500"/> 員工管理</h3>
+                            <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Users className="text-indigo-500"/> 員工與班表管理</h3>
                             <button onClick={() => handleOpenCoachModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
-                                <Plus size={16}/> 新增教練
+                                <Plus size={16}/> 新增員工
                             </button>
                         </div>
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -731,67 +730,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
                       {renderMonthlySchedule()}
-                      
-                      {/* Individual Schedule Settings */}
-                      <div className="mt-6">
-                        <h3 className="font-bold text-xl dark:text-white mb-4 flex items-center gap-3"><SettingsIcon className="text-indigo-500"/> 個別班表設定</h3>
-                        <div className="space-y-6">
-                            {coaches.map(c => {
-                               if (currentUser.role === 'coach' && currentUser.id !== c.id) return null;
-                               return (
-                               <div key={c.id} className="glass-panel p-6 rounded-3xl shadow-sm border border-white/60">
-                                  <div className="font-bold mb-6 dark:text-white flex items-center gap-3 text-xl border-b border-slate-100 dark:border-slate-700 pb-4">
-                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold ${c.color} shadow-sm`}>{c.name[0]}</div>
-                                     {c.name} 班表設定
-                                  </div>
-                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                     {['日','一','二','三','四','五','六'].map((d, i) => {
-                                       const isWorkDay = c.workDays?.includes(i);
-                                       const hours = c.dailyWorkHours?.[i.toString()] || { start: c.workStart, end: c.workEnd };
-                                       return (
-                                         <div key={i} className={`p-4 rounded-2xl border transition-all duration-300 ${isWorkDay ? 'border-indigo-200 bg-indigo-50/50 dark:bg-indigo-900/10 dark:border-indigo-800' : 'border-slate-100 bg-slate-50/50 dark:bg-slate-800/50 dark:border-slate-700 opacity-60'}`}>
-                                           <div className="flex items-center justify-between">
-                                             <div className="flex items-center gap-4">
-                                                <button 
-                                                  onClick={() => handleUpdateDayConfig(c, i, !isWorkDay, hours.start, hours.end)}
-                                                  className={`w-12 h-7 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}
-                                                >
-                                                  <div className={`absolute top-1 left-1 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-300 ${isWorkDay ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                                                </button>
-                                                <span className={`font-bold ${isWorkDay ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400'}`}>星期{d}</span>
-                                             </div>
-                                             {!isWorkDay && <span className="text-xs font-medium text-slate-400 bg-white dark:bg-slate-700 px-2 py-1 rounded">休假</span>}
-                                           </div>
-                                           
-                                           {isWorkDay && (
-                                             <div className="mt-4 flex items-center gap-2 bg-white/70 dark:bg-slate-700/50 p-2 rounded-xl border border-slate-100 dark:border-slate-600 shadow-sm">
-                                               <Clock size={14} className="text-slate-400 ml-1"/>
-                                               <select 
-                                                 value={hours.start} 
-                                                 onChange={(e) => handleUpdateDayConfig(c, i, true, e.target.value, hours.end)}
-                                                 className="flex-1 bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none cursor-pointer text-center"
-                                               >
-                                                 {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                                               </select>
-                                               <ChevronRight size={14} className="text-slate-300"/>
-                                               <select 
-                                                 value={hours.end} 
-                                                 onChange={(e) => handleUpdateDayConfig(c, i, true, hours.start, e.target.value)}
-                                                 className="flex-1 bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none cursor-pointer text-center"
-                                               >
-                                                 {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                                               </select>
-                                             </div>
-                                           )}
-                                         </div>
-                                       );
-                                     })}
-                                  </div>
-                               </div>
-                               );
-                             })}
-                        </div>
-                      </div>
                   </div>
                )}
                

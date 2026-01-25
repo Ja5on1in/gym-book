@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
@@ -206,7 +205,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                  <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 dark:text-green-400">
                      <MessageCircle size={36}/>
                  </div>
-                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">歡迎使用 GymBooker</h2>
+                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">歡迎使用 活力學苑預約系統</h2>
                  <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">為了提供完整的預約服務與點數紀錄，請先登入您的 LINE 帳號。</p>
                  <button onClick={onLogin} className="w-full py-4 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold shadow-lg shadow-green-500/30 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2">
                      <LogIn size={20}/> LINE 登入

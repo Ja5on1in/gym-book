@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -988,7 +987,7 @@ export default function App() {
                     <CalendarIcon size={22} className="stroke-[2.5px]"/>
                 </div>
                 <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-700 to-slate-900 dark:from-white dark:to-slate-300">
-                    GymBooker
+                    活力學苑預約系統
                 </span>
                 </div>
                 <div className="flex items-center gap-4">
