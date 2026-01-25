@@ -473,6 +473,15 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                         </div>
                         {isExercisePickerOpen && (
                             <div className="absolute z-50 w-full bottom-full mb-2 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border dark:border-gray-700 overflow-hidden max-h-60 overflow-y-auto custom-scrollbar">
+                                {exerciseSearch && !EXERCISE_LIST.some(ex => ex.name.toLowerCase() === exerciseSearch.toLowerCase()) && (
+                                    <button
+                                        onClick={() => handleAddExercise({ id: `custom_${Date.now()}`, name: exerciseSearch })}
+                                        className="w-full text-left px-3 py-2 text-sm font-bold text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex items-center justify-between border-b border-indigo-100 dark:border-indigo-800"
+                                    >
+                                        <span>新增動作: "{exerciseSearch}"</span>
+                                        <Plus size={14} />
+                                    </button>
+                                )}
                                 {Object.entries(groupedExercises).map(([category, exercises]) => (
                                     <div key={category}>
                                         <h6 className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50 text-xs font-bold text-gray-500 sticky top-0 backdrop-blur-sm">{category}</h6>
@@ -484,7 +493,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                                         ))}
                                     </div>
                                 ))}
-                                {Object.keys(groupedExercises).length === 0 && (
+                                {Object.keys(groupedExercises).length === 0 && !(exerciseSearch && !EXERCISE_LIST.some(ex => ex.name.toLowerCase() === exerciseSearch.toLowerCase())) && (
                                     <div className="p-4 text-center text-sm text-gray-400">找不到動作</div>
                                 )}
                             </div>

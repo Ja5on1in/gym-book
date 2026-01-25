@@ -219,6 +219,9 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     </div>
                                   </div>
                                   <div className="truncate font-medium opacity-90">{displayText}</div>
+                                  {app.type === 'private' && app.service?.name && (
+                                    <div className="text-[8px] md:text-[10px] opacity-70 truncate mt-0.5">{app.service.name}</div>
+                                  )}
                                   {isCheckedIn && <div className="text-[8px] md:text-[9px] font-bold text-orange-600 mt-0.5">等待確認</div>}
                               </div>
                             );

@@ -536,12 +536,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                             {selectedBatch.has(app.id) && <X size={14} className="text-white rotate-45" strokeWidth={3} />}
                                         </div>
                                         
-                                        <div className="flex-1 pointer-events-none">
-                                            <div className="flex justify-between items-center mb-1">
-                                                <div className="flex items-center gap-3">
+                                        <div className="flex-1 pointer-events-none grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
+                                            <div className="md:col-span-2">
+                                                <div className="flex items-center gap-2 mb-1">
                                                     <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-sm font-bold text-slate-700 dark:text-slate-200">{app.time}</span>
-                                                    <span className="font-bold text-lg dark:text-white truncate">{(app.type as string) ==='client' ? app?.customer?.name : app.reason}</span>
+                                                    <span className="font-bold text-lg dark:text-white truncate">{app.type === 'private' ? app.customer?.name : app.reason}</span>
                                                 </div>
+                                                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3 flex-wrap">
+                                                    <span>教練: {coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除)'}</span>
+                                                    {app.customer?.phone && <span>電話: {app.customer.phone}</span>}
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col items-start md:items-end gap-1">
                                                 <span className={`text-xs px-3 py-1 rounded-full font-bold whitespace-nowrap 
                                                     ${app.status==='cancelled'
                                                         ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
@@ -553,10 +559,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                     }`}>
                                                     {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課' : app.status === 'checked_in' ? '已簽到' : '已確認'}
                                                 </span>
-                                            </div>
-                                            <div className="flex justify-between text-sm text-slate-500 dark:text-slate-400">
-                                                <span>教練：{coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除)'}</span>
-                                                {app.type === 'private' && app.customer?.phone && <span className="text-xs">{app.customer.phone}</span>}
+                                                <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full mt-1">
+                                                  {app.service?.name || (app.type === 'group' ? '團體課' : app.type === 'block' ? '內部事務' : '私人課')}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
