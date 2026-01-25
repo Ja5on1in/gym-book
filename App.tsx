@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -11,15 +10,11 @@ import {
   Lock,
   Trash2,
   Repeat,
-  Key,
-  Database,
-  Lock as LockIcon,
   Layers,
   User as UserIcon,
   Search,
   X,
   CreditCard,
-  Check,
   CheckCircle2
 } from 'lucide-react';
 
@@ -69,7 +64,7 @@ export default function App() {
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [inventories, setInventories] = useState<UserInventory[]>([]);
-  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]); // New State
+  const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]);
 
   // Dates
   const [currentDate, setCurrentDate] = useState(new Date());
@@ -91,16 +86,26 @@ export default function App() {
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
   
-  // Member Search State (New)
+  // Member Search State
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [filteredMembers, setFilteredMembers] = useState<UserInventory[]>([]);
 
-  // Cleaned up initial state
   const [blockForm, setBlockForm] = useState<BlockFormState>({
     id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, repeatWeeks: 1
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
-  const [confirmModal, setConfirmModal] = useState<{isOpen: boolean, message: string, onConfirm: ((reason?: string) => void) | null, isDanger: boolean, showInput: boolean}>({ isOpen: false, message: '', onConfirm: null, isDanger: false, showInput: false });
+  
+  // Updated Confirmation Modal State
+  const [confirmModal, setConfirmModal] = useState<{
+    isOpen: boolean, 
+    title: string,
+    message: string, 
+    onConfirm: ((reason?: string) => void) | null, 
+    isDanger: boolean, 
+    showInput: boolean,
+    icon?: React.ReactNode // Support custom icon
+  }>({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, showInput: false });
+  
   const [cancelReason, setCancelReason] = useState('');
 
   // --- EFFECTS ---
@@ -113,13 +118,10 @@ export default function App() {
   useEffect(() => {
     const start = async () => {
         await initAuth();
-        
-        // Initialize LIFF
         const liff = (window as any).liff;
         if (liff) {
             try {
                 await liff.init({ liffId: LIFF_ID });
-                console.log('LIFF initialized');
                 
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('mode') === 'my-bookings') {
@@ -141,7 +143,6 @@ export default function App() {
     start();
   }, []);
 
-  // Listen to Auth State with RETRY Logic
   useEffect(() => {
       if (!auth) {
           setIsAuthLoading(false);
@@ -151,8 +152,6 @@ export default function App() {
           setIsAuthLoading(true);
           if (firebaseUser) {
               let userProfile = await getUserProfile(firebaseUser.uid);
-              
-              // Retry mechanism: Wait and try again if profile not found (handling race condition)
               let retries = 3;
               while (!userProfile && retries > 0) {
                   await new Promise(resolve => setTimeout(resolve, 500));
@@ -167,13 +166,11 @@ export default function App() {
                       setCurrentUser(null);
                   } else {
                       setCurrentUser(userProfile);
-                      // Only set default coach ID if the loaded user is a coach
                       if (userProfile.role === 'coach') {
                         setBlockForm(prev => ({...prev, coachId: userProfile.id})); 
                       }
                   }
               } else {
-                  console.warn("User has no profile in DB after retry");
                   showNotification("無法取得使用者權限，請確認帳號是否已建立", "error");
                   setCurrentUser(null);
               }
@@ -210,7 +207,6 @@ export default function App() {
         setInventories([...data] as UserInventory[]);
     }, () => {});
 
-    // New: Subscribe to workout plans
     const unsubWorkoutPlans = subscribeToCollection('workout_plans', (data) => {
         setWorkoutPlans([...data] as WorkoutPlan[]);
     }, () => {});
@@ -224,7 +220,6 @@ export default function App() {
     };
   }, []);
 
-  // Filter Members Effect
   useEffect(() => {
       if (!memberSearchTerm) {
           setFilteredMembers([]);
@@ -234,11 +229,9 @@ export default function App() {
       const results = inventories.filter(inv => 
           inv.name.toLowerCase().includes(lowerTerm) || 
           (inv.phone && inv.phone.includes(lowerTerm))
-      ).slice(0, 6); // Limit to 6 results
+      ).slice(0, 6);
       setFilteredMembers(results);
   }, [memberSearchTerm, inventories]);
-
-  // --- ACTIONS ---
 
   const showNotification = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setNotification({ msg, type });
@@ -306,24 +299,6 @@ export default function App() {
           const oldInv = inventories.find(i => i.id === id);
           const isUpdate = !!oldInv;
 
-          const existingByPhone = inventories.find(i => i.phone && i.phone === inventory.phone && i.id !== id);
-          if (existingByPhone) {
-              if (window.confirm(`發現相同電話號碼的學員: ${existingByPhone.name}。是否更新該學員資料而非新增？`)) {
-                 await saveToFirestore('user_inventory', existingByPhone.id, { ...existingByPhone, ...inventory, id: existingByPhone.id, lastUpdated: new Date().toISOString() });
-                 
-                 const oldPrivate = existingByPhone.credits.private;
-                 const newPrivate = Number(inventory.credits?.private || 0);
-                 const oldGroup = existingByPhone.credits.group;
-                 const newGroup = Number(inventory.credits?.group || 0);
-
-                 if (oldPrivate !== newPrivate || oldGroup !== newGroup) {
-                    addLog('庫存調整', `調整學員 ${inventory.name} 點數 - 1v1: ${oldPrivate} -> ${newPrivate}, 團課: ${oldGroup} -> ${newGroup}`);
-                 }
-                 showNotification('已更新現有學員資料', 'success');
-                 return;
-              }
-          }
-
           await saveToFirestore('user_inventory', id, { ...inventory, id, lastUpdated: new Date().toISOString() });
           
           if (isUpdate && oldInv) {
@@ -350,7 +325,6 @@ export default function App() {
       }
   };
 
-
   const handleDeleteInventory = async (id: string) => {
       try {
           await deleteFromFirestore('user_inventory', id);
@@ -373,7 +347,6 @@ export default function App() {
       addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
   };
 
-  // --- Workout Plan Actions ---
   const handleSaveWorkoutPlan = async (plan: WorkoutPlan) => {
       try {
           const id = plan.id || `${Date.now()}`;
@@ -401,7 +374,6 @@ export default function App() {
       }
   };
 
-  // --- SAFE BOOKING SUBMISSION (NO DEDUCTION UNTIL COMPLETION) ---
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -420,35 +392,16 @@ export default function App() {
         if (lineProfile) {
             inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
             if (!inventory) {
-                // Try finding by phone if LINE ID not match
                 inventory = inventories.find(i => i.phone === formData.phone);
-                
-                // Enhancement: Automatic seamless linking
-                if (inventory) {
-                    if (!inventory.lineUserId) {
-                        await saveToFirestore('user_inventory', inventory.id, {
-                            ...inventory,
-                            lineUserId: lineProfile.userId,
-                            lastUpdated: new Date().toISOString()
-                        });
-                        addLog('帳號綁定', `自動綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
-                        inventory = { ...inventory, lineUserId: lineProfile.userId };
-                    }
+                if (inventory && !inventory.lineUserId) {
+                    await saveToFirestore('user_inventory', inventory.id, {
+                        ...inventory,
+                        lineUserId: lineProfile.userId,
+                        lastUpdated: new Date().toISOString()
+                    });
+                    inventory = { ...inventory, lineUserId: lineProfile.userId };
                 }
             }
-
-            // --- REMOVED STRICT CREDIT BLOCK ---
-            if (inventory) {
-                 if (inventory.credits.private <= 0) {
-                     // Just a warning, proceed with booking
-                     showNotification('提醒：您的點數不足，請記得補購點數', 'info');
-                 }
-            } else {
-                 if (lineProfile) {
-                    showNotification('提醒：新用戶請聯繫管理員購課', 'info');
-                 }
-            }
-            // ---------------------------
         }
 
         const id = Date.now().toString();
@@ -457,7 +410,6 @@ export default function App() {
             type: 'private', 
             date: dateKey, time: selectedSlot, 
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
-            // Fix: ensure no undefined values in customer fields
             customer: { 
                 name: formData.name, 
                 phone: formData.phone || "", 
@@ -468,21 +420,17 @@ export default function App() {
             lineName: lineProfile?.displayName || "" 
         };
         
-        // 1. Save to Database
         await saveToFirestore('appointments', id, newApp);
         addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} (尚未扣點)`);
         
-        // 2. Execute Webhook
-        const webhookPayload = {
+        sendToGoogleScript({
             action: 'create_booking',
             ...newApp,
             lineUserId: lineProfile?.userId || '',
             coachName: selectedCoach.name,
             title: selectedCoach.title || '教練', 
             type: 'private',
-        };
-        
-        sendToGoogleScript(webhookPayload).catch(err => console.warn("Webhook failed silently", err));
+        }).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
         showNotification('預約成功！(上課完成後將扣除點數)', 'success');
@@ -494,21 +442,16 @@ export default function App() {
   };
 
   const handleCustomerCancel = async (app: Appointment, reason: string) => {
-      // Logic Update: Since we don't deduct on booking anymore, we DO NOT refund on cancel.
-      // We only care if status is not already completed/cancelled.
-
       const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
       await saveToFirestore('appointments', app.id, updated);
-      
       addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       const coach = coaches.find(c => c.id === app.coachId);
       
-      // Async webhook - Fire and forget
       sendToGoogleScript({ 
           action: 'cancel_booking', 
           id: app.id, 
           reason, 
-          lineUserId: app.lineUserId || "", // Ensure string
+          lineUserId: app.lineUserId || "",
           coachName: app.coachName,
           title: coach?.title || '教練',
           date: app.date,
@@ -522,50 +465,39 @@ export default function App() {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
   };
 
-  // --- ADMIN BOOKING / BLOCKING ---
   const handleSaveBlock = async (e: React.FormEvent, force: boolean = false) => {
     if(e) e.preventDefault();
     if (!currentUser) return;
     const coach = coaches.find(c => c.id === (['manager', 'receptionist'].includes(currentUser.role) ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
-    // Normalize Type
     const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
     const isPrivate = finalType === 'private';
     
-    // Strict Guard: Private bookings MUST have a customer from selection
     if (isPrivate && !blockForm.customer?.name) {
         showNotification('請先搜尋並選擇學員', 'error');
         return;
     }
 
     let targetInventory: UserInventory | undefined;
-
-    // 1. Identification Phase
     if (isPrivate && blockForm.customer?.name) {
         targetInventory = inventories.find(i => 
             i.name === blockForm.customer?.name && 
             (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true)
         );
-        
-        // Warn only, don't block
-        if (targetInventory) {
-             if (targetInventory.credits.private <= 0) {
-                 showNotification(`學員 ${targetInventory.name} 點數不足 (0)，仍可預約`, 'info');
-             }
+        if (targetInventory && targetInventory.credits.private <= 0) {
+             showNotification(`學員 ${targetInventory.name} 點數不足 (0)，仍可預約`, 'info');
         }
     }
 
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Appointment[] = [];
     
-    // Standardize Date Parsing
     const [y, m, d] = blockForm.date.split('-').map(Number);
     const startDate = new Date(y, m - 1, d); 
 
     let targetSlots = [blockForm.time];
 
-    // Batch Slot Logic
     if (isBatchMode && blockForm.endTime) {
         const startIndex = ALL_TIME_SLOTS.indexOf(blockForm.time);
         const endIndex = ALL_TIME_SLOTS.indexOf(blockForm.endTime);
@@ -576,7 +508,6 @@ export default function App() {
 
     let stopCreation = false;
 
-    // Outer Loop: Weeks
     for (let i = 0; i < repeat; i++) {
         if (stopCreation) break;
 
@@ -584,7 +515,6 @@ export default function App() {
         targetDate.setDate(startDate.getDate() + (i * 7));
         const dKey = formatDateKey(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
 
-        // Inner Loop: Slots per day
         for (const slot of targetSlots) {
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
              
@@ -595,8 +525,8 @@ export default function App() {
                  batchOps.push({ 
                      id, 
                      type: finalType as any, 
-                     date: dKey, // CRITICAL: Ensure date is updated during iteration or single edit
-                     time: slot, // CRITICAL: Ensure time is updated
+                     date: dKey,
+                     time: slot,
                      coachId: coach.id, 
                      coachName: coach.name, 
                      reason: blockForm.reason, 
@@ -618,7 +548,6 @@ export default function App() {
         return; 
     }
     
-    // Batch Save
     try {
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
@@ -639,9 +568,8 @@ export default function App() {
 
      if (isPrivate) { 
          setConfirmModal({
-             isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
+             isOpen: true, title: '取消原因', message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
-                 // NO REFUND LOGIC here anymore as we don't deduct on booking
                  const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
                  await saveToFirestore('appointments', target.id, updated);
                  
@@ -662,7 +590,6 @@ export default function App() {
 
   const handleSlotClick = (date: string, time: string) => {
       if (!currentUser) return;
-      // Allow receptionists to select any coach
       const targetCoachId = (['manager', 'receptionist'].includes(currentUser.role)) ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
       if (!targetCoachId) { showNotification('無教練資料', 'error'); return; }
 
@@ -670,7 +597,7 @@ export default function App() {
       if (coach && isCoachDayOff(date, coach)) { showNotification('排休日無法新增', 'error'); return; }
       
       setBlockForm({ id: null, type: 'block', coachId: targetCoachId, date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, reason: '1v1教練課', customer: null, repeatWeeks: 1 });
-      setMemberSearchTerm(''); // Reset search
+      setMemberSearchTerm('');
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -688,7 +615,7 @@ export default function App() {
           time: '09:00', endTime: '12:00',
           reason: '內部訓練', customer: null, repeatWeeks: 1 
       });
-      setMemberSearchTerm(''); // Reset search
+      setMemberSearchTerm('');
       setDeleteConfirm(false); 
       setIsBatchMode(true);
       setIsBlockModalOpen(true);
@@ -700,27 +627,19 @@ export default function App() {
       
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
-      setMemberSearchTerm(''); // Existing customer is shown in card, no need to preset search term
+      setMemberSearchTerm('');
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
   };
 
-  // --- CONFIRMATION FLOW (DOUBLE VERIFICATION & DEDUCTION) ---
-
-  // 1. Student Checks In (Status Only, No Deduction)
   const handleUserCheckIn = async (app: Appointment) => {
       try {
           if (liffProfile && app.lineUserId !== liffProfile.userId) {
               showNotification('身份驗證失敗：此預約不屬於您', 'error');
               return;
           }
-          
-          await saveToFirestore('appointments', app.id, {
-              ...app,
-              status: 'checked_in'
-          });
-
+          await saveToFirestore('appointments', app.id, { ...app, status: 'checked_in' });
           addLog('學員簽到', `學員 ${app.customer?.name} 已簽到，等待教練確認`);
           showNotification('簽到成功！請告知教練。', 'success');
       } catch (e) {
@@ -728,24 +647,20 @@ export default function App() {
       }
   };
 
-  // 2. Coach Confirms Completion (ACTUAL DEDUCTION HERE)
   const handleCoachConfirmCompletion = async (app: Appointment) => {
       if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
           showNotification('權限不足', 'error');
           return;
       }
-
       if (app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error');
           return;
       }
 
       try {
-          // --- DEDUCTION LOGIC ---
           let deducted = false;
           let remaining = '?';
           
-          // Only deduct for private sessions
           if (app.type === 'private' || (app.type as string) === 'client') {
               let inventory = null;
               if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
@@ -764,11 +679,8 @@ export default function App() {
                   deducted = true;
               }
           }
-          // ------------------------
 
-          // Update Appointment to Completed
           await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
-
           addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
           showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
       } catch (e) {
@@ -778,8 +690,17 @@ export default function App() {
   };
 
   const handleToggleComplete = async (app: Appointment) => {
-    if (app.status === 'checked_in') {
-        await handleCoachConfirmCompletion(app);
+    if (app.status === 'checked_in' || app.status === 'confirmed') {
+        // Trigger Fancy Modal for Confirmation
+        setConfirmModal({
+            isOpen: true,
+            title: '確認核實完課？',
+            message: '這將正式扣除學員 1 點庫存，且操作不可輕易撤銷。',
+            isDanger: false,
+            showInput: false,
+            onConfirm: () => handleCoachConfirmCompletion(app),
+            icon: <CheckCircle2 size={48} className="text-green-500 animate-bounce-short"/>
+        });
     } else {
         if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role))) {
            showNotification('僅管理員或櫃檯可執行此操作', 'info');
@@ -788,11 +709,7 @@ export default function App() {
 
         const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
 
-        if (newStatus === 'completed' && app.status !== 'completed') {
-            // Manager is forcing completion. Call the full confirmation logic which includes deduction.
-            await handleCoachConfirmCompletion(app);
-        } else if (newStatus === 'confirmed' && app.status === 'completed') {
-            // Manager is reverting a completed class.
+        if (newStatus === 'confirmed' && app.status === 'completed') {
             await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
             addLog('課程狀態', `管理員/櫃檯將 ${app.customer?.name} 狀態從 '已完課' 還原為 '已確認' (未退點)`);
             showNotification('狀態已還原 (點數未自動退還)', 'info');
@@ -806,53 +723,35 @@ export default function App() {
         if (!uid && email && password) {
             uid = await createAuthUser(email, password);
         }
-
-        if (!uid) {
-            showNotification("無法建立使用者 ID", "error");
-            return;
-        }
+        if (!uid) { showNotification("無法建立使用者 ID", "error"); return; }
 
         const commonData = {
-            id: uid,
-            name: coachData.name,
-            role: coachData.role || 'coach',
-            email: email || coachData.email || '', 
-            status: 'active' as const,
-            title: coachData.title || '教練'
+            id: uid, name: coachData.name, role: coachData.role || 'coach', email: email || coachData.email || '', status: 'active' as const, title: coachData.title || '教練'
         };
 
         await saveToFirestore('users', uid, commonData);
         
         const fullCoachData: Coach = {
-            ...coachData,
-            id: uid,
-            role: coachData.role || 'coach',
-            status: 'active' as const,
-            workStart: coachData.workStart || '09:00',
-            workEnd: coachData.workEnd || '21:00',
-            workDays: coachData.workDays || [0,1,2,3,4,5,6],
-            color: coachData.color || INITIAL_COACHES[0].color
+            ...coachData, id: uid, role: coachData.role || 'coach', status: 'active' as const,
+            workStart: coachData.workStart || '09:00', workEnd: coachData.workEnd || '21:00', workDays: coachData.workDays || [0,1,2,3,4,5,6], color: coachData.color || INITIAL_COACHES[0].color
         };
         await saveToFirestore('coaches', uid, fullCoachData);
 
         addLog('員工管理', `更新/新增員工：${coachData.name}`);
         showNotification("員工資料已儲存", "success");
     } catch (error: any) {
-        console.error("Save coach failed", error);
         showNotification(`儲存失敗: ${error.message}`, "error");
     }
   };
 
   const handleDeleteCoach = async (id: string, name: string) => {
-    if (!window.confirm(`確定要刪除 ${name} 嗎？\n\n注意：\n1. 該員工將無法登入\n2. 該員工將從預約選單中移除`)) return;
-
+    if (!window.confirm(`確定要刪除 ${name} 嗎？`)) return;
     try {
         await disableUserInFirestore(id);
         await deleteFromFirestore('coaches', id);
         addLog('員工管理', `刪除員工：${name}`);
         showNotification(`${name} 已刪除`, "success");
     } catch (error: any) {
-        console.error(error);
         showNotification(`刪除失敗: ${error.message}`, "error");
     }
   };
@@ -863,7 +762,6 @@ export default function App() {
   };
 
   const getAnalysis = () => {
-    // Basic analysis logic for visual dashboard
     const totalActive = appointments.filter(a => a.status === 'confirmed' || a.status === 'checked_in').length;
     const totalCancelled = appointments.filter(a => a.status === 'cancelled').length;
     
@@ -871,47 +769,25 @@ export default function App() {
     appointments.filter(a => a.status === 'confirmed' || a.status === 'completed' || a.status === 'checked_in').forEach(a => {
         slotCounts[a.time] = (slotCounts[a.time] || 0) + 1;
     });
-    const topTimeSlots = Object.entries(slotCounts)
-        .sort(([,a], [,b]) => b - a)
-        .slice(0, 3)
-        .map(([time, count]) => ({ time, count }));
+    const topTimeSlots = Object.entries(slotCounts).sort(([,a], [,b]) => b - a).slice(0, 3).map(([time, count]) => ({ time, count }));
 
     const now = new Date();
     const currentMonthPrefix = formatDateKey(now.getFullYear(), now.getMonth(), 1).substring(0, 7);
     
     const coachStats = coaches.map(c => {
-        const apps = appointments.filter(a => 
-            a.coachId === c.id && 
-            a.status !== 'cancelled' && 
-            a.date.startsWith(currentMonthPrefix)
-        );
-        
+        const apps = appointments.filter(a => a.coachId === c.id && a.status !== 'cancelled' && a.date.startsWith(currentMonthPrefix));
         const personalCount = apps.filter(a => a.type === 'private' || (a.type as string) === 'client').length;
         const groupCount = apps.filter(a => a.type === 'group').length;
-
-        return {
-            id: c.id,
-            name: c.name,
-            personal: personalCount,
-            group: groupCount,
-            total: personalCount + groupCount
-        };
+        return { id: c.id, name: c.name, personal: personalCount, group: groupCount, total: personalCount + groupCount };
     });
 
     return { totalActive, totalCancelled, topTimeSlots, coachStats };
   };
 
   const handleExportStatsCsv = () => {
-      // Legacy simple export, can remain
       const stats = getAnalysis();
       const rows = [
-          ["統計項目", "數值"],
-          ["總預約數", stats.totalActive + stats.totalCancelled],
-          ["有效預約", stats.totalActive],
-          ["已取消", stats.totalCancelled],
-          [],
-          ["教練", "個人課", "團課/其他", "總計"],
-          ...stats.coachStats.map(c => [c.name, c.personal, c.group, c.total])
+          ["統計項目", "數值"], ["總預約數", stats.totalActive + stats.totalCancelled], ["有效預約", stats.totalActive], ["已取消", stats.totalCancelled], [], ["教練", "個人課", "團課/其他", "總計"], ...stats.coachStats.map(c => [c.name, c.personal, c.group, c.total])
       ];
       const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
       const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
@@ -937,22 +813,12 @@ export default function App() {
       reader.onload = async (evt) => {
           try {
               const data = JSON.parse(evt.target?.result as string);
-              if (data.appointments) {
-                  await Promise.all(data.appointments.map((a: any) => saveToFirestore('appointments', a.id, a)));
-              }
-              if (data.coaches) {
-                  await Promise.all(data.coaches.map((c: any) => saveToFirestore('coaches', c.id, c)));
-              }
-              if (data.inventories) {
-                  await Promise.all(data.inventories.map((i: any) => saveToFirestore('user_inventory', i.id, i)));
-              }
-              if (data.workoutPlans) {
-                  await Promise.all(data.workoutPlans.map((p: any) => saveToFirestore('workout_plans', p.id, p)));
-              }
+              if (data.appointments) await Promise.all(data.appointments.map((a: any) => saveToFirestore('appointments', a.id, a)));
+              if (data.coaches) await Promise.all(data.coaches.map((c: any) => saveToFirestore('coaches', c.id, c)));
+              if (data.inventories) await Promise.all(data.inventories.map((i: any) => saveToFirestore('user_inventory', i.id, i)));
+              if (data.workoutPlans) await Promise.all(data.workoutPlans.map((p: any) => saveToFirestore('workout_plans', p.id, p)));
               showNotification("資料匯入成功", "success");
-          } catch (error) {
-              showNotification("匯入失敗：格式錯誤", "error");
-          }
+          } catch (error) { showNotification("匯入失敗：格式錯誤", "error"); }
       };
       reader.readAsText(file);
   };
@@ -994,22 +860,22 @@ export default function App() {
 
       if (!currentUser) {
           return (
-             <div className="max-w-md mx-auto mt-10">
-                <div className="glass-panel p-8 rounded-3xl shadow-2xl">
+             <div className="max-w-md mx-auto mt-10 px-4">
+                <div className="glass-panel p-8 rounded-3xl shadow-2xl border border-white/40">
                    <div className="text-center mb-8">
                       <div className="w-16 h-16 bg-indigo-100 dark:bg-indigo-900/50 rounded-2xl flex items-center justify-center mx-auto mb-4 text-indigo-600 dark:text-indigo-400">
-                          <LockIcon size={32}/>
+                          <Lock size={32}/>
                       </div>
                       <h2 className="text-2xl font-bold dark:text-white">員工登入</h2>
-                      <p className="text-gray-500 dark:text-gray-400 text-sm mt-2">請使用您的員工帳號密碼登入系統</p>
+                      <p className="text-slate-500 dark:text-slate-400 text-sm mt-2">請使用您的員工帳號密碼登入系統</p>
                    </div>
                    <form onSubmit={handleEmailLogin} className="space-y-4">
                       <div className="space-y-1">
-                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Email</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Email</label>
                           <input type="email" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})} placeholder="name@gym.com"/>
                       </div>
                       <div className="space-y-1">
-                          <label className="text-xs font-bold text-gray-500 uppercase ml-1">Password</label>
+                          <label className="text-xs font-bold text-slate-500 uppercase ml-1">Password</label>
                           <input type="password" required className="w-full glass-input p-3.5 rounded-xl dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all" value={loginForm.password} onChange={e => setLoginForm({...loginForm, password: e.target.value})} placeholder="••••••••"/>
                       </div>
                       <button type="submit" disabled={isAuthLoading} className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold shadow-lg shadow-indigo-500/30 transition-all transform hover:scale-[1.02] mt-2">
@@ -1042,19 +908,16 @@ export default function App() {
             toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
             handleBatchDelete={async () => {
                 if(!window.confirm(`確定取消選取的 ${selectedBatch.size} 筆預約嗎？`)) return;
-                
                 await Promise.all(Array.from(selectedBatch).map(async (id: string) => {
                     const app = appointments.find(a => a.id === id);
                     if (!app) return;
                     await handleCustomerCancel(app, '管理員批次取消'); 
                 }));
-                
                 addLog('批次取消', `取消 ${selectedBatch.size} 筆預約`);
                 setSelectedBatch(new Set());
                 showNotification(`成功取消 ${selectedBatch.size} 筆`, 'success');
             }}
             onOpenBatchBlock={handleOpenBatchBlock}
-            onToggleComplete={handleToggleComplete} // Added prop
             renderWeeklyCalendar={() => (
                <WeeklyCalendar 
                   currentWeekStart={currentWeekStart}
@@ -1079,52 +942,49 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen text-gray-800 dark:text-gray-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
+    <div className="min-h-screen text-slate-800 dark:text-slate-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
+      {/* Dynamic Background */}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-          <div className="absolute -top-40 -left-40 w-96 h-96 bg-purple-300/30 dark:bg-purple-900/20 rounded-full blur-3xl animate-float"></div>
-          <div className="absolute top-1/2 -right-20 w-80 h-80 bg-blue-300/30 dark:bg-blue-900/20 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
-          <div className="absolute -bottom-20 left-1/3 w-96 h-96 bg-indigo-300/30 dark:bg-indigo-900/20 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-300/20 dark:bg-indigo-900/10 rounded-full blur-3xl animate-float"></div>
+          <div className="absolute top-1/2 -right-20 w-80 h-80 bg-blue-300/20 dark:bg-blue-900/10 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
+          <div className="absolute -bottom-20 left-1/3 w-96 h-96 bg-purple-300/20 dark:bg-purple-900/10 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
       </div>
 
-      <nav className="fixed w-full z-50 glass-panel border-b border-white/20 dark:border-gray-800 shadow-sm backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('booking'); resetBooking(); }}>
-              <div className="w-10 h-10 bg-gradient-to-tr from-violet-600 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
-                 <CalendarIcon size={22} className="stroke-[2.5px]"/>
-              </div>
-              <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-violet-600 to-indigo-600 dark:from-white dark:to-gray-300">
-                GymBooker <span className="font-black">Pro</span>
-              </span>
+      {view !== 'admin' && (
+        <nav className="fixed w-full z-50 glass-panel border-b border-white/20 dark:border-slate-800 shadow-sm backdrop-blur-md">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+            <div className="flex items-center justify-between h-16">
+                <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('booking'); resetBooking(); }}>
+                <div className="w-10 h-10 bg-gradient-to-tr from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                    <CalendarIcon size={22} className="stroke-[2.5px]"/>
+                </div>
+                <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-700 to-slate-900 dark:from-white dark:to-slate-300">
+                    GymBooker
+                </span>
+                </div>
+                <div className="flex items-center gap-4">
+                <button onClick={() => setView('my-bookings')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+                    <UserIcon size={18}/> 我的預約
+                </button>
+                <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-slate-500 dark:text-slate-300">
+                    {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
+                </button>
+                {currentUser ? (
+                    <button onClick={() => setView('admin')} className="hidden md:flex items-center gap-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 px-4 py-2 rounded-xl transition-all font-bold text-sm text-slate-700 dark:text-white">
+                        <Settings size={16}/> 管理後台
+                    </button>
+                ) : (
+                    <button onClick={() => setView('admin')} className="hidden md:flex items-center gap-2 text-sm font-bold text-slate-500 hover:text-indigo-600 transition-colors">
+                        <Lock size={16}/> 員工登入
+                    </button>
+                )}
+                </div>
             </div>
-            <div className="flex items-center gap-4">
-               <button onClick={() => setView('my-bookings')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'}`}>
-                  <UserIcon size={18}/> 我的預約
-               </button>
-
-               {dbStatus !== 'connected' && (
-                   <span className="flex items-center gap-1.5 text-xs font-bold px-3 py-1 bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400 rounded-full animate-pulse">
-                      <AlertTriangle size={12}/> {dbStatus === 'connecting' ? '連線中...' : '離線模式'}
-                   </span>
-               )}
-               <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-gray-500 dark:text-gray-300">
-                  {isDarkMode ? <Sun size={20} /> : <Moon size={20} />}
-               </button>
-               {currentUser ? (
-                  <button onClick={() => setView('admin')} className="hidden md:flex items-center gap-2 bg-gray-100 hover:bg-gray-200 dark:bg-gray-800 dark:hover:bg-gray-700 px-4 py-2 rounded-xl transition-all font-bold text-sm text-gray-700 dark:text-white">
-                      <Settings size={16}/> 管理後台
-                  </button>
-               ) : (
-                  <button onClick={() => setView('admin')} className="hidden md:flex items-center gap-2 text-sm font-bold text-gray-500 hover:text-indigo-600 transition-colors">
-                      <Lock size={16}/> 員工登入
-                  </button>
-               )}
             </div>
-          </div>
-        </div>
-      </nav>
+        </nav>
+      )}
 
-      <main className="pt-24 px-4 pb-12">
+      <main className={`${view === 'admin' ? 'pt-0' : 'pt-24'} px-0 pb-12`}>
         {notification && (
           <div className={`fixed top-20 right-4 z-[60] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-slideUp backdrop-blur-md border 
             ${notification.type === 'success' ? 'bg-green-500/90 text-white border-green-400' : notification.type === 'error' ? 'bg-red-500/90 text-white border-red-400' : 'bg-blue-500/90 text-white border-blue-400'}`}>
@@ -1137,25 +997,81 @@ export default function App() {
 
       </main>
 
-      <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-gray-800 flex justify-around p-3 z-50 backdrop-blur-xl">
-         <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
-            <CalendarIcon size={24}/>
-            <span className="text-[10px] font-bold">預約</span>
-         </button>
-         <button onClick={() => setView('my-bookings')} className={`flex flex-col items-center gap-1 ${view === 'my-bookings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
-            <UserIcon size={24}/>
-            <span className="text-[10px] font-bold">我的</span>
-         </button>
-         <button onClick={() => setView('admin')} className={`flex flex-col items-center gap-1 ${view === 'admin' ? 'text-indigo-600 dark:text-indigo-400' : 'text-gray-400'}`}>
-            <Settings size={24}/>
-            <span className="text-[10px] font-bold">後台</span>
-         </button>
-      </div>
+      {view !== 'admin' && (
+        <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-slate-800 flex justify-around p-3 z-50 backdrop-blur-xl">
+            <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                <CalendarIcon size={24}/>
+                <span className="text-[10px] font-bold">預約</span>
+            </button>
+            <button onClick={() => setView('my-bookings')} className={`flex flex-col items-center gap-1 ${view === 'my-bookings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+                <UserIcon size={24}/>
+                <span className="text-[10px] font-bold">我的</span>
+            </button>
+            <button onClick={() => setView('admin')} className="flex flex-col items-center gap-1 text-slate-400">
+                <Settings size={24}/>
+                <span className="text-[10px] font-bold">後台</span>
+            </button>
+        </div>
+      )}
 
+      {/* Confirmation Modal - Highly Enhanced Glassmorphism */}
+      {confirmModal.isOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+             <div className="glass-panel w-full max-w-sm rounded-3xl p-8 animate-slideUp shadow-2xl border border-white/60 dark:border-slate-700/60 relative overflow-hidden">
+                 {/* Decorative background blob */}
+                 <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
+                 
+                 <div className="relative z-10 flex flex-col items-center text-center">
+                     <div className="mb-6 scale-125">
+                         {confirmModal.icon ? confirmModal.icon : <AlertTriangle size={48} className="text-orange-500 animate-bounce-short"/>}
+                     </div>
+                     
+                     <h3 className="font-bold text-xl mb-2 text-slate-800 dark:text-white">{confirmModal.title || '確認操作'}</h3>
+                     <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed px-2">
+                         {confirmModal.message}
+                     </p>
+                     
+                     {confirmModal.showInput && (
+                         <textarea 
+                            className="w-full glass-input p-4 rounded-2xl mb-6 h-24 dark:text-white resize-none focus:ring-2 focus:ring-indigo-500/50 outline-none" 
+                            placeholder="請輸入原因..." 
+                            value={cancelReason} 
+                            onChange={e => setCancelReason(e.target.value)}
+                         ></textarea>
+                     )}
+                     
+                     <div className="flex flex-col gap-3 w-full">
+                         <button 
+                            onClick={() => { 
+                                if(confirmModal.onConfirm) confirmModal.onConfirm(confirmModal.showInput ? cancelReason : undefined); 
+                                setConfirmModal({...confirmModal, isOpen: false}); 
+                                setCancelReason(''); 
+                            }} 
+                            className={`w-full py-3.5 text-white rounded-xl font-bold shadow-lg text-lg transition-transform transform hover:scale-[1.02] active:scale-95
+                                ${confirmModal.isDanger 
+                                    ? 'bg-gradient-to-r from-red-500 to-red-600 shadow-red-500/30' 
+                                    : 'bg-gradient-to-r from-indigo-600 to-indigo-700 shadow-indigo-500/30'
+                                }`}
+                         >
+                            確認
+                         </button>
+                         <button 
+                            onClick={() => setConfirmModal({...confirmModal, isOpen: false})} 
+                            className="w-full py-3 bg-white/50 dark:bg-slate-800/50 hover:bg-white/80 dark:hover:bg-slate-700/80 rounded-xl font-bold text-slate-500 dark:text-slate-400 transition-colors"
+                         >
+                            取消
+                         </button>
+                     </div>
+                 </div>
+             </div>
+        </div>
+      )}
+      
+      {/* Block/Event Modal (Simplified inclusion here, mainly handled by logic) */}
       {isBlockModalOpen && (
-         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
+         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
             <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
-                <div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center">
+                <div className="bg-white/50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
                         {blockForm.id ? <Settings size={20}/> : <CalendarIcon size={20}/>}
                         {blockForm.id ? '管理行程' : (isBatchMode ? '批次封鎖時段' : '新增行程')}
@@ -1165,7 +1081,7 @@ export default function App() {
                             <button onClick={() => setDeleteConfirm(true)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={20}/></button>
                         )}
                         {!blockForm.id && (
-                           <button onClick={() => setIsBatchMode(!isBatchMode)} className={`p-2 rounded-lg transition-colors ${isBatchMode ? 'text-indigo-600 bg-indigo-50' : 'text-gray-400'}`} title="切換批次模式">
+                           <button onClick={() => setIsBatchMode(!isBatchMode)} className={`p-2 rounded-lg transition-colors ${isBatchMode ? 'text-indigo-600 bg-indigo-50' : 'text-slate-400'}`} title="切換批次模式">
                               <Layers size={20}/>
                            </button>
                         )}
@@ -1175,10 +1091,10 @@ export default function App() {
                 {deleteConfirm ? (
                     <div className="p-8 text-center">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><AlertTriangle size={32}/></div>
-                        <h4 className="font-bold text-lg mb-2 text-gray-800 dark:text-white">確定要刪除嗎？</h4>
-                        <p className="text-gray-500 text-sm mb-6">此動作無法復原</p>
+                        <h4 className="font-bold text-lg mb-2 text-slate-800 dark:text-white">確定要刪除嗎？</h4>
+                        <p className="text-slate-500 text-sm mb-6">此動作無法復原</p>
                         <div className="flex gap-3">
-                            <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
+                            <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-3 bg-slate-200 dark:bg-slate-700 rounded-xl font-bold text-slate-600 dark:text-slate-300">取消</button>
                             <button onClick={handleActualDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">確認刪除</button>
                         </div>
                     </div>
@@ -1186,7 +1102,7 @@ export default function App() {
                     <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
                         <div className="grid grid-cols-2 gap-4">
                            <div>
-                               <label className="text-xs font-bold text-gray-500 uppercase">類型</label>
+                               <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => {
                                    const newType = e.target.value as any;
                                    setBlockForm({...blockForm, type: newType});
@@ -1199,7 +1115,7 @@ export default function App() {
                            </div>
                            {['manager', 'receptionist'].includes(currentUser?.role) && (
                                <div>
-                                   <label className="text-xs font-bold text-gray-500 uppercase">指定教練</label>
+                                   <label className="text-xs font-bold text-slate-500 uppercase">指定教練</label>
                                    <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})}>
                                        {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                    </select>
@@ -1208,20 +1124,20 @@ export default function App() {
                         </div>
 
                         <div>
-                             <label className="text-xs font-bold text-gray-500 uppercase">日期</label>
+                             <label className="text-xs font-bold text-slate-500 uppercase">日期</label>
                              <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} />
                         </div>
 
                         <div className="grid grid-cols-2 gap-4 items-end">
                              <div className="w-full">
-                                 <label className="text-xs font-bold text-gray-500 uppercase">開始時間</label>
+                                 <label className="text-xs font-bold text-slate-500 uppercase">開始時間</label>
                                  <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})}>
                                      {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                                  </select>
                              </div>
                              {isBatchMode && (
                                  <div className="w-full">
-                                     <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1">結束時間 (不含)</label>
+                                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">結束時間 (不含)</label>
                                      <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})}>
                                          {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                                      </select>
@@ -1236,11 +1152,11 @@ export default function App() {
 
                         {['block', 'group'].includes(blockForm.type) ? (
                             <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase">事項 / 課程名稱</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase">事項 / 課程名稱</label>
                                 <div className="flex flex-wrap gap-2 mt-2">
                                     {BLOCK_REASONS.map(r => (
                                         <button type="button" key={r} onClick={() => setBlockForm({...blockForm, reason: r})}
-                                            className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${blockForm.reason === r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                            className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${blockForm.reason === r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>
                                             {r}
                                         </button>
                                     ))}
@@ -1252,11 +1168,11 @@ export default function App() {
                                 {blockForm.type === 'private' ? (
                                     <>
                                         {blockForm.customer?.name ? (
-                                            <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-gray-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
+                                            <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
                                                 <div>
-                                                    <div className="font-bold text-gray-800 dark:text-white flex items-center gap-2">
+                                                    <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
                                                         {blockForm.customer.name}
-                                                        {blockForm.customer.phone && <span className="text-xs text-gray-500 font-normal">({blockForm.customer.phone})</span>}
+                                                        {blockForm.customer.phone && <span className="text-xs text-slate-500 font-normal">({blockForm.customer.phone})</span>}
                                                     </div>
                                                     {(() => {
                                                         const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
@@ -1269,7 +1185,7 @@ export default function App() {
                                                 <button 
                                                     type="button" 
                                                     onClick={() => setBlockForm({...blockForm, customer: null})}
-                                                    className="p-2 bg-gray-100 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                                                    className="p-2 bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
                                                     title="重新選擇"
                                                 >
                                                     <X size={16}/>
@@ -1277,7 +1193,7 @@ export default function App() {
                                             </div>
                                         ) : (
                                             <div className="relative">
-                                                <label className="text-xs text-gray-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
+                                                <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
                                                 <input 
                                                     type="text" 
                                                     className="w-full glass-input rounded-xl p-3 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
@@ -1287,7 +1203,7 @@ export default function App() {
                                                     autoFocus
                                                 />
                                                 {memberSearchTerm && !blockForm.customer && (
-                                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-xl border border-gray-100 dark:border-gray-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
+                                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
                                                         {filteredMembers.length > 0 ? (
                                                             filteredMembers.map(m => (
                                                                 <div 
@@ -1303,17 +1219,17 @@ export default function App() {
                                                                         });
                                                                         setMemberSearchTerm('');
                                                                     }}
-                                                                    className="p-3 hover:bg-indigo-50 dark:hover:bg-gray-700 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-0"
+                                                                    className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0"
                                                                 >
-                                                                    <div className="font-bold text-gray-800 dark:text-white">{m.name}</div>
-                                                                    <div className="flex justify-between text-xs text-gray-500 mt-0.5">
+                                                                    <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
+                                                                    <div className="flex justify-between text-xs text-slate-500 mt-0.5">
                                                                         <span>{m.phone || '無電話'}</span>
                                                                         <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
                                                                     </div>
                                                                 </div>
                                                             ))
                                                         ) : (
-                                                            <div className="p-4 text-center text-xs text-gray-400">找不到相符學員</div>
+                                                            <div className="p-4 text-center text-xs text-slate-400">找不到相符學員</div>
                                                         )}
                                                     </div>
                                                 )}
@@ -1327,7 +1243,7 @@ export default function App() {
                         
                         {!blockForm.id && (
                             <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
+                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
                                 <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})}>
                                     <option value={1}>單次事件</option>
                                     <option value={4}>重複 4 週</option>
@@ -1352,7 +1268,7 @@ export default function App() {
                                 disabled={blockForm.type === 'private' && !blockForm.customer?.name}
                                 className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
                                     ${(blockForm.type === 'private' && !blockForm.customer?.name) 
-                                        ? 'bg-gray-400 cursor-not-allowed' 
+                                        ? 'bg-slate-400 cursor-not-allowed' 
                                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                             >
                                 {blockForm.id ? '儲存變更' : '確認新增'}
@@ -1362,24 +1278,6 @@ export default function App() {
                 )}
             </div>
          </div>
-      )}
-
-      {confirmModal.isOpen && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-             <div className="glass-panel w-full max-sm rounded-3xl p-6 animate-slideUp">
-                 <h3 className="font-bold text-lg mb-4 text-gray-800 dark:text-white">{confirmModal.message}</h3>
-                 {confirmModal.showInput && (
-                     <textarea className="w-full glass-input p-3 rounded-xl mb-4 h-24 dark:text-white" placeholder="請輸入原因..." value={cancelReason} onChange={e => setCancelReason(e.target.value)}></textarea>
-                 )}
-                 <div className="flex gap-3">
-                     <button onClick={() => setConfirmModal({...confirmModal, isOpen: false})} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
-                     <button onClick={() => { if(confirmModal.onConfirm) confirmModal.onConfirm(confirmModal.showInput ? cancelReason : undefined); setConfirmModal({...confirmModal, isOpen: false}); setCancelReason(''); }} 
-                        className={`flex-1 py-2.5 text-white rounded-xl font-bold shadow-lg ${confirmModal.isDanger ? 'bg-red-500 shadow-red-500/30' : 'bg-indigo-600 shadow-indigo-500/30'}`}>
-                        確認
-                     </button>
-                 </div>
-             </div>
-        </div>
       )}
     </div>
   );
