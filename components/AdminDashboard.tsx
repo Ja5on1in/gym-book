@@ -756,7 +756,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">私人課 (Private)</label>
                                        <input 
                                            type="number" 
-                                           className="w-full text-2xl font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-b-2 border-indigo-200 focus:border-indigo-500 outline-none p-2 rounded-t-lg text-center"
+                                           className="w-full text-2xl font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-b-2 border-indigo-200 focus:border-indigo-500 outline-none p-2 rounded-t-lg text-center glass-input"
                                            value={inventoryForm.private}
                                            onChange={e => setInventoryForm({...inventoryForm, private: Number(e.target.value)})}
                                        />
@@ -765,10 +765,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">團體課 (Group)</label>
                                        <input 
                                            type="number" 
-                                           className="w-full text-2xl font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-200 focus:border-orange-500 outline-none p-2 rounded-t-lg text-center"
+                                           className="w-full text-2xl font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-200 focus:border-orange-500 outline-none p-2 rounded-t-lg text-center glass-input"
                                            value={inventoryForm.group}
                                            onChange={e => setInventoryForm({...inventoryForm, group: Number(e.target.value)})}
                                        />
+                                   </div>
+                               </div>
+                               
+                               {/* History Section */}
+                               <div className="pt-2 border-t border-slate-100 dark:border-slate-700 mt-2">
+                                   <h4 className="text-xs font-bold text-slate-400 uppercase mb-2 flex items-center gap-1"><History size={12}/> 變更紀錄</h4>
+                                   <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-2 bg-slate-50/50 dark:bg-slate-800/50 rounded-xl p-2 border border-slate-100 dark:border-slate-700">
+                                       {logs.filter(l => l.details.includes(editingInventory.name) || l.user.includes(editingInventory.name)).length > 0 ? (
+                                           logs.filter(l => l.details.includes(editingInventory.name) || l.user.includes(editingInventory.name))
+                                               .map(log => (
+                                               <div key={log.id} className="text-xs border-b border-slate-100 dark:border-slate-700 last:border-0 pb-1 mb-1">
+                                                   <div className="flex justify-between text-slate-400">
+                                                       <span>{new Date(log.time).toLocaleDateString()}</span>
+                                                       <span>{log.user}</span>
+                                                   </div>
+                                                   <div className="text-slate-600 dark:text-slate-300">{log.details}</div>
+                                               </div>
+                                           ))
+                                       ) : (
+                                           <div className="text-center text-xs text-slate-400 py-4">無相關紀錄</div>
+                                       )}
                                    </div>
                                </div>
 
