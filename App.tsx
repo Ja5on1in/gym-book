@@ -23,6 +23,7 @@ import {
     initAuth, 
     subscribeToCollection, 
     subscribeToAppointmentsInRange,
+    subscribeToLogsInRange, // Import new function
     saveToFirestore, 
     deleteFromFirestore, 
     disableUserInFirestore, 
@@ -191,17 +192,17 @@ export default function App() {
         setDbStatus(isFirebaseAvailable ? 'connected' : 'local');
     }, () => setDbStatus('error'));
 
+    const unsubLogs = subscribeToLogsInRange(rangeStart, rangeEnd, (data) => {
+        const loaded = data as Log[];
+        setLogs(loaded.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()));
+    }, () => {});
+
     const unsubCoaches = subscribeToCollection('coaches', (data) => {
         if (data.length > 0) {
             setCoaches([...data] as Coach[]);
         } else {
              if (!isFirebaseAvailable && coaches.length === 0) setCoaches(INITIAL_COACHES);
         }
-    }, () => {});
-
-    const unsubLogs = subscribeToCollection('logs', (data) => {
-        const loaded = data as Log[];
-        setLogs(loaded.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()));
     }, () => {});
     
     const unsubInventory = subscribeToCollection('user_inventory', (data) => {

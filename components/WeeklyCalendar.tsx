@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime, getStartOfWeek } from '../utils';
@@ -117,9 +117,10 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     
                      {/* Day Off Indicator */}
                      {offCoaches.length > 0 && (
-                        <div className="mt-1 text-[10px] text-red-500 font-semibold leading-tight text-center p-1 bg-red-50 dark:bg-red-900/20 rounded max-w-[100px] mx-auto" title={offCoaches.map(c => c.name).join(', ') + ' 休假'}>
-                            <p className="truncate">{offCoaches.map(c => c.name).join(', ')}</p>
-                            <p>休假</p>
+                        <div className="mt-1 flex flex-col items-center gap-0.5" title={offCoaches.map(c => c.name).join(', ') + ' 休假'}>
+                           {offCoaches.map(c => (
+                             <div key={c.id} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full w-full max-w-[80px] truncate ${c.color}`}>{c.name}</div>
+                           ))}
                         </div>
                     )}
                 </div>

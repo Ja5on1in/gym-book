@@ -212,6 +212,38 @@ export const subscribeToAppointmentsInRange = (
     });
 };
 
+// New: Optimized subscription for logs within a date range
+export const subscribeToLogsInRange = (
+  start: Date,
+  end: Date,
+  callback: (data: any[]) => void,
+  errorCallback: (e: any) => void
+) => {
+    if (!isFirebaseAvailable || !db) {
+        // Fallback for logs is less critical, can be simplified
+        return subscribeToCollection('logs', callback, errorCallback);
+    }
+    
+    // Adjust end date to include the whole day
+    const endOfDay = new Date(end);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const q = query(
+        collection(db, 'logs'),
+        where('time', '>=', start.toISOString()),
+        where('time', '<=', endOfDay.toISOString())
+    );
+
+    return onSnapshot(q, (s: any) => {
+        const docs = s.docs.map((d: any) => d.data());
+        callback(docs);
+    }, (e: any) => {
+        console.warn(`Firestore log range subscription failed`, e);
+        errorCallback(e);
+    });
+};
+
+
 export const saveToFirestore = async (col: string, id: string, data: any) => {
     if (!isFirebaseAvailable || !db) {
         const key = `mock_db_${col}`;

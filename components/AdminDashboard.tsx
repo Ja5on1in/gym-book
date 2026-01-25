@@ -192,24 +192,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (i.lineUserId && i.lineUserId.includes(searchQuery))
   );
 
-  // Re-introduced from old version for detailed schedule editing
-  const handleUpdateDayConfig = (coach: Coach, dayIndex: number, enabled: boolean, start?: string, end?: string) => {
-     const newWorkDays = enabled 
-        ? (coach.workDays.includes(dayIndex) ? coach.workDays : [...coach.workDays, dayIndex].sort())
-        : coach.workDays.filter(d => d !== dayIndex);
-     
-     const currentDaily = coach.dailyWorkHours || {};
-     let newDaily = { ...currentDaily };
-     
-     if (enabled && start && end) {
-         newDaily[dayIndex.toString()] = { start, end };
-     } else if (!enabled) {
-         delete newDaily[dayIndex.toString()];
-     }
-
-     updateCoachWorkDays({ ...coach, workDays: newWorkDays, dailyWorkHours: newDaily });
-  };
-
   const handleModalDayConfig = (dayIndex: number, enabled: boolean, start?: string, end?: string) => {
      const currentDays = editingCoach.workDays || [];
      const newWorkDays = enabled 
@@ -230,7 +212,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const handleOpenCoachModal = (coach?: Coach) => {
     if (coach) {
-        setEditingCoach({ ...coach, offDates: coach.offDates || [] });
+        setEditingCoach({ ...coach, offDates: coach.offDates || [], dailyWorkHours: coach.dailyWorkHours || {} });
         setIsNewCoach(false);
     } else {
         setEditingCoach({
@@ -240,7 +222,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             workStart: '09:00',
             workEnd: '21:00',
             workDays: [0, 1, 2, 3, 4, 5, 6],
-            offDates: []
+            offDates: [],
+            dailyWorkHours: {}
         });
         setNewCoachEmail('');
         setNewCoachPassword('');
@@ -613,6 +596,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                {adminTab === 'analysis' && (
                   <div className="space-y-6 animate-slideUp">
+                    <div className="flex justify-between items-center">
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white">
+                            營運分析: <span className="text-indigo-600">{statsStart ? new Date(statsStart).toLocaleDateString('zh-TW', { year: 'numeric', month: 'long'}) : ''}</span>
+                        </h2>
+                    </div>
+
                     <div className="glass-panel p-4 rounded-3xl flex flex-col lg:flex-row justify-between items-center gap-4 border border-white/60">
                         <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto">
                             <span className="text-sm font-bold text-slate-500 whitespace-nowrap"><Filter size={16} className="inline mr-1"/> 統計區間</span>
@@ -759,48 +748,79 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        <h3 className="font-bold text-2xl mb-8 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-4">
                            <BookOpen className="text-indigo-500"/> 使用操作手冊
                        </h3>
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                           <div className="space-y-6">
-                               <div className="p-6 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-800">
-                                   <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><CheckCircle size={20} className="text-indigo-600"/> 雙重核實扣點流程</h4>
-                                   <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
-                                       <li><strong className="text-indigo-600">學員簽到</strong>：學員在「我的預約」中點擊「立即簽到」。</li>
-                                       <li><strong className="text-indigo-600">教練確認</strong>：課程結束後，教練在行事曆中點擊該課程（橘色閃爍狀態）。</li>
-                                       <li><strong className="text-indigo-600">系統扣點</strong>：點擊「確認核實完課」按鈕，系統將自動扣除學員 1 點庫存。</li>
-                                   </ol>
-                               </div>
-                           </div>
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                            <div className="p-6 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-800">
+                                <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><CheckCircle size={20} className="text-indigo-600"/> 點數核實流程</h4>
+                                <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                    <li><strong className="text-indigo-600">學員簽到</strong>：學員在「我的預約」中點擊「立即簽到」，狀態變為「等待確認」。</li>
+                                    <li><strong className="text-indigo-600">教練確認</strong>：課程結束後，教練在行事曆中點擊該橘色閃爍課程。</li>
+                                    <li><strong className="text-indigo-600">系統扣點</strong>：點擊「確認核實完課」按鈕，系統將自動扣除學員 1 點庫存，課程狀態變為「已完課」。</li>
+                                </ol>
+                            </div>
+                            <div className="p-6 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-800">
+                               <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><CalendarIcon size={20} className="text-blue-500"/> 月曆與班表操作</h4>
+                                <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                  <li>在「員工與班表」頁面，點擊員工卡片上的「編輯」按鈕。</li>
+                                  <li>在彈出視窗中，您可以設定每週的固定上班日與個別的上下班時間。</li>
+                                  <li>若有特定日期需要休假，請在「特定日期休假」區塊新增日期。</li>
+                                  <li>所有班表與休假設定會即時同步至預約行事曆與前台預約畫面。</li>
+                                </ol>
+                            </div>
+                            <div className="p-6 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-2xl border border-emerald-100 dark:border-emerald-800 md:col-span-2">
+                               <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><BarChart3 size={20} className="text-emerald-500"/> 區間報表匯出</h4>
+                                <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                                  <li>在「營運分析」頁面，您可以使用頂部的日期選擇器或快捷按鈕（上月/本月）來設定您想分析的資料區間。</li>
+                                  <li>所有圖表與數據將根據您選擇的區間即時更新。</li>
+                                  <li>點擊「匯出報表」可下載該區間的綜合營運數據 CSV 檔案。</li>
+                                  <li>點擊「匯出取消明細」可下載該區間內所有取消的預約紀錄。</li>
+                                </ol>
+                            </div>
                        </div>
                    </div>
                )}
 
                {isCoachModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}>
-                    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
-                        <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center">
+                    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-3xl rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                        <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center shrink-0">
                             <h3 className="font-bold text-xl dark:text-white">{isNewCoach ? '新增員工資料' : '編輯員工與班表'}</h3>
                             <button onClick={() => setIsCoachModalOpen(false)}><X className="text-slate-500"/></button>
                         </div>
-                        <div className="p-6">
+                        <div className="p-6 overflow-y-auto custom-scrollbar">
                             <form onSubmit={handleSubmitCoach} className="space-y-6">
+                                {/* Basic Info */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-xs font-bold text-slate-500 uppercase">姓名</label>
                                         <input type="text" required value={editingCoach.name || ''} onChange={e => setEditingCoach({...editingCoach, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-bold text-slate-500 uppercase">職位</label>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">職位/稱謂</label>
+                                        <input type="text" value={editingCoach.title || ''} onChange={e => setEditingCoach({...editingCoach, title: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="例如: 教練, 物理治療師"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">角色權限</label>
                                         <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
                                             <option value="coach">教練 (Coach)</option>
                                             <option value="manager">主管 (Manager)</option>
                                             <option value="receptionist">櫃檯 (Receptionist)</option>
                                         </select>
                                     </div>
+                                    <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase">代表色</label>
+                                       <div className="grid grid-cols-4 gap-2 mt-2 p-2 glass-card rounded-xl">
+                                           {COLOR_OPTIONS.map(opt => (
+                                               <button type="button" key={opt.label} onClick={() => setEditingCoach({...editingCoach, color: opt.value})}
+                                                   className={`h-7 rounded-lg border-2 transition-all ${opt.value.split(' ')[0]} ${editingCoach.color === opt.value ? 'border-slate-600 dark:border-white scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`}
+                                                   title={opt.label}/>
+                                           ))}
+                                       </div>
+                                   </div>
                                 </div>
                                 {isNewCoach && (
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Mail size={12}/> Email</label>
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Mail size={12}/> Email (登入用)</label>
                                             <input type="email" required value={newCoachEmail} onChange={e => setNewCoachEmail(e.target.value)} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                                         </div>
                                         <div>
@@ -809,6 +829,57 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         </div>
                                     </div>
                                 )}
+                                
+                                {/* Schedule Settings */}
+                                <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+                                  <h4 className="font-bold dark:text-white mb-4">每週固定班表</h4>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                    {['日','一','二','三','四','五','六'].map((d, i) => {
+                                        const isWorkDay = editingCoach.workDays?.includes(i);
+                                        const hours = editingCoach.dailyWorkHours?.[i.toString()] || { start: editingCoach.workStart, end: editingCoach.workEnd };
+                                        return (
+                                            <div key={i} className={`p-3 rounded-xl border transition-all ${isWorkDay ? 'border-indigo-200 bg-indigo-50/50' : 'opacity-60'}`}>
+                                                <div className="flex items-center justify-between">
+                                                    <span className="font-bold">星期{d}</span>
+                                                    <button type="button" onClick={() => handleModalDayConfig(i, !isWorkDay, hours.start, hours.end)}
+                                                        className={`w-10 h-6 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                                                        <div className={`absolute top-0.5 left-0.5 bg-white w-5 h-5 rounded-full shadow transition-transform ${isWorkDay ? 'translate-x-4' : 'translate-x-0'}`}/>
+                                                    </button>
+                                                </div>
+                                                {isWorkDay && (
+                                                    <div className="mt-2 flex items-center gap-1 text-sm">
+                                                        <select value={hours.start} onChange={e => handleModalDayConfig(i, true, e.target.value, hours.end)} className="glass-input rounded-md p-1 w-full text-center">
+                                                            {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
+                                                        </select>
+                                                        <span>-</span>
+                                                         <select value={hours.end} onChange={e => handleModalDayConfig(i, true, hours.start, e.target.value)} className="glass-input rounded-md p-1 w-full text-center">
+                                                            {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
+                                                        </select>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )
+                                    })}
+                                  </div>
+                                </div>
+
+                                {/* Off Dates */}
+                                <div className="border-t border-slate-200 dark:border-slate-700 pt-6">
+                                   <label className="font-bold dark:text-white mb-2 block">特定日期休假</label>
+                                   <div className="flex gap-2 mb-3">
+                                       <input type="date" className="flex-1 glass-input rounded-xl p-2 text-sm" value={tempOffDate} onChange={e => setTempOffDate(e.target.value)} />
+                                       <button type="button" onClick={handleAddOffDate} className="bg-slate-200 px-4 rounded-xl font-bold text-sm hover:bg-slate-300">新增</button>
+                                   </div>
+                                   <div className="flex flex-wrap gap-2">
+                                       {editingCoach.offDates?.map(date => (
+                                           <div key={date} className="flex items-center gap-1 bg-red-50 text-red-500 px-2 py-1 rounded-lg text-xs font-bold">
+                                               {date}
+                                               <button type="button" onClick={() => handleRemoveOffDate(date)} className="hover:text-red-700"><X size={12}/></button>
+                                           </div>
+                                       ))}
+                                   </div>
+                                </div>
+
                                 <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4 hover:bg-indigo-700 transition-colors">儲存變更</button>
                             </form>
                         </div>
@@ -823,39 +894,44 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><CreditCard size={20} className="text-indigo-500"/> 修改庫存</h3>
                                <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-slate-500"/></button>
                            </div>
-                           <div className="p-6 space-y-4">
-                               <div className="glass-card p-3 rounded-xl bg-white/50 dark:bg-slate-800/50 mb-2">
+                           <div className="p-6">
+                               <div className="glass-card p-3 rounded-xl bg-white/50 dark:bg-slate-800/50 mb-4">
                                    <div className="text-xs text-slate-400 uppercase font-bold">學員資料</div>
                                    <div className="font-bold text-lg dark:text-white">{inventoryForm.name}</div>
                                    <div className="text-sm text-slate-500">{inventoryForm.phone}</div>
                                </div>
 
-                               <div className="grid grid-cols-2 gap-4">
+                               <div className="grid grid-cols-2 gap-4 mb-4">
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">私人課</label>
-                                       <input 
-                                           type="number" 
-                                           className="w-full text-2xl font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-b-2 border-indigo-200 focus:border-indigo-500 outline-none p-2 rounded-t-lg text-center glass-input"
-                                           value={inventoryForm.private}
-                                           onChange={e => setInventoryForm({...inventoryForm, private: Number(e.target.value)})}
-                                       />
+                                       <input type="number" className="w-full text-2xl font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-b-2 border-indigo-200 focus:border-indigo-500 outline-none p-2 rounded-t-lg text-center glass-input" value={inventoryForm.private} onChange={e => setInventoryForm({...inventoryForm, private: Number(e.target.value)})}/>
                                    </div>
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">團體課</label>
-                                       <input 
-                                           type="number" 
-                                           className="w-full text-2xl font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-200 focus:border-orange-500 outline-none p-2 rounded-t-lg text-center glass-input"
-                                           value={inventoryForm.group}
-                                           onChange={e => setInventoryForm({...inventoryForm, group: Number(e.target.value)})}
-                                       />
+                                       <input type="number" className="w-full text-2xl font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-200 focus:border-orange-500 outline-none p-2 rounded-t-lg text-center glass-input" value={inventoryForm.group} onChange={e => setInventoryForm({...inventoryForm, group: Number(e.target.value)})}/>
+                                   </div>
+                               </div>
+
+                               <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                                   <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">點數變動紀錄</h4>
+                                   <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
+                                       {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)))
+                                           .slice(0, 10)
+                                           .map(log => (
+                                               <div key={log.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
+                                                   <p className="font-medium text-slate-600 dark:text-slate-300">{log.details}</p>
+                                                   <p className="text-slate-400">{new Date(log.time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>
+                                               </div>
+                                           ))
+                                       }
+                                        {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id))).length === 0 && (
+                                            <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>
+                                        )}
                                    </div>
                                </div>
                                
-                               <div className="pt-2">
-                                   <button 
-                                       onClick={handleSaveInventoryChanges}
-                                       className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-                                   >
+                               <div className="pt-4">
+                                   <button onClick={handleSaveInventoryChanges} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
                                        <Save size={18}/> 儲存修改
                                    </button>
                                </div>
