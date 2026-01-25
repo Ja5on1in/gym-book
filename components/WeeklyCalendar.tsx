@@ -92,7 +92,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     {offCoaches.length > 0 && (
                         <div className="mt-1 flex flex-wrap justify-center gap-0.5">
                             {offCoaches.map(c => (
-                                <span key={c.id} title={`${c.name} 休假`} className="text-[9px] px-1 rounded bg-slate-100 dark:bg-slate-700 text-slate-400 border border-slate-200 dark:border-slate-600 whitespace-nowrap overflow-hidden max-w-[45px] truncate">
+                                <span key={c.id} title={`${c.name} 休假`} className={`text-[9px] px-1 rounded border whitespace-nowrap overflow-hidden max-w-[45px] truncate ${c.color} border-current opacity-80`}>
                                     {c.name.slice(0, 2)}
                                 </span>
                             ))}
@@ -142,6 +142,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                       ${isOff ? 'bg-stripes-gray opacity-40' : 'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
                     `}
                     onClick={() => {
+                        // UNLOCKED: Allow clicks unless specifically OFF (isOff logic already handles weekends based on coach schedule)
                         if (!isOff && !isLoading) onSlotClick(dateKey, time);
                     }}
                   >

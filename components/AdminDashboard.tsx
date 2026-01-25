@@ -1,8 +1,9 @@
 
-import React, { useRef, useState } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle } from 'lucide-react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
+import { formatDateKey, getDaysInMonth, getFirstDayOfMonth } from '../utils';
 import WorkoutPlans from './WorkoutPlans';
 
 interface AdminDashboardProps {
@@ -15,8 +16,8 @@ interface AdminDashboardProps {
   selectedBatch: Set<string>;
   toggleBatchSelect: (id: string) => void;
   handleBatchDelete: () => void;
-  analysis: any;
-  handleExportStatsCsv: () => void;
+  analysis: any; // Legacy prop, we will recalculate locally for filtering
+  handleExportStatsCsv: () => void; // We will override this
   handleExportJson: () => void;
   triggerImport: () => void;
   handleFileImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
@@ -32,14 +33,14 @@ interface AdminDashboardProps {
   workoutPlans: WorkoutPlan[];
   onSavePlan: (plan: WorkoutPlan) => void;
   onDeletePlan: (id: string) => void;
-  onSaveWorkoutPlan?: any; // Legacy prop support
-  onDeleteWorkoutPlan?: any; // Legacy prop support
+  onSaveWorkoutPlan?: any;
+  onDeleteWorkoutPlan?: any;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser, onLogout, adminTab, setAdminTab, renderWeeklyCalendar,
   appointments, selectedBatch, toggleBatchSelect, handleBatchDelete,
-  analysis, handleExportStatsCsv, handleExportJson, triggerImport, handleFileImport,
+  analysis: globalAnalysis, handleExportStatsCsv: globalExportCsv, handleExportJson, triggerImport, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
   inventories, onSaveInventory, onDeleteInventory,
   workoutPlans, onSavePlan, onDeletePlan
@@ -59,11 +60,113 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Off Date Input State
   const [tempOffDate, setTempOffDate] = useState('');
 
+  // Schedule View State
+  const [scheduleDate, setScheduleDate] = useState(new Date());
+
   // Inventory Management State
   const [searchQuery, setSearchQuery] = useState('');
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingInventory, setEditingInventory] = useState<UserInventory | null>(null);
   const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string}>({ private: 0, group: 0, name: '', phone: '' });
+
+  // Analysis Filter State
+  const [statsStart, setStatsStart] = useState('');
+  const [statsEnd, setStatsEnd] = useState('');
+
+  // Initialize Dates
+  useEffect(() => {
+    const now = new Date();
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    setStatsStart(formatDateKey(start.getFullYear(), start.getMonth(), start.getDate()));
+    setStatsEnd(formatDateKey(end.getFullYear(), end.getMonth(), end.getDate()));
+  }, []);
+
+  // --- Filtered Analysis Logic ---
+  const filteredAnalysisData = useMemo(() => {
+      if (!statsStart || !statsEnd) return globalAnalysis;
+      
+      const start = new Date(statsStart).getTime();
+      const end = new Date(statsEnd).getTime() + 86400000; // Include end date
+
+      const rangeApps = appointments.filter(a => {
+          const appTime = new Date(a.date).getTime();
+          return appTime >= start && appTime < end;
+      });
+
+      const totalActive = rangeApps.filter(a => a.status === 'confirmed' || a.status === 'checked_in').length;
+      const totalCancelled = rangeApps.filter(a => a.status === 'cancelled').length;
+      const totalCompleted = rangeApps.filter(a => a.status === 'completed').length;
+
+      const slotCounts: Record<string, number> = {};
+      rangeApps.filter(a => ['confirmed','completed','checked_in'].includes(a.status)).forEach(a => {
+          slotCounts[a.time] = (slotCounts[a.time] || 0) + 1;
+      });
+      const topTimeSlots = Object.entries(slotCounts).sort(([,a], [,b]) => b - a).slice(0, 3).map(([time, count]) => ({ time, count }));
+
+      const coachStats = coaches.map(c => {
+          const cApps = rangeApps.filter(a => a.coachId === c.id && a.status !== 'cancelled');
+          const personal = cApps.filter(a => a.type === 'private' || (a.type as string) === 'client').length;
+          const group = cApps.filter(a => a.type === 'group').length;
+          return { id: c.id, name: c.name, personal, group, total: personal + group };
+      });
+
+      return { totalActive, totalCancelled, totalCompleted, topTimeSlots, coachStats, rangeApps };
+  }, [appointments, statsStart, statsEnd, coaches, globalAnalysis]);
+
+  const setAnalysisRange = (mode: 'prev' | 'current' | 'next') => {
+      const currentStart = new Date(statsStart);
+      let newStart = new Date(currentStart);
+      
+      if (mode === 'prev') newStart.setMonth(newStart.getMonth() - 1);
+      if (mode === 'next') newStart.setMonth(newStart.getMonth() + 1);
+      if (mode === 'current') newStart = new Date(new Date().getFullYear(), new Date().getMonth(), 1);
+
+      // Always set to 1st of month
+      newStart.setDate(1);
+      
+      const newEnd = new Date(newStart.getFullYear(), newStart.getMonth() + 1, 0);
+      
+      setStatsStart(formatDateKey(newStart.getFullYear(), newStart.getMonth(), newStart.getDate()));
+      setStatsEnd(formatDateKey(newEnd.getFullYear(), newEnd.getMonth(), newEnd.getDate()));
+  };
+
+  const handleCustomExportStats = () => {
+      const stats = filteredAnalysisData;
+      const rows = [
+          ["統計區間", `${statsStart} ~ ${statsEnd}`],
+          ["統計項目", "數值"], 
+          ["總預約數", stats.totalActive + stats.totalCancelled + stats.totalCompleted], 
+          ["有效預約(含完課)", stats.totalActive + stats.totalCompleted], 
+          ["已取消", stats.totalCancelled], 
+          [], 
+          ["教練", "個人課", "團課/其他", "總計"], 
+          ...stats.coachStats.map((c: any) => [c.name, c.personal, c.group, c.total])
+      ];
+      const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `stats_${statsStart}_to_${statsEnd}.csv`;
+      link.click();
+  };
+
+  const handleCustomExportCancel = () => {
+      const cancelledApps = filteredAnalysisData.rangeApps.filter((a: Appointment) => 
+        a.status === 'cancelled' && 
+        (currentUser.role === 'manager' || a.coachId === currentUser.id)
+      );
+      const header = "預約日期,時間,教練,客戶名稱,取消原因";
+      const rows = cancelledApps.map((a: Appointment) => 
+        `${a.date},${a.time},${a.coachName},${a.customer?.name || ''},${a.cancelReason || ''}`
+      );
+      const csvContent = "\uFEFF" + [header, ...rows].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `cancellations_${statsStart}_to_${statsEnd}.csv`;
+      link.click();
+  };
 
   const filteredApps = appointments.filter(a => currentUser.role==='manager' || a.coachId === currentUser.id);
 
@@ -73,15 +176,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (i.lineUserId && i.lineUserId.includes(searchQuery))
   );
 
-  // Calculate completed appointments locally
-  const totalCompleted = appointments.filter(a => a.status === 'completed').length;
-
-  const handleUpdateDayConfig = (coach: Coach, dayIndex: number, enabled: boolean, start?: string, end?: string) => {
+  // Helper for schedule editing in modal
+  const handleModalDayConfig = (dayIndex: number, enabled: boolean, start?: string, end?: string) => {
+     const currentDays = editingCoach.workDays || [];
      const newWorkDays = enabled 
-        ? (coach.workDays.includes(dayIndex) ? coach.workDays : [...coach.workDays, dayIndex].sort())
-        : coach.workDays.filter(d => d !== dayIndex);
+        ? (currentDays.includes(dayIndex) ? currentDays : [...currentDays, dayIndex].sort())
+        : currentDays.filter(d => d !== dayIndex);
      
-     const currentDaily = coach.dailyWorkHours || {};
+     const currentDaily = editingCoach.dailyWorkHours || {};
      let newDaily = { ...currentDaily };
      
      if (enabled && start && end) {
@@ -90,25 +192,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
          delete newDaily[dayIndex.toString()];
      }
 
-     updateCoachWorkDays({ ...coach, workDays: newWorkDays, dailyWorkHours: newDaily });
-  };
-
-  const handleExportCancelCsv = () => {
-    const cancelledApps = appointments.filter(a => 
-      a.status === 'cancelled' && 
-      (currentUser.role === 'manager' || a.coachId === currentUser.id)
-    );
-    const header = "預約日期,時間,教練,客戶名稱,取消原因";
-    const rows = cancelledApps.map(a => 
-      `${a.date},${a.time},${a.coachName},${a.customer?.name || ''},${a.cancelReason || ''}`
-    );
-    const csvContent = "\uFEFF" + [header, ...rows].join("\n");
-    
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `cancellations_${new Date().toISOString().slice(0,10)}.csv`;
-    link.click();
+     setEditingCoach({ ...editingCoach, workDays: newWorkDays, dailyWorkHours: newDaily });
   };
 
   const handleOpenCoachModal = (coach?: Coach) => {
@@ -178,6 +262,76 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setIsInventoryModalOpen(false);
   };
 
+  // Monthly Schedule Renderer
+  const renderMonthlySchedule = () => {
+      const year = scheduleDate.getFullYear();
+      const month = scheduleDate.getMonth();
+      const daysInMonth = getDaysInMonth(year, month);
+      const firstDay = getFirstDayOfMonth(year, month);
+      const days = [];
+
+      for (let i = 0; i < firstDay; i++) {
+        days.push(<div key={`empty-${i}`} className="h-24 bg-slate-50/30 dark:bg-slate-800/30 border border-slate-100 dark:border-slate-700/50"></div>);
+      }
+
+      for (let day = 1; day <= daysInMonth; day++) {
+          const dateKey = formatDateKey(year, month, day);
+          const dayOfWeek = new Date(year, month, day).getDay();
+          
+          // Find coaches who are OFF today
+          const offCoaches = coaches.filter(c => {
+              // Specific Off Date
+              if (c.offDates?.includes(dateKey)) return true;
+              // Weekly Schedule Off
+              if (c.workDays && !c.workDays.includes(dayOfWeek)) return true;
+              return false;
+          });
+
+          const isToday = new Date().toDateString() === new Date(year, month, day).toDateString();
+
+          days.push(
+              <div key={dateKey} className={`h-24 p-1 border border-slate-100 dark:border-slate-700/50 bg-white dark:bg-slate-800 overflow-y-auto custom-scrollbar relative ${isToday ? 'ring-2 ring-indigo-500 ring-inset' : ''}`}>
+                  <div className={`text-xs font-bold mb-1 ${isToday ? 'text-indigo-600' : 'text-slate-400'}`}>
+                      {day} <span className="text-[10px] font-normal">{['日','一','二','三','四','五','六'][dayOfWeek]}</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                      {offCoaches.map(c => (
+                          <div key={c.id} title={`${c.name} 休假`} className={`text-[10px] px-1.5 py-0.5 rounded-md border truncate max-w-full ${c.color}`}>
+                              {c.name}
+                          </div>
+                      ))}
+                  </div>
+              </div>
+          );
+      }
+
+      return (
+          <div className="glass-panel p-4 rounded-3xl border border-white/60">
+              <div className="flex justify-between items-center mb-4">
+                  <h4 className="font-bold dark:text-white flex items-center gap-2">
+                      <CalendarIcon size={18} className="text-indigo-500"/> 
+                      {year}年 {month + 1}月 排班總覽
+                  </h4>
+                  <div className="flex bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
+                      <button onClick={() => setScheduleDate(new Date(year, month - 1, 1))} className="p-1 hover:bg-white dark:hover:bg-slate-600 rounded-md transition-all"><ChevronLeft size={16}/></button>
+                      <button onClick={() => setScheduleDate(new Date())} className="px-3 text-xs font-bold hover:bg-white dark:hover:bg-slate-600 rounded-md transition-all">本月</button>
+                      <button onClick={() => setScheduleDate(new Date(year, month + 1, 1))} className="p-1 hover:bg-white dark:hover:bg-slate-600 rounded-md transition-all"><ChevronRight size={16}/></button>
+                  </div>
+              </div>
+              <div className="grid grid-cols-7 text-center mb-2">
+                  {['日','一','二','三','四','五','六'].map(d => <div key={d} className="text-xs font-bold text-slate-400">{d}</div>)}
+              </div>
+              <div className="grid grid-cols-7 bg-slate-200 dark:bg-slate-700 gap-px border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden">
+                  {days}
+              </div>
+              <div className="mt-2 text-[10px] text-slate-400 text-right flex items-center justify-end gap-2">
+                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-slate-200"></div> 上班</span>
+                  <span className="flex items-center gap-1"><div className="w-2 h-2 rounded-full bg-indigo-100 border border-indigo-200"></div> 休假 (標示顏色)</span>
+              </div>
+          </div>
+      );
+  };
+
   // Navigation Config
   const NAV_ITEMS = [
       { category: '營運核心', items: [
@@ -189,10 +343,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           { id: 'workout', icon: Dumbbell, label: '訓練課表' },
       ]},
       { category: '系統設定', items: [
-          { id: 'staff', icon: Users, label: '員工管理', role: 'manager' },
+          { id: 'staff_schedule', icon: Users, label: '員工與班表', role: 'manager' }, // Combined Tab
           { id: 'analysis', icon: BarChart3, label: '營運分析' },
           { id: 'logs', icon: History, label: '操作紀錄' },
-          { id: 'settings', icon: SettingsIcon, label: '班表設定' },
           { id: 'help', icon: BookOpen, label: '使用手冊' },
       ]}
   ];
@@ -405,9 +558,25 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                {adminTab === 'analysis' && (
                   <div className="space-y-6 animate-slideUp">
+                    <div className="glass-panel p-4 rounded-3xl flex flex-col lg:flex-row justify-between items-center gap-4 border border-white/60">
+                        <div className="flex items-center gap-3 w-full lg:w-auto overflow-x-auto">
+                            <span className="text-sm font-bold text-slate-500 whitespace-nowrap"><Filter size={16} className="inline mr-1"/> 統計區間</span>
+                            <div className="flex bg-slate-100 dark:bg-slate-700 rounded-lg p-1">
+                                <button onClick={() => setAnalysisRange('prev')} className="px-3 py-1 text-xs font-bold hover:bg-white dark:hover:bg-slate-600 rounded-md transition-all">上月</button>
+                                <button onClick={() => setAnalysisRange('current')} className="px-3 py-1 text-xs font-bold hover:bg-white dark:hover:bg-slate-600 rounded-md transition-all">本月</button>
+                                <button onClick={() => setAnalysisRange('next')} className="px-3 py-1 text-xs font-bold hover:bg-white dark:hover:bg-slate-600 rounded-md transition-all">下月</button>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2 w-full lg:w-auto">
+                            <input type="date" value={statsStart} onChange={e => setStatsStart(e.target.value)} className="glass-input px-3 py-2 rounded-xl text-sm w-full lg:w-auto"/>
+                            <span className="text-slate-400">~</span>
+                            <input type="date" value={statsEnd} onChange={e => setStatsEnd(e.target.value)} className="glass-input px-3 py-2 rounded-xl text-sm w-full lg:w-auto"/>
+                        </div>
+                    </div>
+
                     <div className="flex justify-end gap-3">
-                       <button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
-                       <button onClick={handleExportStatsCsv} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出報表</button>
+                       <button onClick={handleCustomExportCancel} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細 (選定區間)</button>
+                       <button onClick={handleCustomExportStats} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出報表 (選定區間)</button>
                     </div>
                     
                     {/* 3-Column Layout for Stats */}
@@ -418,7 +587,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           <div className="absolute top-0 right-0 p-4 opacity-10"><Clock size={100} className="text-orange-500"/></div>
                           <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 Top 3</h4>
                           <div className="space-y-3 relative z-10 flex-1">
-                            {analysis.topTimeSlots.length > 0 ? analysis.topTimeSlots.map((s: any, i: number) => (
+                            {filteredAnalysisData.topTimeSlots.length > 0 ? filteredAnalysisData.topTimeSlots.map((s: any, i: number) => (
                                 <div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-slate-800/50 rounded-xl border border-white/40 dark:border-slate-700">
                                     <span className={`font-bold ${i===0?'text-yellow-500':i===1?'text-slate-400':'text-orange-600'}`}>#{i+1} {s.time}</span>
                                     <span className="text-sm font-medium dark:text-slate-200">{s.count} 堂</span>
@@ -430,26 +599,26 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        {/* Col 2: Status Overview */}
                        <div className="glass-panel p-6 rounded-3xl border border-white/60 flex flex-col relative overflow-hidden">
                           <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-blue-500"/></div>
-                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> 預約狀態總覽</h4>
+                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> 區間預約狀態</h4>
                           <div className="flex-1 flex flex-col justify-center gap-4 relative z-10">
                               <div className="flex justify-between items-center p-2 border-b border-slate-100 dark:border-slate-700">
                                   <span className="text-xs font-bold text-slate-400 uppercase">有效預約 (Active)</span>
-                                  <span className="text-2xl font-bold text-emerald-500">{analysis.totalActive}</span>
+                                  <span className="text-2xl font-bold text-emerald-500">{filteredAnalysisData.totalActive}</span>
                               </div>
                               <div className="flex justify-between items-center p-2 border-b border-slate-100 dark:border-slate-700">
                                   <span className="text-xs font-bold text-slate-400 uppercase">已完成 (Completed)</span>
-                                  <span className="text-2xl font-bold text-blue-500">{totalCompleted}</span>
+                                  <span className="text-2xl font-bold text-blue-500">{filteredAnalysisData.totalCompleted}</span>
                               </div>
                               <div className="flex justify-between items-center p-2">
                                   <span className="text-xs font-bold text-slate-400 uppercase">已取消 (Cancelled)</span>
-                                  <span className="text-2xl font-bold text-red-500">{analysis.totalCancelled}</span>
+                                  <span className="text-2xl font-bold text-red-500">{filteredAnalysisData.totalCancelled}</span>
                               </div>
                           </div>
                        </div>
 
                        {/* Col 3: Coach Stats */}
                        <div className="glass-panel p-6 rounded-3xl border border-white/60 flex flex-col h-[300px]">
-                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 本月課程統計</h4>
+                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 區間課程統計</h4>
                           <div className="overflow-y-auto custom-scrollbar pr-2 flex-1">
                               <div className="grid grid-cols-4 gap-2 text-[10px] font-bold text-slate-400 mb-3 uppercase tracking-wider sticky top-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm py-1 z-10">
                                   <span>教練</span>
@@ -458,8 +627,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <span className="text-right">總計</span>
                               </div>
                               {(currentUser.role === 'manager' 
-                                  ? analysis.coachStats 
-                                  : analysis.coachStats.filter((s: any) => s.id === currentUser.id)
+                                  ? filteredAnalysisData.coachStats 
+                                  : filteredAnalysisData.coachStats.filter((s: any) => s.id === currentUser.id)
                                ).map((c: any) => (
                                 <div key={c.id} className="grid grid-cols-4 gap-2 text-sm py-2 border-b border-slate-100 dark:border-slate-700 last:border-0 items-center">
                                     <span className="truncate font-medium dark:text-slate-200">{c.name}</span>
@@ -474,111 +643,47 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                )}
 
-               {adminTab === 'staff' && currentUser.role === 'manager' && (
-                  <div className="glass-panel rounded-3xl shadow-lg p-6 border border-white/60">
-                    <div className="flex justify-between items-center mb-6">
-                        <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Users className="text-indigo-500"/> 員工管理</h3>
-                        <button onClick={() => handleOpenCoachModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
-                            <Plus size={16}/> 新增教練
-                        </button>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        {coaches.map(coach => (
-                            <div key={coach.id} className="glass-card p-4 rounded-2xl relative group hover:shadow-lg transition-all border border-slate-100 dark:border-slate-700">
-                                <div className={`absolute top-0 left-0 w-2 h-full rounded-l-2xl ${coach.color.split(' ')[0]}`}></div>
-                                <div className="pl-4 flex justify-between items-start">
-                                    <div>
-                                        <h4 className="font-bold text-lg dark:text-white mb-1">{coach.name}</h4>
-                                        <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mb-1">
-                                            <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 uppercase">{coach.role}</span>
-                                            <span>{coach.workStart} - {coach.workEnd}</span>
+               {adminTab === 'staff_schedule' && currentUser.role === 'manager' && (
+                  <div className="space-y-6">
+                      {/* Section 1: Staff Management */}
+                      <div className="glass-panel rounded-3xl shadow-lg p-6 border border-white/60">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Users className="text-indigo-500"/> 員工管理</h3>
+                            <button onClick={() => handleOpenCoachModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
+                                <Plus size={16}/> 新增教練
+                            </button>
+                        </div>
+                        
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {coaches.map(coach => (
+                                <div key={coach.id} className="glass-card p-4 rounded-2xl relative group hover:shadow-lg transition-all border border-slate-100 dark:border-slate-700">
+                                    <div className={`absolute top-0 left-0 w-2 h-full rounded-l-2xl ${coach.color.split(' ')[0]}`}></div>
+                                    <div className="pl-4 flex justify-between items-start">
+                                        <div>
+                                            <h4 className="font-bold text-lg dark:text-white mb-1">{coach.name}</h4>
+                                            <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-2 mb-1">
+                                                <span className="px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600 uppercase">{coach.role}</span>
+                                                <span>{coach.workStart} - {coach.workEnd}</span>
+                                            </div>
+                                            {coach.offDates && coach.offDates.length > 0 && (
+                                               <div className="flex items-center gap-1 text-[10px] text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded w-fit">
+                                                  <CalendarX size={10}/>
+                                                  {coach.offDates.length} 個特定休假日
+                                               </div>
+                                            )}
                                         </div>
-                                        {coach.offDates && coach.offDates.length > 0 && (
-                                           <div className="flex items-center gap-1 text-[10px] text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded w-fit">
-                                              <CalendarX size={10}/>
-                                              {coach.offDates.length} 個特定休假日
-                                           </div>
-                                        )}
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button onClick={() => handleOpenCoachModal(coach)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
-                                        <button onClick={() => onDeleteCoach(coach.id, coach.name)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                        <div className="flex gap-2">
+                                            <button onClick={() => handleOpenCoachModal(coach)} className="p-2 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button>
+                                            <button onClick={() => onDeleteCoach(coach.id, coach.name)} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button>
+                                        </div>
                                     </div>
                                 </div>
-                            </div>
-                        ))}
-                    </div>
-                  </div>
-               )}
+                            ))}
+                        </div>
+                      </div>
 
-               {adminTab === 'settings' && (
-                  <div className="space-y-6">
-                     {currentUser.role === 'manager' && (
-                       <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 rounded-3xl shadow-lg text-white flex justify-between items-center">
-                          <span className="font-bold flex items-center gap-3 text-lg"><Database size={24}/> 資料庫管理</span>
-                          <div className="flex gap-3">
-                            {/* Hidden as requested */}
-                            {/* <button onClick={handleExportJson} className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-xl text-sm border border-white/30 transition-all">匯出備份</button> */}
-                            <button onClick={() => fileInputRef.current?.click()} className="bg-white text-indigo-600 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 transition-all">匯入資料</button>
-                            <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden"/>
-                          </div>
-                       </div>
-                     )}
-                     {coaches.map(c => {
-                       if (currentUser.role === 'coach' && currentUser.id !== c.id) return null;
-                       return (
-                       <div key={c.id} className="glass-panel p-6 rounded-3xl shadow-sm border border-white/60">
-                          <div className="font-bold mb-6 dark:text-white flex items-center gap-3 text-xl border-b border-slate-100 dark:border-slate-700 pb-4">
-                             <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600"><Clock size={20}/></div>
-                             {c.name} 班表設定
-                          </div>
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                             {['日','一','二','三','四','五','六'].map((d, i) => {
-                               const isWorkDay = c.workDays?.includes(i);
-                               const hours = c.dailyWorkHours?.[i.toString()] || { start: c.workStart, end: c.workEnd };
-                               return (
-                                 <div key={i} className={`p-4 rounded-2xl border transition-all duration-300 ${isWorkDay ? 'border-indigo-200 bg-indigo-50/50 dark:bg-indigo-900/10 dark:border-indigo-800' : 'border-slate-100 bg-slate-50/50 dark:bg-slate-800/50 dark:border-slate-700 opacity-60'}`}>
-                                   <div className="flex items-center justify-between">
-                                     <div className="flex items-center gap-4">
-                                        <button 
-                                          onClick={() => handleUpdateDayConfig(c, i, !isWorkDay, hours.start, hours.end)}
-                                          className={`w-12 h-7 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}
-                                        >
-                                          <div className={`absolute top-1 left-1 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-300 ${isWorkDay ? 'translate-x-5' : 'translate-x-0'}`}></div>
-                                        </button>
-                                        <span className={`font-bold ${isWorkDay ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400'}`}>星期{d}</span>
-                                     </div>
-                                     {!isWorkDay && <span className="text-xs font-medium text-slate-400 bg-white dark:bg-slate-700 px-2 py-1 rounded">休假</span>}
-                                   </div>
-                                   
-                                   {isWorkDay && (
-                                     <div className="mt-4 flex items-center gap-2 bg-white/70 dark:bg-slate-700/50 p-2 rounded-xl border border-slate-100 dark:border-slate-600 shadow-sm">
-                                       <Clock size={14} className="text-slate-400 ml-1"/>
-                                       <select 
-                                         value={hours.start} 
-                                         onChange={(e) => handleUpdateDayConfig(c, i, true, e.target.value, hours.end)}
-                                         className="flex-1 bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none cursor-pointer text-center"
-                                       >
-                                         {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                                       </select>
-                                       <ChevronRight size={14} className="text-slate-300"/>
-                                       <select 
-                                         value={hours.end} 
-                                         onChange={(e) => handleUpdateDayConfig(c, i, true, hours.start, e.target.value)}
-                                         className="flex-1 bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none cursor-pointer text-center"
-                                       >
-                                         {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                                       </select>
-                                     </div>
-                                   )}
-                                 </div>
-                               );
-                             })}
-                          </div>
-                       </div>
-                       );
-                     })}
+                      {/* Section 2: Monthly Schedule View */}
+                      {renderMonthlySchedule()}
                   </div>
                )}
                
@@ -636,11 +741,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <div className="p-6 bg-emerald-50/50 dark:bg-emerald-900/10 rounded-2xl border border-emerald-100 dark:border-emerald-800">
                                    <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><FileSpreadsheet size={20} className="text-emerald-600"/> 報表輸出與分析</h4>
                                    <p className="text-sm text-slate-600 dark:text-slate-300 mb-3 leading-relaxed">
-                                       在「營運分析」分頁中，您可以匯出兩種格式的報表：
+                                       在「營運分析」分頁中，您可以選擇區間並匯出：
                                    </p>
                                    <ul className="space-y-2 text-sm text-slate-600 dark:text-slate-300">
-                                       <li className="flex items-center gap-2"><FileSpreadsheet size={14} className="text-emerald-500"/> <strong>營運報表 (CSV)</strong>：包含教練課時統計、熱門時段數據。</li>
-                                       <li className="flex items-center gap-2"><FileWarning size={14} className="text-red-500"/> <strong>取消明細 (CSV)</strong>：匯出所有被取消的課程及其原因。</li>
+                                       <li className="flex items-center gap-2"><FileSpreadsheet size={14} className="text-emerald-500"/> <strong>營運報表 (CSV)</strong>：教練課時、熱門時段數據。</li>
+                                       <li className="flex items-center gap-2"><FileWarning size={14} className="text-red-500"/> <strong>取消明細 (CSV)</strong>：被取消的課程及其原因。</li>
                                    </ul>
                                </div>
 
@@ -653,7 +758,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                        </div>
                                        <div>
                                            <div className="text-xs font-bold text-slate-500 uppercase mb-1">如何排休？</div>
-                                           <p className="text-sm text-slate-600 dark:text-slate-400">至「班表設定」調整每週固定休假，或在「員工管理」編輯特定日期休假。</p>
+                                           <p className="text-sm text-slate-600 dark:text-slate-400">至「員工與班表」的教練編輯彈窗中，可設定固定公休或特定日期休假。</p>
                                        </div>
                                    </div>
                                </div>
@@ -664,45 +769,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                {/* Global Glassmorphism Modals */}
                
-               {/* Coach Modal */}
+               {/* Coach Modal (Enhanced with Schedule Editing) */}
                {isCoachModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}>
-                    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+                    <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
                         <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center">
-                            <h3 className="font-bold text-xl dark:text-white">{isNewCoach ? '新增員工資料' : '編輯員工資料'}</h3>
+                            <h3 className="font-bold text-xl dark:text-white">{isNewCoach ? '新增員工資料' : '編輯員工與班表'}</h3>
                             <button onClick={() => setIsCoachModalOpen(false)}><X className="text-slate-500"/></button>
                         </div>
                         <div className="p-6">
-                            <form onSubmit={handleSubmitCoach} className="space-y-4">
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase">姓名</label>
-                                    <input type="text" required value={editingCoach.name || ''} onChange={e => setEditingCoach({...editingCoach, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
-                                </div>
-                                <div>
-                                    <label className="text-xs font-bold text-slate-500 uppercase">職位</label>
-                                    <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
-                                        <option value="coach">教練 (Coach)</option>
-                                        <option value="manager">主管 (Manager)</option>
-                                        <option value="receptionist">櫃檯 (Receptionist)</option>
-                                    </select>
+                            <form onSubmit={handleSubmitCoach} className="space-y-6">
+                                {/* Basic Info */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">姓名</label>
+                                        <input type="text" required value={editingCoach.name || ''} onChange={e => setEditingCoach({...editingCoach, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">職位</label>
+                                        <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
+                                            <option value="coach">教練 (Coach)</option>
+                                            <option value="manager">主管 (Manager)</option>
+                                            <option value="receptionist">櫃檯 (Receptionist)</option>
+                                        </select>
+                                    </div>
                                 </div>
                                 
                                 {isNewCoach && (
-                                    <>
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Mail size={12}/> Email (登入帳號)</label>
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Mail size={12}/> Email</label>
                                             <input type="email" required value={newCoachEmail} onChange={e => setNewCoachEmail(e.target.value)} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="coach@gym.com"/>
                                         </div>
                                         <div>
-                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Key size={12}/> 初始密碼</label>
+                                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Key size={12}/> 密碼</label>
                                             <input type="password" required value={newCoachPassword} onChange={e => setNewCoachPassword(e.target.value)} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="至少6位數"/>
                                         </div>
-                                    </>
+                                    </div>
                                 )}
 
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase">代表色</label>
-                                    <div className="grid grid-cols-4 gap-2 mt-2">
+                                    <div className="grid grid-cols-8 gap-2 mt-2">
                                         {COLOR_OPTIONS.map(opt => (
                                             <button 
                                                 type="button" 
@@ -715,8 +823,53 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </div>
                                 </div>
 
-                                <div className="border-t border-slate-100/50 dark:border-slate-700/50 pt-4 mt-2">
-                                   <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2"><CalendarX size={14}/> 特定日期休假</label>
+                                {/* Weekly Schedule Configuration - Moved from Settings Tab */}
+                                <div className="border-t border-slate-100/50 dark:border-slate-700/50 pt-4">
+                                   <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-3"><Clock size={14}/> 每週固定班表</label>
+                                   <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar p-1">
+                                       {['日','一','二','三','四','五','六'].map((d, i) => {
+                                           const isWorkDay = editingCoach.workDays?.includes(i);
+                                           const hours = editingCoach.dailyWorkHours?.[i.toString()] || { start: editingCoach.workStart || '09:00', end: editingCoach.workEnd || '21:00' };
+                                           return (
+                                             <div key={i} className={`flex items-center gap-2 p-2 rounded-xl transition-all ${isWorkDay ? 'bg-indigo-50 dark:bg-indigo-900/20' : 'bg-slate-50 dark:bg-slate-800'}`}>
+                                                 <button 
+                                                    type="button"
+                                                    onClick={() => handleModalDayConfig(i, !isWorkDay, hours.start, hours.end)}
+                                                    className={`w-10 h-6 rounded-full transition-colors relative shadow-inner flex-shrink-0 ${isWorkDay ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                                 >
+                                                    <div className={`absolute top-1 left-1 bg-white w-4 h-4 rounded-full shadow-sm transition-transform duration-300 ${isWorkDay ? 'translate-x-4' : 'translate-x-0'}`}></div>
+                                                 </button>
+                                                 <span className="text-sm font-bold w-8 text-center">{d}</span>
+                                                 
+                                                 {isWorkDay ? (
+                                                     <div className="flex items-center gap-1 flex-1">
+                                                        <select 
+                                                           value={hours.start} 
+                                                           onChange={(e) => handleModalDayConfig(i, true, e.target.value, hours.end)}
+                                                           className="bg-white dark:bg-slate-700 rounded-lg text-xs p-1 border border-slate-200 dark:border-slate-600 outline-none"
+                                                        >
+                                                           {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                        </select>
+                                                        <span className="text-slate-400">-</span>
+                                                        <select 
+                                                           value={hours.end} 
+                                                           onChange={(e) => handleModalDayConfig(i, true, hours.start, e.target.value)}
+                                                           className="bg-white dark:bg-slate-700 rounded-lg text-xs p-1 border border-slate-200 dark:border-slate-600 outline-none"
+                                                        >
+                                                           {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                                        </select>
+                                                     </div>
+                                                 ) : (
+                                                     <span className="text-xs text-slate-400 flex-1 text-center">-- 休假 --</span>
+                                                 )}
+                                             </div>
+                                           );
+                                       })}
+                                   </div>
+                                </div>
+
+                                <div className="border-t border-slate-100/50 dark:border-slate-700/50 pt-4">
+                                   <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2 mb-2"><CalendarX size={14}/> 特定日期休假 (Off Dates)</label>
                                    <div className="flex gap-2 mb-2">
                                        <input 
                                           type="date" 
