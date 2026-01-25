@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -400,103 +401,121 @@ export default function App() {
       }
   };
 
+  // --- SAFE BOOKING SUBMISSION (NO DEDUCTION UNTIL COMPLETION) ---
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
-        throw new Error('請填寫完整資訊');
+        showNotification('請填寫完整資訊', 'error'); return; 
     }
     const dateKey = formatDateKey(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
     const status = getSlotStatus(dateKey, selectedSlot, selectedCoach, appointments);
     
     if (status.status === 'booked') { 
-        setBookingStep(3); 
-        throw new Error('該時段已被預約');
-    }
-
-    let inventory = null;
-    if (lineProfile) {
-        inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
-        if (!inventory) {
-            inventory = inventories.find(i => i.phone === formData.phone);
-            if (inventory && !inventory.lineUserId) {
-                await saveToFirestore('user_inventory', inventory.id, { ...inventory, lineUserId: lineProfile.userId, lastUpdated: new Date().toISOString() });
-                addLog('帳號綁定', `自動綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
-                inventory = { ...inventory, lineUserId: lineProfile.userId };
-            }
-        }
-    }
-
-    if (!inventory) {
-        throw new Error('找不到您的學員資料，請先聯繫管理員');
-    }
-    if (inventory.credits.private <= 0) {
-        throw new Error('您的點數不足，請購買後再預約');
+        showNotification('該時段已被預約', 'error'); setBookingStep(3); return; 
     }
 
     try {
-        const newCredits = inventory.credits.private - 1;
-        await saveToFirestore('user_inventory', inventory.id, {
-            ...inventory,
-            credits: { ...inventory.credits, private: newCredits },
-            lastUpdated: new Date().toISOString()
-        });
-        
+        let inventory = null;
+
+        if (lineProfile) {
+            inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
+            if (!inventory) {
+                // Try finding by phone if LINE ID not match
+                inventory = inventories.find(i => i.phone === formData.phone);
+                
+                // Enhancement: Automatic seamless linking
+                if (inventory) {
+                    if (!inventory.lineUserId) {
+                        await saveToFirestore('user_inventory', inventory.id, {
+                            ...inventory,
+                            lineUserId: lineProfile.userId,
+                            lastUpdated: new Date().toISOString()
+                        });
+                        addLog('帳號綁定', `自動綁定 LINE 用戶 ${lineProfile.displayName} 到學員 ${inventory.name}`);
+                        inventory = { ...inventory, lineUserId: lineProfile.userId };
+                    }
+                }
+            }
+
+            // --- REMOVED STRICT CREDIT BLOCK ---
+            if (inventory) {
+                 if (inventory.credits.private <= 0) {
+                     // Just a warning, proceed with booking
+                     showNotification('提醒：您的點數不足，請記得補購點數', 'info');
+                 }
+            } else {
+                 if (lineProfile) {
+                    showNotification('提醒：新用戶請聯繫管理員購課', 'info');
+                 }
+            }
+            // ---------------------------
+        }
+
         const id = Date.now().toString();
         const newApp: Appointment = { 
-            id, type: 'private', date: dateKey, time: selectedSlot, 
+            id, 
+            type: 'private', 
+            date: dateKey, time: selectedSlot, 
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
-            customer: { name: formData.name, phone: formData.phone || "", email: formData.email || "" }, 
+            // Fix: ensure no undefined values in customer fields
+            customer: { 
+                name: formData.name, 
+                phone: formData.phone || "", 
+                email: formData.email || "" 
+            }, 
             status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId || "", lineName: lineProfile?.displayName || "" 
+            lineUserId: lineProfile?.userId || "", 
+            lineName: lineProfile?.displayName || "" 
         };
         
+        // 1. Save to Database
         await saveToFirestore('appointments', id, newApp);
-        addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} (已預扣1點)`);
+        addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name} (尚未扣點)`);
         
-        sendToGoogleScript({ action: 'create_booking', ...newApp, coachName: selectedCoach.name, title: selectedCoach.title || '教練' });
+        // 2. Execute Webhook
+        const webhookPayload = {
+            action: 'create_booking',
+            ...newApp,
+            lineUserId: lineProfile?.userId || '',
+            coachName: selectedCoach.name,
+            title: selectedCoach.title || '教練', 
+            type: 'private',
+        };
+        
+        sendToGoogleScript(webhookPayload).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
-        showNotification('預約成功！點數已預扣', 'success');
+        showNotification('預約成功！(上課完成後將扣除點數)', 'success');
         
     } catch (error: any) {
         console.error("Booking Error:", error);
-        throw new Error('預約系統忙碌中，請稍後再試');
+        showNotification('預約系統忙碌中，請稍後再試: ' + error.message, 'error');
     }
   };
 
   const handleCustomerCancel = async (app: Appointment, reason: string) => {
-    if (app.status !== 'confirmed') {
-        showNotification('只有「已預約」的課程可以取消', 'error');
-        return;
-    }
-    
-    let inventory = null;
-    if (app.lineUserId) {
-        inventory = inventories.find(i => i.lineUserId === app.lineUserId);
-    }
-    
-    if (inventory) {
-        const newCredits = inventory.credits.private + 1;
-        await saveToFirestore('user_inventory', inventory.id, {
-            ...inventory,
-            credits: { ...inventory.credits, private: newCredits },
-            lastUpdated: new Date().toISOString()
-        });
-        addLog('點數返還', `因取消預約，返還1點給 ${inventory.name}`);
-    }
+      // Logic Update: Since we don't deduct on booking anymore, we DO NOT refund on cancel.
+      // We only care if status is not already completed/cancelled.
 
-    const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
-    await saveToFirestore('appointments', app.id, updated);
-    
-    addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
-    const coach = coaches.find(c => c.id === app.coachId);
-    
-    sendToGoogleScript({ 
-        action: 'cancel_booking', id: app.id, reason, lineUserId: app.lineUserId || "",
-        coachName: app.coachName, title: coach?.title || '教練', date: app.date, time: app.time
-    });
-    
-    showNotification('已取消預約，點數已返還', 'info');
+      const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
+      await saveToFirestore('appointments', app.id, updated);
+      
+      addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
+      const coach = coaches.find(c => c.id === app.coachId);
+      
+      // Async webhook - Fire and forget
+      sendToGoogleScript({ 
+          action: 'cancel_booking', 
+          id: app.id, 
+          reason, 
+          lineUserId: app.lineUserId || "", // Ensure string
+          coachName: app.coachName,
+          title: coach?.title || '教練',
+          date: app.date,
+          time: app.time
+      }).catch(e => console.warn("Cancel webhook failed", e));
+      
+      showNotification('已取消預約', 'info');
   };
 
   const resetBooking = () => {
@@ -510,35 +529,43 @@ export default function App() {
     const coach = coaches.find(c => c.id === (['manager', 'receptionist'].includes(currentUser.role) ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
+    // Normalize Type
     const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
     const isPrivate = finalType === 'private';
     
+    // Strict Guard: Private bookings MUST have a customer from selection
     if (isPrivate && !blockForm.customer?.name) {
-        showNotification('私人課程必須選擇一位學員', 'error');
+        showNotification('請先搜尋並選擇學員', 'error');
         return;
     }
 
     let targetInventory: UserInventory | undefined;
+
+    // 1. Identification Phase
     if (isPrivate && blockForm.customer?.name) {
         targetInventory = inventories.find(i => 
             i.name === blockForm.customer?.name && 
             (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true)
         );
-        if (!targetInventory) {
-            showNotification('找不到該學員的庫存資料', 'error');
-            return;
-        }
-        if (targetInventory.credits.private <= 0 && !force) {
-            if (!window.confirm(`學員 ${targetInventory.name} 點數不足 (0)，確定要強制預約嗎？`)) return;
+        
+        // Warn only, don't block
+        if (targetInventory) {
+             if (targetInventory.credits.private <= 0) {
+                 showNotification(`學員 ${targetInventory.name} 點數不足 (0)，仍可預約`, 'info');
+             }
         }
     }
 
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Appointment[] = [];
+    
+    // Standardize Date Parsing
     const [y, m, d] = blockForm.date.split('-').map(Number);
     const startDate = new Date(y, m - 1, d); 
 
     let targetSlots = [blockForm.time];
+
+    // Batch Slot Logic
     if (isBatchMode && blockForm.endTime) {
         const startIndex = ALL_TIME_SLOTS.indexOf(blockForm.time);
         const endIndex = ALL_TIME_SLOTS.indexOf(blockForm.endTime);
@@ -547,40 +574,52 @@ export default function App() {
         }
     }
 
+    let stopCreation = false;
+
+    // Outer Loop: Weeks
     for (let i = 0; i < repeat; i++) {
+        if (stopCreation) break;
+
         const targetDate = new Date(startDate);
         targetDate.setDate(startDate.getDate() + (i * 7));
         const dKey = formatDateKey(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
+
+        // Inner Loop: Slots per day
         for (const slot of targetSlots) {
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
+             
              if (status.status === 'available') {
-                 const id = (!isBatchMode && i === 0 && blockForm.id) ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                 const isEditSingle = (!isBatchMode && i === 0 && blockForm.id);
+                 const id = isEditSingle ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                 
                  batchOps.push({ 
-                     id, type: finalType as any, date: dKey, time: slot, coachId: coach.id, coachName: coach.name, 
-                     reason: blockForm.reason, status: 'confirmed', customer: isPrivate ? blockForm.customer : null,
-                     createdAt: new Date().toISOString(), lineUserId: targetInventory?.lineUserId || ""
+                     id, 
+                     type: finalType as any, 
+                     date: dKey, // CRITICAL: Ensure date is updated during iteration or single edit
+                     time: slot, // CRITICAL: Ensure time is updated
+                     coachId: coach.id, 
+                     coachName: coach.name, 
+                     reason: blockForm.reason, 
+                     status: 'confirmed', 
+                     customer: (finalType === 'private' && blockForm.customer) ? {
+                         name: blockForm.customer.name,
+                         phone: blockForm.customer.phone || "",
+                         email: blockForm.customer.email || ""
+                     } : null,
+                     createdAt: new Date().toISOString(),
+                     lineUserId: targetInventory?.lineUserId || ""
                  });
              }
         }
     }
 
     if (batchOps.length === 0) { 
-        showNotification('選定時段已被占用或無效', 'error'); 
+        if (!stopCreation) showNotification('選定時段已被占用或無效', 'error'); 
         return; 
     }
     
+    // Batch Save
     try {
-        if (isPrivate && targetInventory && targetInventory.credits.private < batchOps.length) {
-            showNotification(`點數不足，需要 ${batchOps.length} 點，僅剩 ${targetInventory.credits.private} 點`, 'error');
-            return;
-        }
-
-        if (isPrivate && targetInventory) {
-            const newCredits = targetInventory.credits.private - batchOps.length;
-            await saveToFirestore('user_inventory', targetInventory.id, { ...targetInventory, credits: {...targetInventory.credits, private: newCredits }});
-            addLog('點數預扣', `後台操作預扣 ${targetInventory.name} ${batchOps.length} 點`);
-        }
-        
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
@@ -598,31 +637,32 @@ export default function App() {
      
      const isPrivate = target.type === 'private' || (target.type as string) === 'client'; 
 
-     setConfirmModal({
-         isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
-         onConfirm: async (reason) => {
-             if (isPrivate && target.status !== 'cancelled') {
-                 let inventory = target.lineUserId ? inventories.find(i => i.lineUserId === target.lineUserId) : inventories.find(i => i.name === target.customer?.name);
-                 if (inventory) {
-                     const newCredits = inventory.credits.private + 1;
-                     await saveToFirestore('user_inventory', inventory.id, { ...inventory, credits: {...inventory.credits, private: newCredits}});
-                     addLog('點數返還', `後台取消，返還1點給 ${inventory.name}`);
-                 }
+     if (isPrivate) { 
+         setConfirmModal({
+             isOpen: true, message: '請輸入取消預約的原因', isDanger: true, showInput: true,
+             onConfirm: async (reason) => {
+                 // NO REFUND LOGIC here anymore as we don't deduct on booking
+                 const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
+                 await saveToFirestore('appointments', target.id, updated);
+                 
+                 addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
+                 sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
+                 
+                 showNotification('已取消', 'info');
+                 setIsBlockModalOpen(false);
              }
-             const updated = { ...target, status: 'cancelled' as const, cancelReason: reason || '管理員操作' };
-             await saveToFirestore('appointments', target.id, updated);
-             
-             addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
-             sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
-             
-             showNotification('已取消', 'info');
-             setIsBlockModalOpen(false);
-         }
-     });
+         });
+     } else {
+         deleteFromFirestore('appointments', target.id);
+         addLog('刪除事件', `刪除 ${target.reason}`);
+         showNotification('已刪除', 'info');
+         setIsBlockModalOpen(false);
+     }
   };
 
   const handleSlotClick = (date: string, time: string) => {
       if (!currentUser) return;
+      // Allow receptionists to select any coach
       const targetCoachId = (['manager', 'receptionist'].includes(currentUser.role)) ? (blockForm.coachId || coaches[0]?.id) : currentUser.id;
       if (!targetCoachId) { showNotification('無教練資料', 'error'); return; }
 
@@ -630,7 +670,7 @@ export default function App() {
       if (coach && isCoachDayOff(date, coach)) { showNotification('排休日無法新增', 'error'); return; }
       
       setBlockForm({ id: null, type: 'block', coachId: targetCoachId, date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, reason: '1v1教練課', customer: null, repeatWeeks: 1 });
-      setMemberSearchTerm('');
+      setMemberSearchTerm(''); // Reset search
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -648,7 +688,7 @@ export default function App() {
           time: '09:00', endTime: '12:00',
           reason: '內部訓練', customer: null, repeatWeeks: 1 
       });
-      setMemberSearchTerm('');
+      setMemberSearchTerm(''); // Reset search
       setDeleteConfirm(false); 
       setIsBatchMode(true);
       setIsBlockModalOpen(true);
@@ -660,19 +700,27 @@ export default function App() {
       
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
-      setMemberSearchTerm('');
+      setMemberSearchTerm(''); // Existing customer is shown in card, no need to preset search term
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
   };
 
+  // --- CONFIRMATION FLOW (DOUBLE VERIFICATION & DEDUCTION) ---
+
+  // 1. Student Checks In (Status Only, No Deduction)
   const handleUserCheckIn = async (app: Appointment) => {
       try {
           if (liffProfile && app.lineUserId !== liffProfile.userId) {
               showNotification('身份驗證失敗：此預約不屬於您', 'error');
               return;
           }
-          await saveToFirestore('appointments', app.id, { ...app, status: 'checked_in' });
+          
+          await saveToFirestore('appointments', app.id, {
+              ...app,
+              status: 'checked_in'
+          });
+
           addLog('學員簽到', `學員 ${app.customer?.name} 已簽到，等待教練確認`);
           showNotification('簽到成功！請告知教練。', 'success');
       } catch (e) {
@@ -680,20 +728,49 @@ export default function App() {
       }
   };
 
+  // 2. Coach Confirms Completion (ACTUAL DEDUCTION HERE)
   const handleCoachConfirmCompletion = async (app: Appointment) => {
       if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
           showNotification('權限不足', 'error');
           return;
       }
+
       if (app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error');
           return;
       }
+
       try {
-          // Credit was pre-deducted, so we only update status here.
+          // --- DEDUCTION LOGIC ---
+          let deducted = false;
+          let remaining = '?';
+          
+          // Only deduct for private sessions
+          if (app.type === 'private' || (app.type as string) === 'client') {
+              let inventory = null;
+              if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+              if (!inventory && app.customer?.name) {
+                  inventory = inventories.find(i => i.name === app.customer?.name || (app.customer?.phone && i.phone === app.customer?.phone));
+              }
+
+              if (inventory) {
+                  const newCredits = inventory.credits.private - 1;
+                  await saveToFirestore('user_inventory', inventory.id, {
+                      ...inventory,
+                      credits: { ...inventory.credits, private: newCredits },
+                      lastUpdated: new Date().toISOString()
+                  });
+                  remaining = newCredits.toString();
+                  deducted = true;
+              }
+          }
+          // ------------------------
+
+          // Update Appointment to Completed
           await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
-          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 (點數已正式消耗)`);
-          showNotification(`完課確認成功！`, 'success');
+
+          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
+          showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
       } catch (e) {
           console.error(e);
           showNotification('更新失敗', 'error');
@@ -701,16 +778,25 @@ export default function App() {
   };
 
   const handleToggleComplete = async (app: Appointment) => {
-    if (app.status === 'checked_in' || app.status === 'confirmed') {
+    if (app.status === 'checked_in') {
         await handleCoachConfirmCompletion(app);
-    } else if (app.status === 'completed') {
-        if (!currentUser || currentUser.role !== 'manager') {
-           showNotification('僅管理員可還原已完課狀態', 'info');
+    } else {
+        if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role))) {
+           showNotification('僅管理員或櫃檯可執行此操作', 'info');
            return;
         }
-        await saveToFirestore('appointments', app.id, { ...app, status: 'confirmed' });
-        addLog('課程狀態', `管理員將 ${app.customer?.name} 狀態從 '已完課' 還原為 '已確認' (未退點)`);
-        showNotification('狀態已還原 (點數未自動退還，請至庫存手動調整)', 'info');
+
+        const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
+
+        if (newStatus === 'completed' && app.status !== 'completed') {
+            // Manager is forcing completion. Call the full confirmation logic which includes deduction.
+            await handleCoachConfirmCompletion(app);
+        } else if (newStatus === 'confirmed' && app.status === 'completed') {
+            // Manager is reverting a completed class.
+            await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
+            addLog('課程狀態', `管理員/櫃檯將 ${app.customer?.name} 狀態從 '已完課' 還原為 '已確認' (未退點)`);
+            showNotification('狀態已還原 (點數未自動退還)', 'info');
+        }
     }
   };
 
@@ -777,6 +863,7 @@ export default function App() {
   };
 
   const getAnalysis = () => {
+    // Basic analysis logic for visual dashboard
     const totalActive = appointments.filter(a => a.status === 'confirmed' || a.status === 'checked_in').length;
     const totalCancelled = appointments.filter(a => a.status === 'cancelled').length;
     
@@ -815,6 +902,7 @@ export default function App() {
   };
 
   const handleExportStatsCsv = () => {
+      // Legacy simple export, can remain
       const stats = getAnalysis();
       const rows = [
           ["統計項目", "數值"],
@@ -1040,7 +1128,7 @@ export default function App() {
         {notification && (
           <div className={`fixed top-20 right-4 z-[60] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-slideUp backdrop-blur-md border 
             ${notification.type === 'success' ? 'bg-green-500/90 text-white border-green-400' : notification.type === 'error' ? 'bg-red-500/90 text-white border-red-400' : 'bg-blue-500/90 text-white border-blue-400'}`}>
-            {notification.type === 'success' ? <CheckCircle2 size={20}/> : <Info size={20}/>}
+            {notification.type === 'success' ? <RefreshCw className="animate-spin" size={20}/> : <Info size={20}/>}
             <span className="font-bold tracking-wide">{notification.msg}</span>
           </div>
         )}
@@ -1088,7 +1176,7 @@ export default function App() {
                     <div className="p-8 text-center">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><AlertTriangle size={32}/></div>
                         <h4 className="font-bold text-lg mb-2 text-gray-800 dark:text-white">確定要刪除嗎？</h4>
-                        <p className="text-gray-500 text-sm mb-6">私人課程取消後，點數將會返還。</p>
+                        <p className="text-gray-500 text-sm mb-6">此動作無法復原</p>
                         <div className="flex gap-3">
                             <button onClick={() => setDeleteConfirm(false)} className="flex-1 py-3 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>
                             <button onClick={handleActualDelete} className="flex-1 py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">確認刪除</button>

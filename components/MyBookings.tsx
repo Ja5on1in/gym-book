@@ -14,7 +14,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
   const [checkInConfirmApp, setCheckInConfirmApp] = useState<Appointment | null>(null);
 
-  // Force re-render periodically to update check-in button state (legacy, kept for safety)
+  // Force re-render periodically to update check-in button state
   const [, setTick] = useState(0);
   useEffect(() => {
     const timer = setInterval(() => setTick(t => t + 1), 60000);
@@ -33,7 +33,10 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     );
   }
 
-  const myApps = appointments.filter(a => a.lineUserId === liffProfile.userId).sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime());
+  // Filter appointments strictly by Line User ID
+  const myApps = appointments
+      .filter(a => a.lineUserId === liffProfile.userId)
+      .sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime());
 
   return (
     <div className="max-w-2xl mx-auto animate-slideUp pb-24">
@@ -60,9 +63,16 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
             const isCancelled = app.status === 'cancelled';
             const isCompleted = app.status === 'completed';
             const isCheckedIn = app.status === 'checked_in';
-            const isUpcoming = new Date(app.date + ' ' + app.time) > new Date();
-            const canCancel = isUpcoming && app.status === 'confirmed';
-            const canCheckIn = app.status === 'confirmed'; 
+            const isConfirmed = app.status === 'confirmed';
+            
+            // Allow check-in only if status is confirmed
+            const canCheckIn = isConfirmed; 
+            const isUpcoming = new Date(app.date + ' ' + app.time) > new Date() && !isCancelled;
+
+            // Unified Cancellation Permission:
+            // As long as it is confirmed and upcoming, the user can cancel it.
+            // We removed any checks regarding who created the booking.
+            const canCancel = isConfirmed && isUpcoming;
 
             return (
               <div key={app.id} className={`glass-card p-5 rounded-2xl border-l-4 ${isCancelled ? 'border-l-red-400 opacity-70' : isCompleted ? 'border-l-gray-400' : isCheckedIn ? 'border-l-orange-500' : 'border-l-green-500'}`}>
@@ -93,7 +103,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                          <CheckCircle size={20}/> 立即簽到
                      </button>
                   )}
-                  
+
                   {canCancel && (
                       <button 
                           onClick={() => setSelectedApp(app)}
@@ -106,13 +116,13 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                 
                 {isCompleted && (
                     <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">
-                        已完成課程
+                        已完成簽到
                     </div>
                 )}
 
                 {isCheckedIn && (
                     <div className="w-full py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl text-sm font-bold text-center border border-orange-100 dark:border-orange-800">
-                        已簽到，等待教練確認完課
+                        已簽到，請教練確認完課
                     </div>
                 )}
                 
@@ -131,7 +141,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <AlertTriangle size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">取消預約確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？點數將會返還。</p>
+                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？</p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setSelectedApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
@@ -152,7 +162,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                      <Info size={24}/>
                  </div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">簽到確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">簽到後請出示畫面給教練確認<br/><span className="text-xs text-gray-400 font-bold">(您的預扣點數將在教練確認後正式消耗)</span></p>
+                 <p className="text-sm text-gray-500 text-center mb-6">簽到後請出示畫面給教練確認<br/><span className="text-xs text-gray-400 font-bold">(確認完課後將扣除點數)</span></p>
                  
                  <div className="flex gap-3">
                      <button onClick={() => { setCheckInConfirmApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">取消</button>

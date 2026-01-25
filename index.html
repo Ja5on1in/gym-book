@@ -93,32 +93,34 @@
         background: rgba(0, 0, 0, 0.2);
         border: 1px solid rgba(75, 85, 99, 0.5);
       }
+      
+      /* Pattern for Off Days */
+      .bg-stripes-gray {
+        background-color: #f3f4f6;
+        background-image: repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 10px,
+          #e5e7eb 10px,
+          #e5e7eb 20px
+        );
+      }
+      .dark .bg-stripes-gray {
+        background-color: #1f2937;
+        background-image: repeating-linear-gradient(
+          45deg,
+          transparent,
+          transparent 10px,
+          #374151 10px,
+          #374151 20px
+        );
+      }
 
       /* Custom Scrollbar for nicer tables */
       .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; } 
       .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.8); }
-
-      /* Striped background for off-days */
-      .bg-stripes-gray {
-        background-image: repeating-linear-gradient(
-            45deg, 
-            rgba(0,0,0,0.03), 
-            rgba(0,0,0,0.03) 10px, 
-            transparent 10px, 
-            transparent 20px
-        );
-      }
-      .dark .bg-stripes-gray {
-        background-image: repeating-linear-gradient(
-            45deg, 
-            rgba(255,255,255,0.03), 
-            rgba(255,255,255,0.03) 10px, 
-            transparent 10px, 
-            transparent 20px
-        );
-      }
     </style>
   <script type="importmap">
 {
