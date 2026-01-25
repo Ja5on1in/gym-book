@@ -17,7 +17,8 @@ import {
   MessageCircle,
   AlertCircle,
   LogIn,
-  Info
+  Info,
+  Lock
 } from 'lucide-react';
 import { Coach, Service, Customer, UserInventory } from '../types';
 import { SERVICES, ALL_TIME_SLOTS } from '../constants';
@@ -98,6 +99,14 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
     const firstDay = getFirstDayOfMonth(year, month);
     const days = [];
 
+    // Date Logic for Locking (25th Rule)
+    const today = new Date();
+    const currentRealMonth = today.getMonth();
+    const currentRealYear = today.getFullYear();
+    
+    // Calculate difference in months between the calendar view and today
+    const monthDiff = (year - currentRealYear) * 12 + (month - currentRealMonth);
+
     for (let i = 0; i < firstDay; i++) {
         days.push(<div key={`empty-${year}-${month}-${i}`} className="h-10 w-full"></div>);
     }
@@ -107,12 +116,38 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       const isSelected = selectedDate.toDateString() === loopDate.toDateString();
       const isToday = new Date().toDateString() === loopDate.toDateString();
       const loopDateKey = formatDateKey(year, month, day);
+      
+      // Basic Checks
       const isPast = new Date(loopDateKey) < new Date(new Date().toDateString());
       const isOff = selectedCoach ? isCoachDayOff(loopDateKey, selectedCoach) : false;
       
+      // Advanced Booking Restriction Logic
+      let isLocked = false;
+      
+      if (monthDiff < 0) {
+          // Past months are technically 'past', handled by isPast usually, but explicit here
+          isLocked = true; 
+      } else if (monthDiff === 0) {
+          // Current Month: Always open (unless past)
+          isLocked = false;
+      } else if (monthDiff === 1) {
+          // Next Month: Open only if today >= 25th
+          if (today.getDate() < 25) {
+              isLocked = true;
+          }
+      } else {
+          // Month + 2 or more: Always locked
+          isLocked = true;
+      }
+
+      // Combine conditions
+      const isDisabled = isPast || isOff || isLocked;
+      
       let cellClass = "h-10 w-full rounded-lg flex items-center justify-center text-sm font-medium transition-all duration-200 relative ";
       
-      if (isPast) {
+      if (isLocked && !isPast) {
+          cellClass += "bg-slate-100 dark:bg-slate-800 text-slate-400 opacity-50 cursor-not-allowed ";
+      } else if (isPast) {
           cellClass += "text-slate-300 dark:text-slate-600 cursor-not-allowed ";
       } else if (isOff) {
           cellClass += "bg-stripes-gray text-slate-400 dark:text-slate-500 cursor-not-allowed border border-slate-100 dark:border-slate-700 opacity-60 ";
@@ -127,12 +162,13 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       days.push(
         <button 
           key={loopDateKey} 
-          onClick={() => { if (!isPast && !isOff) { setSelectedDate(loopDate); setSelectedSlot(null); } }} 
-          disabled={isPast || isOff}
+          onClick={() => { if (!isDisabled) { setSelectedDate(loopDate); setSelectedSlot(null); } }} 
+          disabled={isDisabled}
           className={cellClass}
         >
           {day}
           {isToday && !isSelected && <div className="absolute bottom-1 w-1 h-1 bg-indigo-500 rounded-full"></div>}
+          {isLocked && !isPast && <Lock size={12} className="absolute top-1 right-1 text-slate-400"/>}
         </button>
       );
     }
@@ -154,6 +190,10 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
         </div>
         <div className="grid grid-cols-7 gap-1">
           {days}
+        </div>
+        {/* Booking Rule Hint */}
+        <div className="mt-4 pt-3 border-t border-slate-100 dark:border-slate-700 text-[10px] text-slate-400 flex items-center justify-center gap-1">
+            <Info size={12}/> 每月 25 號開放下個月預約
         </div>
       </div>
     );

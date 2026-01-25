@@ -73,6 +73,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (i.lineUserId && i.lineUserId.includes(searchQuery))
   );
 
+  // Calculate completed appointments locally
+  const totalCompleted = appointments.filter(a => a.status === 'completed').length;
+
   const handleUpdateDayConfig = (coach: Coach, dayIndex: number, enabled: boolean, start?: string, end?: string) => {
      const newWorkDays = enabled 
         ? (coach.workDays.includes(dayIndex) ? coach.workDays : [...coach.workDays, dayIndex].sort())
@@ -407,39 +410,48 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        <button onClick={handleExportStatsCsv} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出報表</button>
                     </div>
                     
+                    {/* 3-Column Layout for Stats */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                       <div className="glass-panel p-6 rounded-3xl relative overflow-hidden border border-white/60">
-                          <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div>
+                       
+                       {/* Col 1: Top Times */}
+                       <div className="glass-panel p-6 rounded-3xl relative overflow-hidden border border-white/60 flex flex-col">
+                          <div className="absolute top-0 right-0 p-4 opacity-10"><Clock size={100} className="text-orange-500"/></div>
                           <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段 Top 3</h4>
-                          <div className="space-y-3 relative z-10">
-                            {analysis.topTimeSlots.map((s: any, i: number) => (
+                          <div className="space-y-3 relative z-10 flex-1">
+                            {analysis.topTimeSlots.length > 0 ? analysis.topTimeSlots.map((s: any, i: number) => (
                                 <div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-slate-800/50 rounded-xl border border-white/40 dark:border-slate-700">
-                                    <span className="font-bold text-orange-600 dark:text-orange-400">#{i+1} {s.time}</span>
-                                    <span className="text-sm font-medium">{s.count} 堂</span>
+                                    <span className={`font-bold ${i===0?'text-yellow-500':i===1?'text-slate-400':'text-orange-600'}`}>#{i+1} {s.time}</span>
+                                    <span className="text-sm font-medium dark:text-slate-200">{s.count} 堂</span>
                                 </div>
-                            ))}
+                            )) : <div className="text-center text-slate-400 py-4">無數據</div>}
                           </div>
                        </div>
                        
-                       <div className="glass-panel p-6 rounded-3xl flex flex-col justify-center border border-white/60">
-                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 text-center">預約狀態總覽</h4>
-                          <div className="flex justify-around items-center">
-                             <div className="text-center">
-                                 <div className="text-5xl font-bold text-emerald-500 mb-2 drop-shadow-sm">{analysis.totalActive}</div>
-                                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">有效預約</div>
-                             </div>
-                             <div className="h-16 w-px bg-slate-200 dark:bg-slate-700"></div>
-                             <div className="text-center">
-                                 <div className="text-5xl font-bold text-red-500 mb-2 drop-shadow-sm">{analysis.totalCancelled}</div>
-                                 <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">已取消</div>
-                             </div>
+                       {/* Col 2: Status Overview */}
+                       <div className="glass-panel p-6 rounded-3xl border border-white/60 flex flex-col relative overflow-hidden">
+                          <div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-blue-500"/></div>
+                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><Activity size={18} className="text-blue-500"/> 預約狀態總覽</h4>
+                          <div className="flex-1 flex flex-col justify-center gap-4 relative z-10">
+                              <div className="flex justify-between items-center p-2 border-b border-slate-100 dark:border-slate-700">
+                                  <span className="text-xs font-bold text-slate-400 uppercase">有效預約 (Active)</span>
+                                  <span className="text-2xl font-bold text-emerald-500">{analysis.totalActive}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-2 border-b border-slate-100 dark:border-slate-700">
+                                  <span className="text-xs font-bold text-slate-400 uppercase">已完成 (Completed)</span>
+                                  <span className="text-2xl font-bold text-blue-500">{totalCompleted}</span>
+                              </div>
+                              <div className="flex justify-between items-center p-2">
+                                  <span className="text-xs font-bold text-slate-400 uppercase">已取消 (Cancelled)</span>
+                                  <span className="text-2xl font-bold text-red-500">{analysis.totalCancelled}</span>
+                              </div>
                           </div>
                        </div>
 
-                       <div className="glass-panel p-6 rounded-3xl md:col-span-1 border border-white/60">
-                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計 (本月)</h4>
-                          <div className="overflow-y-auto max-h-[200px] custom-scrollbar pr-2">
-                              <div className="grid grid-cols-4 gap-2 text-xs font-bold text-slate-400 mb-3 uppercase tracking-wider">
+                       {/* Col 3: Coach Stats */}
+                       <div className="glass-panel p-6 rounded-3xl border border-white/60 flex flex-col h-[300px]">
+                          <h4 className="font-bold text-slate-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 本月課程統計</h4>
+                          <div className="overflow-y-auto custom-scrollbar pr-2 flex-1">
+                              <div className="grid grid-cols-4 gap-2 text-[10px] font-bold text-slate-400 mb-3 uppercase tracking-wider sticky top-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm py-1 z-10">
                                   <span>教練</span>
                                   <span className="text-right">個人</span>
                                   <span className="text-right">團課</span>
@@ -506,7 +518,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 rounded-3xl shadow-lg text-white flex justify-between items-center">
                           <span className="font-bold flex items-center gap-3 text-lg"><Database size={24}/> 資料庫管理</span>
                           <div className="flex gap-3">
-                            <button onClick={handleExportJson} className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-xl text-sm border border-white/30 transition-all">匯出備份</button>
+                            {/* Hidden as requested */}
+                            {/* <button onClick={handleExportJson} className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-xl text-sm border border-white/30 transition-all">匯出備份</button> */}
                             <button onClick={() => fileInputRef.current?.click()} className="bg-white text-indigo-600 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-slate-50 transition-all">匯入資料</button>
                             <input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden"/>
                           </div>
