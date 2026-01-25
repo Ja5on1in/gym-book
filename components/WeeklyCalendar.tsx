@@ -1,9 +1,9 @@
 
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, CalendarX } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
-import { addDays, formatDateKey, isCoachDayOff, isPastTime } from '../utils';
+import { addDays, formatDateKey, isCoachDayOff, isPastTime, getStartOfWeek } from '../utils';
 
 interface WeeklyCalendarProps {
   currentWeekStart: Date;
@@ -14,7 +14,7 @@ interface WeeklyCalendarProps {
   onSlotClick: (date: string, time: string) => void;
   onAppointmentClick: (app: Appointment) => void;
   onToggleComplete: (app: Appointment) => void;
-  isLoading: boolean; // New prop for loading state
+  isLoading: boolean;
 }
 
 const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
@@ -22,8 +22,20 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
 }) => {
   const [expandedCell, setExpandedCell] = useState<string | null>(null);
   const [selectedCoachId, setSelectedCoachId] = useState<string>('all');
-  const [selectedType, setSelectedType] = useState<'all' | 'private' | 'group'>('all'); // New Type Filter
+  const [selectedType, setSelectedType] = useState<'all' | 'private' | 'group'>('all'); 
   const weekDays = Array.from({length: 7}, (_, i) => addDays(currentWeekStart, i));
+
+  // Helper for direct date input
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const selected = new Date(e.target.value);
+      if (!isNaN(selected.getTime())) {
+          setCurrentWeekStart(getStartOfWeek(selected));
+      }
+  };
+
+  const handleJumpToToday = () => {
+      setCurrentWeekStart(getStartOfWeek(new Date()));
+  };
 
   return (
     <div className="glass-panel rounded-3xl overflow-hidden shadow-sm animate-fadeIn relative flex flex-col h-[750px] border border-white/50">
@@ -37,13 +49,36 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
       )}
 
       <div className="p-4 md:p-5 border-b border-slate-100 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/50 dark:bg-slate-900/50 z-20 relative backdrop-blur-md">
-        <div className="flex items-center gap-2 md:gap-4 w-full md:w-auto justify-between">
-          <div className="flex bg-white dark:bg-slate-800 rounded-xl p-1 shadow-sm border border-slate-100 dark:border-slate-700">
-              <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))} disabled={isLoading} className="p-1.5 md:p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"><ChevronLeft size={20} className="text-slate-600 dark:text-slate-300"/></button>
-              <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))} disabled={isLoading} className="p-1.5 md:p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"><ChevronRight size={20} className="text-slate-600 dark:text-slate-300"/></button>
+        <div className="flex flex-col md:flex-row items-center gap-4 w-full md:w-auto">
+          {/* Navigation Controls */}
+          <div className="flex items-center gap-2">
+              <div className="flex bg-white dark:bg-slate-800 rounded-xl p-1 shadow-sm border border-slate-100 dark:border-slate-700">
+                  <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, -7))} disabled={isLoading} className="p-1.5 md:p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"><ChevronLeft size={20} className="text-slate-600 dark:text-slate-300"/></button>
+                  <button onClick={() => setCurrentWeekStart(addDays(currentWeekStart, 7))} disabled={isLoading} className="p-1.5 md:p-2 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-colors disabled:opacity-50"><ChevronRight size={20} className="text-slate-600 dark:text-slate-300"/></button>
+              </div>
+              
+              <button 
+                onClick={handleJumpToToday}
+                disabled={isLoading}
+                className="px-3 py-2 bg-white dark:bg-slate-800 border border-slate-100 dark:border-slate-700 rounded-xl text-sm font-bold text-slate-600 dark:text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 transition-colors shadow-sm"
+              >
+                今天
+              </button>
+
+              <div className="relative group">
+                 <input 
+                    type="date" 
+                    onChange={handleDateChange}
+                    className="glass-input pl-8 pr-2 py-1.5 rounded-xl text-sm font-bold w-36 dark:text-white cursor-pointer hover:bg-white/80 dark:hover:bg-slate-800/80 transition-colors"
+                 />
+                 <CalendarIcon size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+              </div>
           </div>
-          <div className="flex items-center gap-2 overflow-x-auto">
-              <span className="font-bold text-lg md:text-xl text-slate-800 dark:text-white tracking-tight whitespace-nowrap">{currentWeekStart.getMonth()+1}月 {currentWeekStart.getDate()}日 <span className="text-sm font-normal text-slate-500 hidden md:inline">週</span></span>
+
+          <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
+              <span className="font-bold text-lg md:text-xl text-slate-800 dark:text-white tracking-tight whitespace-nowrap min-w-[120px]">
+                 {currentWeekStart.getMonth()+1}月 {currentWeekStart.getDate()}日 <span className="text-sm font-normal text-slate-500 hidden md:inline">週</span>
+              </span>
               
               {/* Filters */}
               <div className="flex gap-2">
@@ -111,9 +146,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
               {weekDays.map((day) => {
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
                 
-                // --- Logic Update for Coach Filtering ---
-                // If filter is active ('all' is not selected), we view the grid "as if" we are that coach
-                // If 'all', we default to user's role (manager sees all open, coach sees their own off times)
                 const targetCoach = selectedCoachId !== 'all' 
                     ? coaches.find(c => c.id === selectedCoachId) 
                     : (currentUser.role === 'manager' ? null : coaches.find(c => c.id === currentUser.id));
@@ -127,13 +159,11 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     (selectedCoachId === 'all' || a.coachId === selectedCoachId)
                 );
 
-                // --- Type Filtering Logic ---
                 const visibleApps = slotApps.filter(a => {
                     if (selectedType === 'all') return true;
                     const normalizedType = (a.type as string) === 'client' ? 'private' : a.type;
                     return normalizedType === selectedType;
                 });
-                // ----------------------------------------
 
                 return (
                   <div 
@@ -142,7 +172,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                       ${isOff ? 'bg-stripes-gray opacity-40' : 'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
                     `}
                     onClick={() => {
-                        // UNLOCKED: Allow clicks unless specifically OFF (isOff logic already handles weekends based on coach schedule)
                         if (!isOff && !isLoading) onSlotClick(dateKey, time);
                     }}
                   >
@@ -155,9 +184,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                             const isCheckedIn = app.status === 'checked_in';
                             const isGroupOrBlock = app.type === 'group' || app.type === 'block';
 
-                            // Determine display text: 
-                            // Private -> Customer Name
-                            // Group/Block -> Reason (Class Name)
                             const displayText = isGroupOrBlock 
                               ? (app.reason || '團體課程')
                               : (app.customer?.name || app.reason || '私人課');
@@ -176,14 +202,11 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                   <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
                                     
-                                    {/* Action Button: Check In confirm for Coach */}
                                     {isMine && isCheckedIn && (
                                         <button 
                                             onClick={(e) => { 
                                                 e.stopPropagation(); 
-                                                if(!isLoading && window.confirm('確認核實完課？這將正式扣除 1 點點數且無法輕易撤銷。')) {
-                                                    onToggleComplete(app); 
-                                                }
+                                                onToggleComplete(app); 
                                             }}
                                             className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
                                             title="確認完課 (扣點)"
@@ -192,7 +215,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                         </button>
                                     )}
 
-                                    {/* Only Manager can force complete manually from here (Legacy/Force) */}
                                     {isMine && !isCompleted && !isCheckedIn && currentUser.role === 'manager' && (
                                       <button 
                                         onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}

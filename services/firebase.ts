@@ -10,7 +10,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, getDoc, updateDoc } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, getDoc, updateDoc, query, where } from 'firebase/firestore';
 import { User } from '../types';
 
 // Your web app's Firebase configuration
@@ -131,6 +131,7 @@ export const initAuth = async () => {
   if (!isFirebaseAvailable || !auth) return;
 };
 
+// Generic subscription
 export const subscribeToCollection = (
     colName: string, 
     callback: (data: any[]) => void,
@@ -163,6 +164,54 @@ export const subscribeToCollection = (
     });
 };
 
+// PERFORMANCE: Optimized subscription for appointments within a date range
+export const subscribeToAppointmentsInRange = (
+  start: string,
+  end: string,
+  callback: (data: any[]) => void,
+  errorCallback: (e: any) => void
+) => {
+    if (!isFirebaseAvailable || !db) {
+        // Fallback to LocalStorage with filtering
+        const key = `mock_db_appointments`;
+        const handler = () => {
+             const current = JSON.parse(localStorage.getItem(key) || '[]');
+             // Simple string comparison for ISO dates (YYYY-MM-DD) works
+             const filtered = current.filter((a: any) => a.date >= start && a.date <= end);
+             callback(filtered);
+        };
+        
+        setTimeout(handler, 0);
+        if (!mockListeners['appointments']) mockListeners['appointments'] = [];
+        // Note: This adds a generic listener that re-runs the specific filter
+        const wrapper = (allData: any[]) => {
+            const filtered = allData.filter((a: any) => a.date >= start && a.date <= end);
+            callback(filtered);
+        };
+        mockListeners['appointments'].push(wrapper);
+        return () => {
+             if (mockListeners['appointments']) {
+                 mockListeners['appointments'] = mockListeners['appointments'].filter(cb => cb !== wrapper);
+             }
+        };
+    }
+
+    // Firestore Query
+    const q = query(
+        collection(db, 'appointments'),
+        where('date', '>=', start),
+        where('date', '<=', end)
+    );
+
+    return onSnapshot(q, (s: any) => {
+        const docs = s.docs.map((d: any) => d.data());
+        callback(docs);
+    }, (e: any) => {
+        console.warn(`Firestore range subscription failed`, e);
+        errorCallback(e);
+    });
+};
+
 export const saveToFirestore = async (col: string, id: string, data: any) => {
     if (!isFirebaseAvailable || !db) {
         const key = `mock_db_${col}`;
@@ -178,7 +227,7 @@ export const saveToFirestore = async (col: string, id: string, data: any) => {
         await setDoc(doc(db, col, id), data, { merge: true });
     } catch (e) {
         console.error(`Firestore save failed to ${col}/${id}`, e);
-        throw e; // Throw so UI can show failure
+        throw new Error(`儲存資料失敗 (${col}): ${(e as any).message}`);
     }
 };
 
@@ -195,7 +244,7 @@ export const deleteFromFirestore = async (col: string, id: string) => {
         await deleteDoc(doc(db, col, id));
     } catch (e) {
         console.error("Firestore delete failed", e);
-        throw e;
+        throw new Error(`刪除資料失敗 (${col}): ${(e as any).message}`);
     }
 };
 

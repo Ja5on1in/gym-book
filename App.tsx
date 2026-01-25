@@ -23,6 +23,7 @@ import {
 import { 
     initAuth, 
     subscribeToCollection, 
+    subscribeToAppointmentsInRange,
     saveToFirestore, 
     deleteFromFirestore, 
     disableUserInFirestore, 
@@ -37,7 +38,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
 import { User, Appointment, Coach, Log, Service, Customer, BlockFormState, UserInventory, WorkoutPlan } from './types';
-import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff } from './utils';
+import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff, addDays } from './utils';
 
 import BookingWizard from './components/BookingWizard';
 import AdminDashboard from './components/AdminDashboard';
@@ -58,37 +59,30 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   
-  // Login State
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   
-  // Data
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [coaches, setCoaches] = useState<Coach[]>([]);
   const [logs, setLogs] = useState<Log[]>([]);
   const [inventories, setInventories] = useState<UserInventory[]>([]);
   const [workoutPlans, setWorkoutPlans] = useState<WorkoutPlan[]>([]);
 
-  // Dates
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentWeekStart, setCurrentWeekStart] = useState(getStartOfWeek(new Date()));
 
-  // Booking Flow
   const [bookingStep, setBookingStep] = useState(1);
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [selectedCoach, setSelectedCoach] = useState<Coach | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
   const [formData, setFormData] = useState<Customer>({ name: '', phone: '', email: '' });
 
-  // LIFF State
   const [liffProfile, setLiffProfile] = useState<{ userId: string; displayName: string } | null>(null);
 
-  // Modals & Forms
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
   
-  // Member Search State
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [filteredMembers, setFilteredMembers] = useState<UserInventory[]>([]);
 
@@ -97,7 +91,6 @@ export default function App() {
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
   
-  // Updated Confirmation Modal State
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean, 
     title: string,
@@ -105,7 +98,7 @@ export default function App() {
     onConfirm: ((reason?: string) => void) | null, 
     isDanger: boolean, 
     showInput: boolean,
-    icon?: React.ReactNode // Support custom icon
+    icon?: React.ReactNode
   }>({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, showInput: false });
   
   const [cancelReason, setCancelReason] = useState('');
@@ -184,11 +177,18 @@ export default function App() {
       return () => unsubscribe();
   }, []);
 
+  // PERFORMANCE: Optimized Subscription for Appointments
   useEffect(() => {
-    const unsubApps = subscribeToCollection('appointments', (data) => {
+    // Calculate range: Week Start - 14 days to Week Start + 14 days
+    const rangeStart = addDays(currentWeekStart, -14);
+    const rangeEnd = addDays(currentWeekStart, 14);
+    
+    const startStr = formatDateKey(rangeStart.getFullYear(), rangeStart.getMonth(), rangeStart.getDate());
+    const endStr = formatDateKey(rangeEnd.getFullYear(), rangeEnd.getMonth(), rangeEnd.getDate());
+
+    const unsubApps = subscribeToAppointmentsInRange(startStr, endStr, (data) => {
         const apps = data as Appointment[];
-        const validApps = apps.filter(a => a && a.date && a.time && a.coachId);
-        setAppointments([...validApps]);
+        setAppointments([...apps]);
         setDbStatus(isFirebaseAvailable ? 'connected' : 'local');
     }, () => setDbStatus('error'));
 
@@ -220,7 +220,7 @@ export default function App() {
         unsubInventory && unsubInventory();
         unsubWorkoutPlans && unsubWorkoutPlans();
     };
-  }, []);
+  }, [currentWeekStart]);
 
   useEffect(() => {
       if (!memberSearchTerm) {
@@ -376,6 +376,8 @@ export default function App() {
       }
   };
 
+  // --- Booking & Admin Actions ---
+
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -390,7 +392,6 @@ export default function App() {
 
     try {
         let inventory = null;
-
         if (lineProfile) {
             inventory = inventories.find(i => i.lineUserId === lineProfile.userId);
             if (!inventory) {
@@ -555,38 +556,46 @@ export default function App() {
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
         setIsBlockModalOpen(false);
-    } catch (e) {
+    } catch (e: any) {
         console.error(e);
-        showNotification('儲存失敗', 'error');
+        showNotification(`儲存失敗: ${e.message}`, 'error');
     }
   };
 
-  const handleActualDelete = () => {
+  const handleActualDelete = async () => {
      if (!blockForm.id) return;
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
      const isPrivate = target.type === 'private' || (target.type as string) === 'client'; 
 
-     if (isPrivate) { 
-         setConfirmModal({
-             isOpen: true, title: '取消原因', message: '請輸入取消預約的原因', isDanger: true, showInput: true,
-             onConfirm: async (reason) => {
-                 const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
-                 await saveToFirestore('appointments', target.id, updated);
-                 
-                 addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
-                 sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
-                 
-                 showNotification('已取消', 'info');
-                 setIsBlockModalOpen(false);
-             }
-         });
-     } else {
-         deleteFromFirestore('appointments', target.id);
-         addLog('刪除事件', `刪除 ${target.reason}`);
-         showNotification('已刪除', 'info');
-         setIsBlockModalOpen(false);
+     try {
+         if (isPrivate) { 
+             setConfirmModal({
+                 isOpen: true, title: '取消原因', message: '請輸入取消預約的原因', isDanger: true, showInput: true,
+                 onConfirm: async (reason) => {
+                     try {
+                         const updated = { ...target, status: 'cancelled' as const, cancelReason: reason };
+                         await saveToFirestore('appointments', target.id, updated);
+                         
+                         addLog('取消預約', `取消 ${target.customer?.name} - ${reason}`);
+                         sendToGoogleScript({ action: 'cancel_booking', id: target.id, reason }).catch(e => console.warn(e));
+                         
+                         showNotification('已取消', 'info');
+                         setIsBlockModalOpen(false);
+                     } catch(e: any) {
+                         showNotification(`取消失敗: ${e.message}`, 'error');
+                     }
+                 }
+             });
+         } else {
+             await deleteFromFirestore('appointments', target.id);
+             addLog('刪除事件', `刪除 ${target.reason}`);
+             showNotification('已刪除', 'info');
+             setIsBlockModalOpen(false);
+         }
+     } catch (e: any) {
+         showNotification(`刪除失敗: ${e.message}`, 'error');
      }
   };
 
@@ -693,7 +702,6 @@ export default function App() {
 
   const handleToggleComplete = async (app: Appointment) => {
     if (app.status === 'checked_in' || app.status === 'confirmed') {
-        // Trigger Fancy Modal for Confirmation
         setConfirmModal({
             isOpen: true,
             title: '確認核實完課？',
@@ -717,6 +725,31 @@ export default function App() {
             showNotification('狀態已還原 (點數未自動退還)', 'info');
         }
     }
+  };
+
+  // BATCH DELETE PROTECTION
+  const handleBatchDelete = async () => {
+      const selectedApps = Array.from(selectedBatch).map(id => appointments.find(a => a.id === id)).filter(Boolean) as Appointment[];
+      
+      const hasCompleted = selectedApps.some(a => a.status === 'completed' || a.status === 'checked_in');
+      
+      if (hasCompleted) {
+          showNotification('無法刪除已完成或已簽到的課程', 'error');
+          return;
+      }
+      
+      if(!window.confirm(`確定取消選取的 ${selectedBatch.size} 筆預約嗎？`)) return;
+
+      try {
+          await Promise.all(selectedApps.map(async (app) => {
+              await handleCustomerCancel(app, '管理員批次取消'); 
+          }));
+          addLog('批次取消', `取消 ${selectedBatch.size} 筆預約`);
+          setSelectedBatch(new Set());
+          showNotification(`成功取消 ${selectedBatch.size} 筆`, 'success');
+      } catch (e: any) {
+          showNotification(`批次取消失敗: ${e.message}`, 'error');
+      }
   };
 
   const handleSaveCoach = async (coachData: Coach, email?: string, password?: string) => {
@@ -759,8 +792,12 @@ export default function App() {
   };
 
   const updateCoachWorkDays = async (coach: Coach) => {
-      await saveToFirestore('coaches', coach.id, coach);
-      showNotification('班表設定已更新', 'success');
+      try {
+          await saveToFirestore('coaches', coach.id, coach);
+          showNotification('班表設定已更新', 'success');
+      } catch (e) {
+          showNotification('更新失敗', 'error');
+      }
   };
 
   const getAnalysis = () => {
@@ -908,17 +945,7 @@ export default function App() {
             handleFileImport={handleFileImport}
             selectedBatch={selectedBatch}
             toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
-            handleBatchDelete={async () => {
-                if(!window.confirm(`確定取消選取的 ${selectedBatch.size} 筆預約嗎？`)) return;
-                await Promise.all(Array.from(selectedBatch).map(async (id: string) => {
-                    const app = appointments.find(a => a.id === id);
-                    if (!app) return;
-                    await handleCustomerCancel(app, '管理員批次取消'); 
-                }));
-                addLog('批次取消', `取消 ${selectedBatch.size} 筆預約`);
-                setSelectedBatch(new Set());
-                showNotification(`成功取消 ${selectedBatch.size} 筆`, 'success');
-            }}
+            handleBatchDelete={handleBatchDelete}
             onOpenBatchBlock={handleOpenBatchBlock}
             renderWeeklyCalendar={() => (
                <WeeklyCalendar 
@@ -999,6 +1026,7 @@ export default function App() {
 
       </main>
 
+      {/* Confirmation Modal and others remain the same */}
       {view !== 'admin' && (
         <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-slate-800 flex justify-around p-3 z-50 backdrop-blur-xl">
             <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
@@ -1016,23 +1044,19 @@ export default function App() {
         </div>
       )}
 
-      {/* Confirmation Modal - Highly Enhanced Glassmorphism */}
+      {/* Confirmation Modal */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
              <div className="glass-panel w-full max-w-sm rounded-3xl p-8 animate-slideUp shadow-2xl border border-white/60 dark:border-slate-700/60 relative overflow-hidden">
-                 {/* Decorative background blob */}
                  <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
-                 
                  <div className="relative z-10 flex flex-col items-center text-center">
                      <div className="mb-6 scale-125">
                          {confirmModal.icon ? confirmModal.icon : <AlertTriangle size={48} className="text-orange-500 animate-bounce-short"/>}
                      </div>
-                     
                      <h3 className="font-bold text-xl mb-2 text-slate-800 dark:text-white">{confirmModal.title || '確認操作'}</h3>
                      <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed px-2">
                          {confirmModal.message}
                      </p>
-                     
                      {confirmModal.showInput && (
                          <textarea 
                             className="w-full glass-input p-4 rounded-2xl mb-6 h-24 dark:text-white resize-none focus:ring-2 focus:ring-indigo-500/50 outline-none" 
@@ -1041,7 +1065,6 @@ export default function App() {
                             onChange={e => setCancelReason(e.target.value)}
                          ></textarea>
                      )}
-                     
                      <div className="flex flex-col gap-3 w-full">
                          <button 
                             onClick={() => { 
@@ -1069,7 +1092,7 @@ export default function App() {
         </div>
       )}
       
-      {/* Block/Event Modal (Simplified inclusion here, mainly handled by logic) */}
+      {/* Block/Event Modal */}
       {isBlockModalOpen && (
          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
             <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
@@ -1089,7 +1112,6 @@ export default function App() {
                         )}
                     </div>
                 </div>
-                
                 {deleteConfirm ? (
                     <div className="p-8 text-center">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><AlertTriangle size={32}/></div>
@@ -1102,6 +1124,7 @@ export default function App() {
                     </div>
                 ) : (
                     <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
+                        {/* Form contents same as original */}
                         <div className="grid grid-cols-2 gap-4">
                            <div>
                                <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
@@ -1110,9 +1133,9 @@ export default function App() {
                                    setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
                                    if(newType !== 'private') setMemberSearchTerm('');
                                }}>
-                                   <option value="block">內部事務 (Block)</option>
-                                   <option value="private">私人課程 (1v1)</option>
-                                   <option value="group">團體課程 (Group)</option>
+                                   <option value="block">內部事務</option>
+                                   <option value="private">私人課程</option>
+                                   <option value="group">團體課程</option>
                                </select>
                            </div>
                            {['manager', 'receptionist'].includes(currentUser?.role) && (
@@ -1124,12 +1147,10 @@ export default function App() {
                                </div>
                            )}
                         </div>
-
                         <div>
                              <label className="text-xs font-bold text-slate-500 uppercase">日期</label>
                              <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} />
                         </div>
-
                         <div className="grid grid-cols-2 gap-4 items-end">
                              <div className="w-full">
                                  <label className="text-xs font-bold text-slate-500 uppercase">開始時間</label>
@@ -1146,12 +1167,8 @@ export default function App() {
                                  </div>
                              )}
                         </div>
-                        {isBatchMode && (
-                            <div className="text-xs text-indigo-500 flex items-center gap-1 bg-indigo-50 dark:bg-indigo-900/20 p-2 rounded-lg">
-                                <Info size={12}/> 將批次建立 {blockForm.time} 至 {blockForm.endTime} 的所有時段
-                            </div>
-                        )}
-
+                        
+                        {/* Type specific fields (Block Reason, Group Name, Private User Search) */}
                         {blockForm.type === 'block' && (
                             <div>
                                 <label className="text-xs font-bold text-slate-500 uppercase">內部事項標籤</label>
@@ -1165,7 +1182,6 @@ export default function App() {
                                 </div>
                             </div>
                         )}
-
                         {blockForm.type === 'group' && (
                              <div>
                                  <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Edit3 size={12}/> 課程名稱</label>
@@ -1179,7 +1195,6 @@ export default function App() {
                                  />
                              </div>
                         )}
-
                         {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
                             <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all">
                                 <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
@@ -1251,10 +1266,8 @@ export default function App() {
                                         )}
                                     </div>
                                 )}
-                                {!blockForm.customer?.name && <div className="text-[10px] text-red-400 mt-1">* 必須選擇現有學員</div>}
                             </div>
                         )}
-                        
                         {!blockForm.id && (
                             <div>
                                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
