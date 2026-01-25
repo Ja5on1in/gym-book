@@ -99,6 +99,26 @@
       .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(156, 163, 175, 0.5); border-radius: 10px; }
       .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(156, 163, 175, 0.8); }
+
+      /* Striped background for off-days */
+      .bg-stripes-gray {
+        background-image: repeating-linear-gradient(
+            45deg, 
+            rgba(0,0,0,0.03), 
+            rgba(0,0,0,0.03) 10px, 
+            transparent 10px, 
+            transparent 20px
+        );
+      }
+      .dark .bg-stripes-gray {
+        background-image: repeating-linear-gradient(
+            45deg, 
+            rgba(255,255,255,0.03), 
+            rgba(255,255,255,0.03) 10px, 
+            transparent 10px, 
+            transparent 20px
+        );
+      }
     </style>
   <script type="importmap">
 {

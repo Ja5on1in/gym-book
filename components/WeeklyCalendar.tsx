@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
@@ -54,7 +53,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
           </div>
         </div>
         <div className="flex gap-2 text-xs text-gray-500">
-          <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><div className="w-3 h-3 bg-gray-200 dark:bg-gray-700 pattern-diagonal rounded-full"></div><span>排休</span></div>
+          <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><div className="w-3 h-3 bg-stripes-gray rounded-full border border-gray-200 dark:border-gray-700"></div><span>排休</span></div>
           <div className="flex items-center gap-2 px-3 py-1 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"><div className="w-3 h-3 bg-orange-400 rounded-full animate-pulse"></div><span>待確認</span></div>
         </div>
       </div>
@@ -86,9 +85,9 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                 // If 'all', we default to user's role (manager sees all open, coach sees their own off times)
                 const targetCoach = selectedCoachId !== 'all' 
                     ? coaches.find(c => c.id === selectedCoachId) 
-                    : (currentUser.role === 'manager' ? null : coaches.find(c => c.id === currentUser.id));
+                    : (currentUser.role === 'manager' || currentUser.role === 'receptionist' ? null : coaches.find(c => c.id === currentUser.id));
 
-                const isOff = targetCoach && isCoachDayOff(dateKey, targetCoach);
+                const isOff = targetCoach ? isCoachDayOff(dateKey, targetCoach) : false;
                 
                 const slotApps = appointments.filter(a => 
                     a.date === dateKey && 
@@ -104,7 +103,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                   <div 
                     key={`${dateKey}-${time}`} 
                     className={`border-r border-gray-100/50 dark:border-gray-700/50 p-1.5 relative group transition-all duration-200
-                      ${isOff ? 'bg-stripes-gray opacity-40' : 'hover:bg-white/40 dark:hover:bg-gray-800/40 cursor-pointer'}
+                      ${isOff ? 'bg-stripes-gray opacity-60 cursor-not-allowed' : 'hover:bg-white/40 dark:hover:bg-gray-800/40 cursor-pointer'}
                     `}
                     onClick={() => {
                         if (!isOff && !isLoading) onSlotClick(dateKey, time);
@@ -114,7 +113,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                         {visibleApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
                             const coach = coaches.find(c => c.id === app.coachId);
                             const colorClass = coach?.color || 'bg-gray-100 text-gray-800 border-gray-200';
-                            const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
+                            const isMine = currentUser.role === 'manager' || currentUser.role === 'receptionist' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
                             const isCheckedIn = app.status === 'checked_in';
                             
@@ -142,12 +141,12 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                         <button 
                                             onClick={(e) => { 
                                                 e.stopPropagation(); 
-                                                if(!isLoading && window.confirm('確認核實完課？這將正式扣除 1 點點數且無法輕易撤銷。')) {
+                                                if(!isLoading && window.confirm('確認核實完課？這將正式標記為完課，此動作無法撤銷。')) {
                                                     onToggleComplete(app); 
                                                 }
                                             }}
                                             className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
-                                            title="確認完課 (扣點)"
+                                            title="確認完課"
                                         >
                                             <AlertCircle size={12}/>
                                         </button>

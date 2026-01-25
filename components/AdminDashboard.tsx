@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useMemo } from 'react';
 import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, Lock, Unlock, Save, AlertTriangle, CheckCircle, RotateCcw, ShieldCheck, Download, Timer, Filter, BookOpen, HelpCircle, Info, TrendingDown, TrendingUp, Dumbbell } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
@@ -104,8 +103,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const userHistory = useMemo(() => {
     if (!viewingHistoryFor) return [];
     const deductions = appointments
-        .filter(app => app.status === 'completed' && (app.type === 'private' || (app.type as string) === 'client') && ((viewingHistoryFor.lineUserId && app.lineUserId === viewingHistoryFor.lineUserId) || (app.customer?.name === viewingHistoryFor.name && (!viewingHistoryFor.phone || app.customer?.phone === viewingHistoryFor.phone))))
-        .map(app => ({ timestamp: new Date(`${app.date}T${app.time}`).getTime(), description: '私人課程完課', change: -1, details: `教練: ${app.coachName || 'N/A'}` }));
+        .filter(app => (app.status === 'completed' || app.status === 'confirmed' || app.status === 'checked_in') && (app.type === 'private' || (app.type as string) === 'client') && ((viewingHistoryFor.lineUserId && app.lineUserId === viewingHistoryFor.lineUserId) || (app.customer?.name === viewingHistoryFor.name && (!viewingHistoryFor.phone || app.customer?.phone === viewingHistoryFor.phone))))
+        .map(app => ({ timestamp: new Date(app.createdAt).getTime(), description: '課程預約 (預扣)', change: -1, details: `教練: ${app.coachName || 'N/A'}` }));
+    
+    const refunds = appointments
+        .filter(app => app.status === 'cancelled' && (app.type === 'private' || (app.type as string) === 'client') && ((viewingHistoryFor.lineUserId && app.lineUserId === viewingHistoryFor.lineUserId) || (app.customer?.name === viewingHistoryFor.name && (!viewingHistoryFor.phone || app.customer?.phone === viewingHistoryFor.phone))))
+        .map(app => ({ timestamp: new Date(app.createdAt).getTime() + 1, description: '取消預約 (返還)', change: 1, details: `原因: ${app.cancelReason || 'N/A'}` }));
 
     const adjustments = logs
         .filter(log => log.action === '庫存調整' && log.details.includes(viewingHistoryFor.name))
@@ -122,7 +125,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
             return { timestamp: new Date(log.time).getTime(), description: '點數調整', change: change, details: `操作者: ${log.user}` }
         }).filter(adj => adj.change !== 0);
 
-    return [...deductions, ...adjustments].sort((a, b) => b.timestamp - a.timestamp);
+    return [...deductions, ...refunds, ...adjustments].sort((a, b) => b.timestamp - a.timestamp);
   }, [viewingHistoryFor, appointments, logs]);
 
   const handlePrevMonth = () => setAnalysisMonth(current => new Date(current.getFullYear(), current.getMonth() - 1, 1));
@@ -133,7 +136,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   };
 
   const handleRevertStatus = async (app: Appointment) => {
-      if (currentUser.role === 'manager' && window.confirm(`確定要將 ${app.customer?.name || '此課程'} 的狀態還原為「已確認」嗎？`)) {
+      if (currentUser.role === 'manager' && window.confirm(`確定要將 ${app.customer?.name || '此課程'} 的狀態還原為「已確認」嗎？此動作不會自動返還點數。`)) {
           try {
               await saveToFirestore('appointments', app.id, { ...app, status: 'confirmed' });
           } catch (e) { console.error(e); alert('更新失敗'); }
@@ -241,6 +244,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const checkedInCount = filteredApps.filter(a => a.status === 'checked_in').length;
 
+  const coreTabs = { calendar: <><Clock size={16}/> 行事曆</>, appointments: <><List size={16}/> 預約列表</>, inventory: <><CreditCard size={16}/> 庫存管理</>, workout: <><Dumbbell size={16}/> 課表</>};
+  const systemTabs = { analysis: <><BarChart3 size={16}/> 營運分析</>, staff: <><Users size={16}/> 員工管理</>, settings: <><SettingsIcon size={16}/> 班表設定</>, logs: <><History size={16}/> 操作紀錄</>, help: <><BookOpen size={16}/> 使用手冊</> };
+
   return (
     <div className="max-w-6xl mx-auto p-4 pb-24">
        <div className="flex justify-between items-center mb-8">
@@ -256,7 +262,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                <div className="flex items-center gap-3">
                    <div className="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center backdrop-blur-sm"><Timer size={20}/></div>
                    <div>
-                       <div className="font-bold text-lg">等待確認完課</div>
+                       <div className="font-bold text-lg">待處理稽核</div>
                        <div className="text-sm opacity-90">有 {checkedInCount} 筆學生已簽到，請核實</div>
                    </div>
                </div>
@@ -264,15 +270,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
            </div>
        )}
 
-       <div className="glass-panel p-1 rounded-2xl flex gap-1 mb-8 overflow-x-auto mx-auto max-w-full md:max-w-fit shadow-lg custom-scrollbar">
-          {['calendar','appointments','analysis','staff','inventory', 'workout', 'settings','logs','help'].map(t => {
-             if (t === 'staff' && currentUser.role !== 'manager') return null;
-             return (
-             <button key={t} onClick={()=>setAdminTab(t)} className={`px-5 py-2.5 rounded-xl whitespace-nowrap text-sm font-medium transition-all flex items-center gap-2 ${adminTab===t ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-white shadow-md transform scale-105' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-white/30'}`}>
-               {{ calendar: <><Clock size={16}/> 行事曆</>, appointments: <><List size={16}/> 預約列表</>, analysis: <><BarChart3 size={16}/> 營運分析</>, staff: <><Users size={16}/> 員工管理</>, inventory: <><CreditCard size={16}/> 庫存管理</>, workout: <><Dumbbell size={16}/> 課表</>, settings: <><SettingsIcon size={16}/> 班表設定</>, logs: <><History size={16}/> 操作紀錄</>, help: <><BookOpen size={16}/> 使用手冊</> }[t]}
-             </button>
-          )})}
-       </div>
+      <div className="flex flex-col lg:flex-row gap-4 mb-8">
+        <div className="flex-1">
+          <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 ml-2">核心營運</h4>
+          <div className="glass-panel p-1 rounded-2xl flex gap-1 shadow-lg overflow-x-auto custom-scrollbar">
+            {Object.entries(coreTabs).map(([key, value]) => (
+              <button key={key} onClick={() => setAdminTab(key)} className={`px-5 py-2.5 rounded-xl whitespace-nowrap text-sm font-medium transition-all flex items-center gap-2 ${adminTab === key ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-white shadow-md transform scale-105' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-white/30'}`}>
+                {value}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="flex-1">
+          <h4 className="text-xs font-bold text-gray-400 uppercase mb-2 ml-2">系統數據</h4>
+          <div className="glass-panel p-1 rounded-2xl flex gap-1 shadow-lg overflow-x-auto custom-scrollbar">
+            {Object.entries(systemTabs).map(([key, value]) => {
+              if (key === 'staff' && currentUser.role !== 'manager') return null;
+              return (
+                <button key={key} onClick={() => setAdminTab(key)} className={`px-5 py-2.5 rounded-xl whitespace-nowrap text-sm font-medium transition-all flex items-center gap-2 ${adminTab === key ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-white shadow-md transform scale-105' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 hover:bg-white/30'}`}>
+                  {value}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
 
        {adminTab === 'calendar' && (<><div className="flex justify-end mb-4 animate-fadeIn"><button onClick={onOpenBatchBlock} className="flex items-center gap-2 bg-gray-800 text-white dark:bg-white dark:text-gray-900 px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity"><Layers size={16}/> 批次封鎖時段</button></div>{renderWeeklyCalendar()}</>)}
        {adminTab === 'workout' && (<WorkoutPlans currentUser={currentUser} inventories={inventories} workoutPlans={workoutPlans} onSavePlan={onSaveWorkoutPlan} onDeletePlan={onDeleteWorkoutPlan} onSaveInventory={onSaveInventory}/>)}
@@ -309,7 +332,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                             <button
                                 onClick={(e) => {
                                     e.stopPropagation();
-                                    if (window.confirm('確認核實完課？這將正式扣除 1 點點數且無法輕易撤銷。')) {
+                                    if (window.confirm('確認核實完課？此動作將正式標記此堂課完成。')) {
                                         onToggleComplete(app);
                                     }
                                 }}
@@ -342,7 +365,60 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        {adminTab === 'analysis' && (<div className="space-y-6 animate-slideUp"><div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6"><div className="flex items-center gap-4 bg-white/50 dark:bg-gray-800/50 p-2 rounded-xl shadow-sm"><button onClick={handlePrevMonth} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors"><ChevronLeft size={20}/></button><span className="font-bold text-lg w-32 text-center text-gray-700 dark:text-gray-200">{analysisMonth.getFullYear()} 年 {analysisMonth.getMonth() + 1} 月</span><button onClick={handleNextMonth} disabled={new Date(analysisMonth.getFullYear(), analysisMonth.getMonth() + 1, 1) > new Date()} className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"><ChevronRight size={20}/></button></div><div className="flex gap-3"><button onClick={handleExportCancelCsv} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button><button onClick={handleExportRangeCsv} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出本月報表</button></div></div><div className="grid grid-cols-1 md:grid-cols-3 gap-6"><div className="glass-panel p-6 rounded-3xl relative overflow-hidden"><div className="absolute top-0 right-0 p-4 opacity-10"><BarChart3 size={100} className="text-orange-500"/></div><h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Clock size={18} className="text-orange-500"/> 熱門時段</h4><div className="space-y-3 relative z-10">{statsData.topTimeSlots.length > 0 ? statsData.topTimeSlots.map((s: any, i: number) => (<div key={s.time} className="flex justify-between items-center p-3 bg-white/50 dark:bg-gray-800/50 rounded-xl border border-white/40 dark:border-gray-700"><span className="font-bold text-orange-600 dark:text-orange-400">#{i+1} {s.time}</span><span className="text-sm font-medium">{s.count} 堂</span></div>)) : <div className="text-center text-gray-400 text-sm py-4">無數據</div>}</div></div><div className="glass-panel p-6 rounded-3xl flex flex-col justify-center"><h4 className="font-bold text-gray-800 dark:text-white mb-4 text-center">狀態總覽</h4><div className="grid grid-cols-3 gap-2 text-center divide-x divide-gray-200 dark:divide-gray-700"><div><div className="text-3xl lg:text-4xl font-bold text-indigo-500 mb-1">{statsData.totalActive}</div><div className="text-[10px] font-bold text-gray-400 uppercase">預約中</div></div><div><div className="text-3xl lg:text-4xl font-bold text-emerald-500 mb-1">{statsData.totalCompleted}</div><div className="text-[10px] font-bold text-gray-400 uppercase">已完課</div></div><div><div className="text-3xl lg:text-4xl font-bold text-red-500 mb-1">{statsData.totalCancelled}</div><div className="text-[10px] font-bold text-gray-400 uppercase">已取消</div></div></div></div><div className="glass-panel p-6 rounded-3xl md:col-span-1"><h4 className="font-bold text-gray-800 dark:text-white mb-4 flex items-center gap-2"><UserIcon size={18} className="text-purple-500"/> 課程統計</h4><div className="overflow-y-auto max-h-[200px] custom-scrollbar pr-2"><div className="grid grid-cols-4 gap-2 text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider"><span>教練</span><span className="text-right">個人</span><span className="text-right">團課</span><span className="text-right">總計</span></div>{(currentUser.role === 'manager' ? statsData.coachStats : statsData.coachStats.filter((s: any) => s.id === currentUser.id)).map((c: any) => (<div key={c.id} className="grid grid-cols-4 gap-2 text-sm py-2 border-b border-gray-100 dark:border-gray-700 last:border-0 items-center"><span className="truncate font-medium dark:text-gray-200">{c.name}</span><span className="text-right text-gray-500">{c.personal}</span><span className="text-right text-gray-500">{c.group}</span><span className="text-right font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/30 rounded px-1">{c.total}</span></div>))}</div></div></div></div>)}
        {adminTab === 'staff' && currentUser.role === 'manager' && (<div className="glass-panel rounded-3xl shadow-lg p-6"><div className="flex justify-between items-center mb-6"><h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Users className="text-indigo-500"/> 員工管理</h3><button onClick={() => handleOpenCoachModal()} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all"><Plus size={16}/> 新增教練</button></div><div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">{coaches.map(coach => (<div key={coach.id} className="glass-card p-4 rounded-2xl relative group hover:shadow-lg transition-all border border-gray-100 dark:border-gray-700"><div className={`absolute top-0 left-0 w-2 h-full rounded-l-2xl ${coach.color.split(' ')[0]}`}></div><div className="pl-4 flex justify-between items-start"><div><h4 className="font-bold text-lg dark:text-white mb-1">{coach.name}</h4><div className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-2 mb-1"><span className="px-2 py-0.5 rounded-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-600 uppercase">{coach.role}</span><span>{coach.workStart} - {coach.workEnd}</span></div>{coach.offDates && coach.offDates.length > 0 && (<div className="flex items-center gap-1 text-[10px] text-red-500 bg-red-50 dark:bg-red-900/20 px-2 py-0.5 rounded w-fit"><CalendarX size={10}/>{coach.offDates.length} 個特定休假日</div>)}</div><div className="flex gap-2"><button onClick={() => handleOpenCoachModal(coach)} className="p-2 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 rounded-lg transition-colors"><Edit2 size={16}/></button><button onClick={() => onDeleteCoach(coach.id, coach.name)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-lg transition-colors"><Trash2 size={16}/></button></div></div></div>))}</div></div>)}
        {adminTab === 'settings' && (<div className="space-y-6">{currentUser.role === 'manager' && (<div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-6 rounded-3xl shadow-lg text-white flex justify-between items-center"><span className="font-bold flex items-center gap-3 text-lg"><Database size={24}/> 資料庫管理</span><div className="flex gap-3"><button onClick={handleExportJson} className="bg-white/20 hover:bg-white/30 backdrop-blur-sm px-4 py-2 rounded-xl text-sm border border-white/30 transition-all">匯出備份</button><button onClick={() => fileInputRef.current?.click()} className="bg-white text-indigo-600 px-4 py-2 rounded-xl text-sm font-bold shadow-sm hover:bg-gray-50 transition-all">匯入資料</button><input type="file" ref={fileInputRef} onChange={handleFileImport} className="hidden"/></div></div>)}{coaches.map(c => {if (currentUser.role === 'coach' && currentUser.id !== c.id) return null; return (<div key={c.id} className="glass-panel p-6 rounded-3xl shadow-sm"><div className="font-bold mb-6 dark:text-white flex items-center gap-3 text-xl border-b border-gray-100 dark:border-gray-700 pb-4"><div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center text-indigo-600"><Clock size={20}/></div>{c.name} 班表設定</div><div className="grid grid-cols-1 lg:grid-cols-2 gap-4">{['日','一','二','三','四','五','六'].map((d, i) => { const isWorkDay = c.workDays?.includes(i); const hours = c.dailyWorkHours?.[i.toString()] || { start: c.workStart, end: c.workEnd }; return (<div key={i} className={`p-4 rounded-2xl border transition-all duration-300 ${isWorkDay ? 'border-indigo-200 bg-indigo-50/50 dark:bg-indigo-900/10 dark:border-indigo-800' : 'border-gray-100 bg-gray-50/50 dark:bg-gray-800/50 dark:border-gray-700 opacity-60'}`}><div className="flex items-center justify-between"><div className="flex items-center gap-4"><button onClick={() => handleUpdateDayConfig(c, i, !isWorkDay, hours.start, hours.end)} className={`w-12 h-7 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-gray-300 dark:bg-gray-600'}`}><div className={`absolute top-1 left-1 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-300 ${isWorkDay ? 'translate-x-5' : 'translate-x-0'}`}></div></button><span className={`font-bold ${isWorkDay ? 'text-gray-800 dark:text-gray-200' : 'text-gray-400'}`}>星期{d}</span></div>{!isWorkDay && <span className="text-xs font-medium text-gray-400 bg-white dark:bg-gray-700 px-2 py-1 rounded">休假</span>}</div>{isWorkDay && (<div className="mt-4 flex items-center gap-2 bg-white/70 dark:bg-gray-700/50 p-2 rounded-xl border border-gray-100 dark:border-gray-600 shadow-sm"><Clock size={14} className="text-gray-400 ml-1"/><select value={hours.start} onChange={(e) => handleUpdateDayConfig(c, i, true, e.target.value, hours.end)} className="flex-1 bg-transparent text-sm font-medium text-gray-700 dark:text-gray-200 outline-none cursor-pointer text-center">{ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}</select><ChevronRight size={14} className="text-gray-300"/><select value={hours.end} onChange={(e) => handleUpdateDayConfig(c, i, true, hours.start, e.target.value)} className="flex-1 bg-transparent text-sm font-medium text-gray-700 dark:text-gray-200 outline-none cursor-pointer text-center">{ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}</select></div>)}</div>); })}</div></div>); })}</div>)}
-       {adminTab === 'help' && (<div className="glass-panel rounded-3xl shadow-lg p-8 animate-slideUp"><h3 className="font-bold text-2xl mb-6 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-4"><BookOpen className="text-indigo-500"/> 使用手冊與操作指南</h3><div className="space-y-8"><section><h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Info size={20} className="text-blue-500"/> 狀態與顏色說明</h4><div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4"><div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-2xl border border-indigo-100 dark:border-indigo-800"><span className="text-xs font-bold bg-indigo-100 text-indigo-600 px-2 py-1 rounded-full mb-2 inline-block">已預約</span><p className="text-sm text-gray-600 dark:text-gray-300">學生已成功預約課程，尚未上課。此時尚未扣除點數。</p></div><div className="p-4 bg-orange-50 dark:bg-orange-900/20 rounded-2xl border border-orange-100 dark:border-orange-800"><div className="flex items-center gap-2 mb-2"><span className="text-xs font-bold bg-orange-100 text-orange-600 px-2 py-1 rounded-full">已簽到</span><Timer size={14} className="text-orange-500 animate-pulse"/></div><p className="text-sm text-gray-600 dark:text-gray-300">學生到達現場並在手機上按下簽到。需要教練核實。</p></div><div className="p-4 bg-emerald-50 dark:bg-emerald-900/20 rounded-2xl border border-emerald-100 dark:border-emerald-800"><div className="flex items-center gap-2 mb-2"><span className="text-xs font-bold bg-emerald-100 text-emerald-600 px-2 py-1 rounded-full">已完課</span><CheckCircle size={14} className="text-emerald-500"/></div><p className="text-sm text-gray-600 dark:text-gray-300">教練確認學生上課完畢。系統已自動扣除 1 點。</p></div><div className="p-4 bg-red-50 dark:bg-red-900/20 rounded-2xl border border-red-100 dark:border-red-800"><span className="text-xs font-bold bg-red-100 text-red-600 px-2 py-1 rounded-full mb-2 inline-block">已取消</span><p className="text-sm text-gray-600 dark:text-gray-300">課程已被取消。不會扣除任何點數。</p></div></div></section><section><h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Layers size={20} className="text-purple-500"/> 標準作業流程 (SOP)</h4><div className="space-y-4"><div className="flex items-start gap-4"><div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center font-bold text-gray-600 dark:text-gray-300 shrink-0">1</div><div><h5 className="font-bold text-gray-800 dark:text-white">學生預約</h5><p className="text-sm text-gray-600 dark:text-gray-400">學生透過 LINE 前台預約，或由櫃檯/管理員在後台「行事曆」代為新增預約。此階段系統會檢查餘額並提示，但允許預約。</p></div></div><div className="flex items-start gap-4"><div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold shrink-0">2</div><div><h5 className="font-bold text-gray-800 dark:text-white">學生簽到</h5><p className="text-sm text-gray-600 dark:text-gray-400">上課前，學生在「我的預約」點擊「立即簽到」。後台行事曆該卡片會出現橘色外框與「等待確認」字樣。</p></div></div><div className="flex items-start gap-4"><div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold shrink-0">3</div><div><h5 className="font-bold text-gray-800 dark:text-white">教練核銷 (扣點)</h5><p className="text-sm text-gray-600 dark:text-gray-400">教練或管理員在行事曆上點擊該課程卡片上的 <span className="inline-flex items-center justify-center bg-orange-500 text-white rounded-full w-4 h-4 text-[10px]"><AlertTriangle size={8}/></span> 按鈕。確認後狀態變為「已完課」，並扣除學員點數。</p></div></div><div className="flex items-start gap-4"><div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold shrink-0">4</div><div><h5 className="font-bold text-gray-800 dark:text-white">異常處理</h5><p className="text-sm text-gray-600 dark:text-gray-400">若有學生忘記簽到 (預約列表顯示 <span className="text-yellow-600 font-bold">'未簽到'</span>)，管理員可在「預約列表」中找到該筆紀錄並手動還原狀態，或直接與學生溝通後於「庫存管理」手動調整點數。</p></div></div></div></section></div></div>)}
+       {adminTab === 'help' && (
+         <div className="glass-panel rounded-3xl shadow-lg p-8 animate-slideUp">
+           <h3 className="font-bold text-2xl mb-6 dark:text-white flex items-center gap-2 border-b border-gray-100 dark:border-gray-700 pb-4">
+             <BookOpen className="text-indigo-500"/> 使用手冊與操作指南
+           </h3>
+           <div className="space-y-8">
+             <section>
+               <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2"><Layers size={20} className="text-purple-500"/> 核心流程：點數預扣與雙重核實</h4>
+               <div className="space-y-4">
+                 <div className="flex items-start gap-4">
+                   <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold shrink-0">1</div>
+                   <div>
+                     <h5 className="font-bold text-gray-800 dark:text-white">預約與預扣點數</h5>
+                     <p className="text-sm text-gray-600 dark:text-gray-400">當學員預約一堂私人課程時，系統會立即檢查其帳戶是否有足夠點數。若有，將<span className="font-bold text-red-500">立即預扣 1 點</span>，並將課程狀態設為「已預約」。若點數不足，則無法完成預約。</p>
+                   </div>
+                 </div>
+                 <div className="flex items-start gap-4">
+                   <div className="w-8 h-8 rounded-full bg-orange-100 text-orange-600 flex items-center justify-center font-bold shrink-0">2</div>
+                   <div>
+                     <h5 className="font-bold text-gray-800 dark:text-white">學員簽到</h5>
+                     <p className="text-sm text-gray-600 dark:text-gray-400">上課前，學員在「我的預約」頁面點擊「立即簽到」。課程狀態更新為「已簽到」，並在後台以<span className="font-bold text-orange-500">橘色標示</span>提醒教練。此階段不影響點數。</p>
+                   </div>
+                 </div>
+                 <div className="flex items-start gap-4">
+                   <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold shrink-0">3</div>
+                   <div>
+                     <h5 className="font-bold text-gray-800 dark:text-white">教練核實完課</h5>
+                     <p className="text-sm text-gray-600 dark:text-gray-400">課程結束後，教練或管理員在後台點擊「核實完課」按鈕。課程狀態更新為「已完課」，預扣的點數<span className="font-bold">正式消耗</span>。這是完成課程的最終步驟。</p>
+                   </div>
+                 </div>
+                  <div className="flex items-start gap-4">
+                   <div className="w-8 h-8 rounded-full bg-red-100 text-red-600 flex items-center justify-center font-bold shrink-0">4</div>
+                   <div>
+                     <h5 className="font-bold text-gray-800 dark:text-white">取消與點數返還</h5>
+                     <p className="text-sm text-gray-600 dark:text-gray-400">若學員在課程狀態為「已預約」時取消，系統將<span className="font-bold text-green-600">自動返還預扣的 1 點</span>至其帳戶。若已「簽到」或「完課」，則無法由學員端取消。</p>
+                   </div>
+                 </div>
+               </div>
+             </section>
+             <section>
+               <h4 className="font-bold text-lg text-gray-800 dark:text-white mb-4 flex items-center gap-2"><CalendarX size={20} className="text-red-500"/> 教練休假設定</h4>
+                <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">為確保預約系統準確，請正確設定教練的休假時間。系統提供兩種設定方式：</p>
+                <ul className="list-disc list-inside space-y-2 text-sm text-gray-600 dark:text-gray-400">
+                    <li><span className="font-bold">週期性班表 (Settings > 班表設定)：</span>設定每週固定的工作日與每日的上下班時間。適合常規排班。</li>
+                    <li><span className="font-bold">特定日期休假 (Staff > 員工管理 > 編輯)：</span>設定單一或不規律的休假日，例如特休、事假。此設定<span className="font-bold">優先級高於</span>週期性班表。</li>
+                </ul>
+                <div className="mt-4 p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-200 dark:border-indigo-800 flex items-start gap-3">
+                    <Info size={28} className="text-indigo-500 shrink-0 mt-1"/>
+                    <p className="text-sm text-indigo-700 dark:text-indigo-300">範例：若一位教練週六固定上班，但下週六需要請假，您應至「員工管理」找到該教練並為他新增一筆「特定日期休假」，而非修改他的常規班表。</p>
+                </div>
+             </section>
+           </div>
+         </div>
+       )}
        {adminTab === 'logs' && (<div className="glass-panel rounded-3xl shadow-lg p-6 h-[600px] overflow-y-auto custom-scrollbar"><h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><History className="text-gray-500"/> 系統日誌</h3><div className="space-y-4">{logs.filter(log => currentUser.role === 'manager' || log.user === currentUser.name).map(log => (<div key={log.id} className="relative pl-6 pb-2 border-l-2 border-gray-200 dark:border-gray-700 last:border-0"><div className="absolute -left-[9px] top-0 w-4 h-4 rounded-full bg-white dark:bg-gray-800 border-2 border-indigo-400"></div><div className="flex justify-between text-xs text-gray-400 dark:text-gray-500 mb-1"><span>{new Date(log.time).toLocaleString()}</span><span>{log.user}</span></div><div className="glass-card p-3 rounded-xl"><div className="font-bold text-gray-800 dark:text-gray-200 mb-1">{log.action}</div><div className="text-sm text-gray-600 dark:text-gray-400">{log.details}</div></div></div>))}</div></div>)}
        {isCoachModalOpen && (<div className="fixed inset-0 z-50 flex items-center justify-center bg-gray-900/60 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}><div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}><div className="bg-white/50 dark:bg-gray-900/50 p-5 border-b border-gray-100 dark:border-gray-700 flex justify-between items-center"><h3 className="font-bold text-xl dark:text-white">{isNewCoach ? '新增員工資料' : '編輯員工資料'}</h3><button onClick={() => setIsCoachModalOpen(false)}><X className="text-gray-500"/></button></div><div className="p-6"><form onSubmit={handleSubmitCoach} className="space-y-4"><div><label className="text-xs font-bold text-gray-500 uppercase">姓名</label><input type="text" required value={editingCoach.name || ''} onChange={e => setEditingCoach({...editingCoach, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/></div><div><label className="text-xs font-bold text-gray-500 uppercase">職位</label><select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"><option value="coach">教練 (Coach)</option><option value="manager">主管 (Manager)</option><option value="receptionist">櫃檯 (Receptionist)</option></select></div><div><label className="text-xs font-bold text-gray-500 uppercase">職稱 (顯示用)</label><input type="text" value={editingCoach.title || ''} onChange={e => setEditingCoach({...editingCoach, title: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="e.g. 物理治療師"/></div>{isNewCoach && (<><div><label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><Mail size={12}/> Email (登入帳號)</label><input type="email" required value={newCoachEmail} onChange={e => setNewCoachEmail(e.target.value)} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="coach@gym.com"/></div><div><label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1"><Key size={12}/> 初始密碼</label><input type="password" required value={newCoachPassword} onChange={e => setNewCoachPassword(e.target.value)} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="至少6位數"/></div></>)}<div><label className="text-xs font-bold text-gray-500 uppercase">代表色</label><div className="grid grid-cols-4 gap-2 mt-2">{COLOR_OPTIONS.map(opt => (<button type="button" key={opt.label} onClick={() => setEditingCoach({...editingCoach, color: opt.value})} className={`h-8 rounded-lg border-2 transition-all ${opt.value.split(' ')[0]} ${editingCoach.color === opt.value ? 'border-gray-600 dark:border-white scale-110' : 'border-transparent opacity-60 hover:opacity-100'}`} title={opt.label}/>))}</div></div><div className="border-t border-gray-100 dark:border-gray-700 pt-4 mt-2"><label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-2 mb-2"><CalendarX size={14}/> 特定日期休假 (Off Dates)</label><div className="flex gap-2 mb-2"><input type="date" className="flex-1 glass-input rounded-xl p-2 text-sm dark:text-white" value={tempOffDate} onChange={e => setTempOffDate(e.target.value)}/><button type="button" onClick={handleAddOffDate} className="bg-gray-200 dark:bg-gray-700 px-3 rounded-xl font-bold text-sm hover:bg-gray-300 dark:hover:bg-gray-600">新增</button></div><div className="flex flex-wrap gap-2">{editingCoach.offDates?.map(date => (<div key={date} className="flex items-center gap-1 bg-red-50 dark:bg-red-900/20 text-red-500 px-2 py-1 rounded-lg text-xs font-bold">{date}<button type="button" onClick={() => handleRemoveOffDate(date)} className="hover:text-red-700"><X size={12}/></button></div>))}{(!editingCoach.offDates || editingCoach.offDates.length === 0) && (<span className="text-xs text-gray-400 italic">無設定休假日</span>)}</div></div><button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4">儲存</button></form></div></div></div>)}
     </div>

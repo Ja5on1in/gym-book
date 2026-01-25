@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
@@ -87,15 +86,17 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
               // Await the actual submission to Firebase
               await onSubmit(e, { userId: liffProfile.userId, displayName: liffProfile.displayName });
-          } catch (err) {
+          } catch (err: any) {
               console.error("LIFF Error", err);
-              await onSubmit(e); 
+              // If onSubmit throws an error (e.g., no credits), show it.
+              setAuthError(err.message || '預約失敗，請聯繫管理員');
+              setIsVerifying(false);
           }
       } else {
-          // Fallback if somehow bypassed
            setAuthError('請先登入 LINE 以完成預約');
+           setIsVerifying(false);
       }
-      setIsVerifying(false);
+      // Success case handled by step change, no need to setIsVerifying(false) here
   };
 
   const renderCalendar = () => {
@@ -104,6 +105,8 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
     const daysInMonth = getDaysInMonth(year, month);
     const firstDay = getFirstDayOfMonth(year, month);
     const days = [];
+    const today = new Date();
+    today.setHours(0,0,0,0);
 
     for (let i = 0; i < firstDay; i++) {
         days.push(<div key={`empty-${year}-${month}-${i}`} className="h-10 w-full"></div>);
@@ -111,21 +114,21 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
     
     for (let day = 1; day <= daysInMonth; day++) {
       const loopDate = new Date(year, month, day);
-      const isSelected = selectedDate.toDateString() === loopDate.toDateString();
-      const isToday = new Date().toDateString() === loopDate.toDateString();
-      const loopDateKey = formatDateKey(year, month, day);
-      const isPast = new Date(loopDateKey) < new Date(new Date().toDateString());
+      loopDate.setHours(0,0,0,0);
+      const isSelected = selectedDate.getTime() === loopDate.getTime();
+      const isToday = today.getTime() === loopDate.getTime();
+      const isPast = loopDate < today;
       
       days.push(
         <button 
-          key={loopDateKey} 
+          key={`${year}-${month}-${day}`}
           onClick={() => { setSelectedDate(loopDate); setSelectedSlot(null); }} 
           disabled={isPast}
-          className={`h-10 w-10 mx-auto rounded-full flex items-center justify-center text-sm font-medium transition-all duration-300
-            ${isSelected ? 'bg-gradient-to-tr from-violet-600 to-indigo-600 text-white shadow-lg shadow-indigo-500/30 scale-110' : 
-              isToday ? 'bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 font-bold' : 
+          className={`h-10 w-10 mx-auto rounded-full flex items-center justify-center text-sm font-medium transition-all duration-200
+            ${isSelected ? 'bg-indigo-600 text-white shadow-lg' : 
+              isToday ? 'text-indigo-600 font-bold bg-indigo-100 dark:bg-indigo-900/50' : 
               isPast ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : 
-              'text-gray-700 dark:text-gray-300 hover:bg-white/50 dark:hover:bg-white/10'}`}
+              'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/50'}`}
         >
           {day}
         </button>
@@ -368,9 +371,9 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                  </div>
              )}
 
-             <button type="submit" disabled={isVerifying || !!authError} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-4 flex items-center justify-center gap-2
-                 ${!!authError ? 'bg-gray-400 text-white cursor-not-allowed shadow-none' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
-                {isVerifying ? '驗證中...' : !!authError ? '無法預約' : '確認預約'} <MessageCircle size={18}/>
+             <button type="submit" disabled={isVerifying} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-4 flex items-center justify-center gap-2
+                 ${isVerifying ? 'bg-gray-400 text-white cursor-wait' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
+                {isVerifying ? '驗證中...' : '確認預約'} <MessageCircle size={18}/>
              </button>
           </form>
         </div>
@@ -382,7 +385,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
               <CheckCircle size={48} className="animate-pulse"/>
            </div>
            <h2 className="text-3xl font-bold text-gray-800 dark:text-white mb-2">預約成功！</h2>
-           <p className="text-gray-500 dark:text-gray-400 mb-8 max-w-xs mx-auto">我們已經收到您的預約資訊，期待在健身房見到您。</p>
+           <p className="text-gray-500 dark:text-gray-400 mb-8 max-w-xs mx-auto">點數已預扣，期待在健身房見到您。</p>
            
            <div className="glass-card p-6 rounded-3xl max-w-sm mx-auto mb-8 border border-green-200 dark:border-green-900/50">
                <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">預約詳情</div>
