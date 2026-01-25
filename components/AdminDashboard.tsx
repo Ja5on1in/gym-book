@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown, RefreshCw } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { formatDateKey, getDaysInMonth, getFirstDayOfMonth } from '../utils';
@@ -64,7 +64,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingInventory, setEditingInventory] = useState<UserInventory | null>(null);
-  const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string}>({ private: 0, group: 0, name: '', phone: '' });
+  const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string, lineUserId?: string}>({ private: 0, group: 0, name: '', phone: '' });
+  const [isNewInventoryModalOpen, setIsNewInventoryModalOpen] = useState(false);
+  const [newInventoryForm, setNewInventoryForm] = useState<Partial<UserInventory>>({ name: '', phone: '', email: '', credits: { private: 0, group: 0 } });
 
   // Analysis Filter State
   const [statsStart, setStatsStart] = useState('');
@@ -260,7 +262,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           private: inv.credits.private,
           group: inv.credits.group,
           name: inv.name,
-          phone: inv.phone || ''
+          phone: inv.phone || '',
+          lineUserId: inv.lineUserId
       });
       setIsInventoryModalOpen(true);
   };
@@ -277,6 +280,35 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setIsInventoryModalOpen(false);
   };
   
+  const handleAddNewInventory = () => {
+      if (!newInventoryForm.name || !newInventoryForm.phone) {
+          alert('姓名與電話為必填');
+          return;
+      }
+      
+      const existingByPhone = inventories.find(inv => inv.phone === newInventoryForm.phone);
+      if (existingByPhone) {
+          if (window.confirm(`電話號碼 ${newInventoryForm.phone} 已存在於學員「${existingByPhone.name}」的資料中。要將此次輸入的資料合併更新至該學員嗎？`)) {
+              onSaveInventory({
+                  ...existingByPhone,
+                  name: newInventoryForm.name, // Update name
+                  email: newInventoryForm.email || existingByPhone.email,
+                  credits: {
+                      private: existingByPhone.credits.private + (newInventoryForm.credits?.private || 0),
+                      group: existingByPhone.credits.group + (newInventoryForm.credits?.group || 0)
+                  }
+              });
+          } else {
+              return; // User cancelled
+          }
+      } else {
+          onSaveInventory(newInventoryForm as UserInventory);
+      }
+      
+      setIsNewInventoryModalOpen(false);
+      setNewInventoryForm({ name: '', phone: '', email: '', credits: { private: 0, group: 0 } });
+  };
+
   const toggleDateCollapse = (date: string) => {
     setCollapsedDates(prev => {
         const newSet = new Set(prev);
@@ -552,22 +584,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   <div className="space-y-6">
                       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                           <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3"><CreditCard className="text-indigo-500"/> 庫存管理</h2>
-                          <div className="relative w-full md:w-auto">
-                              <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                              <input 
-                                  type="text" 
-                                  placeholder="搜尋學員姓名/電話..." 
-                                  className="pl-10 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 w-full md:w-64 focus:ring-2 focus:ring-indigo-500 outline-none glass-input"
-                                  value={searchQuery}
-                                  onChange={e => setSearchQuery(e.target.value)}
-                              />
+                          <div className="flex items-center gap-2 w-full md:w-auto">
+                              <div className="relative flex-1">
+                                  <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
+                                  <input 
+                                      type="text" 
+                                      placeholder="搜尋學員姓名/電話..." 
+                                      className="pl-10 pr-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 w-full focus:ring-2 focus:ring-indigo-500 outline-none glass-input"
+                                      value={searchQuery}
+                                      onChange={e => setSearchQuery(e.target.value)}
+                                  />
+                              </div>
+                              <button onClick={() => setIsNewInventoryModalOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
+                                  <Plus size={16}/> 新增學員
+                              </button>
                           </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {filteredInventories.map(inv => {
                               const canEdit = ['manager', 'receptionist'].includes(currentUser.role);
                               return (
-                                  <div key={inv.id} onClick={() => canEdit && handleOpenInventoryModal(inv)} className={`glass-card p-6 rounded-2xl border border-slate-100 dark:border-slate-700 transition-all hover:shadow-lg hover:scale-[1.02] group ${canEdit ? 'cursor-pointer' : ''}`}>
+                                  <div key={inv.id} onClick={() => canEdit && handleOpenInventoryModal(inv)} className={`glass-card p-6 rounded-2xl border border-slate-100 dark:border-slate-700 transition-all hover:shadow-lg hover:scale-[1.02] group relative ${canEdit ? 'cursor-pointer' : ''}`}>
+                                      {inv.lineUserId && <div className="absolute top-4 right-4 w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white dark:ring-slate-800" title="已綁定LINE"></div>}
                                       <div className="flex justify-between items-start mb-4">
                                           <div>
                                               <div className="font-bold text-lg dark:text-white group-hover:text-indigo-600 transition-colors flex items-center gap-2">
@@ -904,12 +942,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <div className="grid grid-cols-2 gap-4 mb-4">
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">私人課</label>
-                                       <input type="number" className="w-full text-2xl font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-b-2 border-indigo-200 focus:border-indigo-500 outline-none p-2 rounded-t-lg text-center glass-input" value={inventoryForm.private} onChange={e => setInventoryForm({...inventoryForm, private: Number(e.target.value)})}/>
+                                       <input type="number" disabled={currentUser.role === 'coach'} className="w-full text-2xl font-bold text-indigo-600 bg-indigo-50 dark:bg-indigo-900/20 border-b-2 border-indigo-200 focus:border-indigo-500 outline-none p-2 rounded-t-lg text-center glass-input disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.private} onChange={e => setInventoryForm({...inventoryForm, private: Number(e.target.value)})}/>
                                    </div>
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">團體課</label>
-                                       <input type="number" className="w-full text-2xl font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-200 focus:border-orange-500 outline-none p-2 rounded-t-lg text-center glass-input" value={inventoryForm.group} onChange={e => setInventoryForm({...inventoryForm, group: Number(e.target.value)})}/>
+                                       <input type="number" disabled={currentUser.role === 'coach'} className="w-full text-2xl font-bold text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-b-2 border-orange-200 focus:border-orange-500 outline-none p-2 rounded-t-lg text-center glass-input disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.group} onChange={e => setInventoryForm({...inventoryForm, group: Number(e.target.value)})}/>
                                    </div>
+                               </div>
+                               <div>
+                                  <label className="text-xs font-bold text-slate-500 uppercase mb-1 block">LINE ID</label>
+                                  <input type="text" readOnly value={inventoryForm.lineUserId || '未綁定'} className="w-full glass-input rounded-xl p-3 bg-slate-100 dark:bg-slate-800/50 text-slate-500 dark:text-slate-400 cursor-not-allowed"/>
                                </div>
 
                                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
@@ -931,8 +973,43 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                </div>
                                
                                <div className="pt-4">
-                                   <button onClick={handleSaveInventoryChanges} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2">
+                                   <button onClick={handleSaveInventoryChanges} disabled={currentUser.role === 'coach'} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:bg-slate-400 disabled:shadow-none disabled:cursor-not-allowed">
                                        <Save size={18}/> 儲存修改
+                                   </button>
+                               </div>
+                           </div>
+                       </div>
+                   </div>
+               )}
+                {isNewInventoryModalOpen && (
+                   <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsNewInventoryModalOpen(false)}>
+                       <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30" onClick={e => e.stopPropagation()}>
+                           <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center">
+                               <h3 className="font-bold text-xl dark:text-white">新增學員</h3>
+                               <button onClick={() => setIsNewInventoryModalOpen(false)}><X className="text-slate-500"/></button>
+                           </div>
+                           <div className="p-6 space-y-4">
+                               <div>
+                                   <label className="text-xs font-bold text-slate-500 uppercase">姓名*</label>
+                                   <input type="text" value={newInventoryForm.name} onChange={e => setNewInventoryForm({...newInventoryForm, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                               </div>
+                               <div>
+                                   <label className="text-xs font-bold text-slate-500 uppercase">電話*</label>
+                                   <input type="tel" value={newInventoryForm.phone} onChange={e => setNewInventoryForm({...newInventoryForm, phone: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                               </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                   <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase">私人課</label>
+                                       <input type="number" value={newInventoryForm.credits?.private} onChange={e => setNewInventoryForm({...newInventoryForm, credits: {...newInventoryForm.credits, private: Number(e.target.value)}})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                                   </div>
+                                   <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase">團體課</label>
+                                       <input type="number" value={newInventoryForm.credits?.group} onChange={e => setNewInventoryForm({...newInventoryForm, credits: {...newInventoryForm.credits, group: Number(e.target.value)}})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                                   </div>
+                               </div>
+                                <div className="pt-2">
+                                   <button onClick={handleAddNewInventory} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors">
+                                       確認新增
                                    </button>
                                </div>
                            </div>

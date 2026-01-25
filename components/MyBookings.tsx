@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer } from 'lucide-react';
-import { Appointment, Coach } from '../types';
+import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard } from 'lucide-react';
+import { Appointment, Coach, UserInventory } from '../types';
 
 interface MyBookingsProps {
   liffProfile: { userId: string; displayName: string } | null;
@@ -8,9 +8,10 @@ interface MyBookingsProps {
   coaches: Coach[];
   onCancel: (app: Appointment, reason: string) => void;
   onCheckIn: (app: Appointment) => void;
+  inventories: UserInventory[];
 }
 
-const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn }) => {
+const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn, inventories }) => {
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
   const [checkInConfirmApp, setCheckInConfirmApp] = useState<Appointment | null>(null);
 
@@ -20,6 +21,8 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     const timer = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(timer);
   }, []);
+
+  const myInventory = liffProfile ? inventories.find(i => i.lineUserId === liffProfile.userId) : null;
 
   if (!liffProfile) {
     return (
@@ -40,11 +43,21 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
 
   return (
     <div className="max-w-2xl mx-auto animate-slideUp pb-24">
-      <div className="flex items-center gap-4 mb-8">
-        <img src={`https://ui-avatars.com/api/?name=${liffProfile.displayName}&background=0D8ABC&color=fff`} className="w-16 h-16 rounded-full border-4 border-white dark:border-gray-800 shadow-lg"/>
+      <div className="flex items-start gap-4 mb-8">
+        <img src={`https://ui-avatars.com/api/?name=${liffProfile.displayName}&background=0D8ABC&color=fff&size=128`} className="w-16 h-16 rounded-full border-4 border-white dark:border-gray-800 shadow-lg"/>
         <div>
           <h1 className="text-2xl font-bold dark:text-white">{liffProfile.displayName} 的預約</h1>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">LINE ID 已連結</p>
+           {myInventory ? (
+                <div className="mt-2 text-xs font-bold flex items-center gap-2 text-slate-500 dark:text-slate-400 bg-slate-50 dark:bg-slate-800/50 px-3 py-1.5 rounded-lg border border-slate-100 dark:border-slate-700">
+                    <CreditCard size={14} className="text-indigo-500"/>
+                    剩餘課時：
+                    <span>私人 <span className="text-indigo-600 dark:text-indigo-400">{myInventory.credits.private}</span> 堂</span>
+                    <span>/</span>
+                    <span>團課 <span className="text-orange-600 dark:text-orange-400">{myInventory.credits.group}</span> 堂</span>
+                </div>
+            ) : (
+                 <p className="text-slate-500 dark:text-slate-400 text-sm">LINE ID 已連結</p>
+            )}
         </div>
       </div>
 

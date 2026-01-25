@@ -688,16 +688,57 @@ export default function App() {
                   });
                   remaining = newCredits.toString();
                   deducted = true;
+                  addLog('庫存調整', `教練 ${currentUser.name} 核實課程完成，扣除學員 ${inventory.name} 1 點私人課點數。剩餘: ${remaining}`);
               }
           }
 
           await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
-          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 ${deducted ? `(已扣除1點, 餘:${remaining})` : '(無扣點對象)'}`);
+          if (!deducted) {
+             addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課 (無對應庫存或非私人課，未扣點)`);
+          }
           showNotification(`完課確認成功！${deducted ? '已扣除點數' : ''}`, 'success');
       } catch (e) {
           console.error(e);
           showNotification('更新失敗', 'error');
       }
+  };
+  
+  const handleRevertCompletion = async (app: Appointment) => {
+    if (!currentUser || currentUser.role !== 'manager') {
+        showNotification('僅管理員可執行此操作', 'error');
+        return;
+    }
+    setConfirmModal({
+        isOpen: true,
+        title: '撤銷完課並返還點數？',
+        message: `確定要將此課程狀態改回「已確認」，並返還學員 ${app.customer?.name || ''} 1 點私人課點數嗎？`,
+        isDanger: true,
+        showInput: false,
+        onConfirm: async () => {
+            let inventory = null;
+            if (app.lineUserId) inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+            if (!inventory && app.customer?.name) {
+                inventory = inventories.find(i => i.name === app.customer?.name || (app.customer?.phone && i.phone === app.customer?.phone));
+            }
+
+            if (inventory) {
+                const newCredits = (inventory.credits.private || 0) + 1;
+                await saveToFirestore('user_inventory', inventory.id, {
+                    ...inventory,
+                    credits: { ...inventory.credits, private: newCredits },
+                    lastUpdated: new Date().toISOString()
+                });
+                await saveToFirestore('appointments', app.id, { ...app, status: 'confirmed' });
+                addLog('庫存調整', `管理員 ${currentUser.name} 撤銷完課，返還學員 ${inventory.name} 1 點私人課點數。剩餘: ${newCredits}`);
+                showNotification('已撤銷完課並返還點數', 'success');
+            } else {
+                showNotification('找不到對應的學員庫存，無法返還點數。僅還原狀態。', 'error');
+                await saveToFirestore('appointments', app.id, { ...app, status: 'confirmed' });
+                addLog('課程狀態', `管理員 ${currentUser.name} 撤銷完課 (未找到學員庫存返點)`);
+            }
+        },
+        icon: <RefreshCw size={48} className="text-orange-500"/>
+    });
   };
 
   const handleToggleComplete = async (app: Appointment) => {
@@ -711,19 +752,10 @@ export default function App() {
             onConfirm: () => handleCoachConfirmCompletion(app),
             icon: <CheckCircle2 size={48} className="text-green-500 animate-bounce-short"/>
         });
+    } else if (app.status === 'completed' && currentUser?.role === 'manager') {
+        handleRevertCompletion(app);
     } else {
-        if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role))) {
-           showNotification('僅管理員或櫃檯可執行此操作', 'info');
-           return;
-        }
-
-        const newStatus = app.status === 'completed' ? 'confirmed' : 'completed';
-
-        if (newStatus === 'confirmed' && app.status === 'completed') {
-            await saveToFirestore('appointments', app.id, { ...app, status: newStatus });
-            addLog('課程狀態', `管理員/櫃檯將 ${app.customer?.name} 狀態從 '已完課' 還原為 '已確認' (未退點)`);
-            showNotification('狀態已還原 (點數未自動退還)', 'info');
-        }
+        showNotification('無法變更此狀態或權限不足', 'info');
     }
   };
 
@@ -871,6 +903,7 @@ export default function App() {
                   coaches={coaches}
                   onCancel={handleCustomerCancel}
                   onCheckIn={handleUserCheckIn}
+                  inventories={inventories}
               />
           );
       }

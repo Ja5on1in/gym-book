@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX, RefreshCw } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime, getStartOfWeek } from '../utils';
@@ -192,28 +192,31 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                   <div className="flex justify-between items-center mb-0.5">
                                     <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
                                     
-                                    {isMine && isCheckedIn && (
-                                        <button 
-                                            onClick={(e) => { 
-                                                e.stopPropagation(); 
-                                                onToggleComplete(app); 
-                                            }}
-                                            className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
-                                            title="確認完課 (扣點)"
-                                        >
-                                            <AlertCircle size={10} className="md:w-3 md:h-3"/>
-                                        </button>
-                                    )}
+                                    <div className="flex items-center gap-1">
+                                      {isMine && isCheckedIn && (
+                                          <button 
+                                              onClick={(e) => { 
+                                                  e.stopPropagation(); 
+                                                  onToggleComplete(app); 
+                                              }}
+                                              className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
+                                              title="確認完課 (扣點)"
+                                          >
+                                              <AlertCircle size={10} className="md:w-3 md:h-3"/>
+                                          </button>
+                                      )}
 
-                                    {isMine && !isCompleted && !isCheckedIn && currentUser.role === 'manager' && (
-                                      <button 
-                                        onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
-                                        className="bg-white/60 hover:bg-white rounded-full p-0.5 text-green-700 transition-colors shadow-sm hidden md:block" title="強制結課"
-                                      >
-                                        <CheckCircle size={10} className="md:w-3 md:h-3"/>
-                                      </button>
-                                    )}
-                                    {isMine && isCompleted && <CheckCircle size={10} className="text-green-800 md:w-3 md:h-3"/>}
+                                      {isMine && currentUser.role === 'manager' && isCompleted && (
+                                        <button 
+                                          onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
+                                          className="bg-yellow-100 hover:bg-yellow-200 rounded-full p-0.5 text-yellow-700 transition-colors shadow-sm" title="撤銷完課 (返還點數)"
+                                        >
+                                          <RefreshCw size={10} className="md:w-3 md:h-3"/>
+                                        </button>
+                                      )}
+
+                                      {isMine && isCompleted && <CheckCircle size={10} className="text-green-800 md:w-3 md:h-3"/>}
+                                    </div>
                                   </div>
                                   <div className="truncate font-medium opacity-90">{displayText}</div>
                                   {isCheckedIn && <div className="text-[8px] md:text-[9px] font-bold text-orange-600 mt-0.5">等待確認</div>}
