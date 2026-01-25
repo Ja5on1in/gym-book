@@ -123,14 +123,19 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     <div className="text-[10px] md:text-xs text-slate-500 font-medium mb-1">{['週日','週一','週二','週三','週四','週五','週六'][d.getDay()]}</div>
                     <div className={`font-bold text-sm md:text-lg inline-block w-6 h-6 md:w-8 md:h-8 leading-6 md:leading-8 rounded-full ${d.toDateString()===new Date().toDateString() ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 dark:text-slate-200'}`}>{d.getDate()}</div>
                     
-                    {/* Day Off Indicator */}
+                    {/* Day Off Indicator (Optimized) */}
                     {offCoaches.length > 0 && (
-                        <div className="mt-1 flex flex-wrap justify-center gap-0.5">
-                            {offCoaches.map(c => (
-                                <span key={c.id} title={`${c.name} 休假`} className={`text-[9px] px-1 rounded border whitespace-nowrap overflow-hidden max-w-[45px] truncate ${c.color} border-current opacity-80`}>
-                                    {c.name.slice(0, 2)}
-                                </span>
-                            ))}
+                        <div 
+                            className="mt-2 flex justify-center items-center gap-1" 
+                            title={`${offCoaches.map(c => c.name).join(', ')} 休假`}
+                        >
+                            {offCoaches.slice(0, 4).map(c => {
+                                const colorClass = c.color.split(' ').find(cls => cls.startsWith('bg-')) || 'bg-slate-400';
+                                return <div key={c.id} className={`w-2 h-2 rounded-full ${colorClass}`}></div>
+                            })}
+                            {offCoaches.length > 4 && (
+                                <span className="text-[9px] text-slate-400 font-bold">+{offCoaches.length - 4}</span>
+                            )}
                         </div>
                     )}
                 </div>

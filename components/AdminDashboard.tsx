@@ -1,6 +1,6 @@
 
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { formatDateKey, getDaysInMonth, getFirstDayOfMonth } from '../utils';
@@ -70,6 +70,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Analysis Filter State
   const [statsStart, setStatsStart] = useState('');
   const [statsEnd, setStatsEnd] = useState('');
+
+  // Appointment List State
+  const [collapsedDates, setCollapsedDates] = useState(new Set<string>());
 
   // Initialize Dates
   useEffect(() => {
@@ -190,6 +193,24 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (i.lineUserId && i.lineUserId.includes(searchQuery))
   );
 
+  // Re-introduced from old version for detailed schedule editing
+  const handleUpdateDayConfig = (coach: Coach, dayIndex: number, enabled: boolean, start?: string, end?: string) => {
+     const newWorkDays = enabled 
+        ? (coach.workDays.includes(dayIndex) ? coach.workDays : [...coach.workDays, dayIndex].sort())
+        : coach.workDays.filter(d => d !== dayIndex);
+     
+     const currentDaily = coach.dailyWorkHours || {};
+     let newDaily = { ...currentDaily };
+     
+     if (enabled && start && end) {
+         newDaily[dayIndex.toString()] = { start, end };
+     } else if (!enabled) {
+         delete newDaily[dayIndex.toString()];
+     }
+
+     updateCoachWorkDays({ ...coach, workDays: newWorkDays, dailyWorkHours: newDaily });
+  };
+
   const handleModalDayConfig = (dayIndex: number, enabled: boolean, start?: string, end?: string) => {
      const currentDays = editingCoach.workDays || [];
      const newWorkDays = enabled 
@@ -272,6 +293,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           lastUpdated: new Date().toISOString()
       });
       setIsInventoryModalOpen(false);
+  };
+  
+  const toggleDateCollapse = (date: string) => {
+    setCollapsedDates(prev => {
+        const newSet = new Set(prev);
+        if (newSet.has(date)) {
+            newSet.delete(date);
+        } else {
+            newSet.add(date);
+        }
+        return newSet;
+    });
   };
 
   const renderMonthlySchedule = () => {
@@ -454,12 +487,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    </div>
                    
                    <div className="space-y-6">
-                     {Object.keys(appsByDate).sort((a,b) => new Date(b).getTime() - new Date(a).getTime()).map(date => (
+                     {Object.keys(appsByDate).sort((a,b) => new Date(b).getTime() - new Date(a).getTime()).map(date => {
+                        const isCollapsed = collapsedDates.has(date);
+                        return (
                         <div key={date} className="animate-slideUp">
-                            <div className="sticky top-0 z-10 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm py-2 px-1 mb-2 border-b border-slate-200 dark:border-slate-700 flex items-center gap-2">
-                                <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                                <h4 className="font-bold text-slate-600 dark:text-slate-300">{date} <span className="text-xs font-normal text-slate-400">({new Date(date).toLocaleDateString('en-US', {weekday: 'short'})})</span></h4>
+                            <div 
+                                onClick={() => toggleDateCollapse(date)}
+                                className="sticky top-0 z-10 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm py-2 px-1 mb-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 cursor-pointer"
+                            >
+                                <div className="flex items-center gap-2">
+                                  <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
+                                  <h4 className="font-bold text-slate-600 dark:text-slate-300">{date} <span className="text-xs font-normal text-slate-400">({new Date(date).toLocaleDateString('en-US', {weekday: 'short'})})</span></h4>
+                                </div>
+                                <ChevronDown size={20} className={`text-slate-400 transition-transform ${isCollapsed ? '-rotate-180' : ''}`} />
                             </div>
+                            {!isCollapsed && (
                             <div className="space-y-3">
                                 {appsByDate[date].map(app => (
                                     <div 
@@ -506,15 +548,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                     </div>
                                 ))}
                             </div>
+                            )}
                         </div>
-                     ))}
+                     )})}
                    </div>
                  </div>
                )}
 
-               {/* ... Other Tabs (Workout, Inventory, Analysis, Staff, Logs, Help) remain largely the same structure ... */}
-               {/* Simplified for brevity as logic is identical to provided file but inside new layout structure */}
-               
                {adminTab === 'workout' && (
                   <WorkoutPlans 
                     currentUser={currentUser}
@@ -526,7 +566,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                )}
 
-               {/* Inventory Tab */}
                {adminTab === 'inventory' && (
                   <div className="space-y-6">
                       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
@@ -573,7 +612,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                )}
 
-               {/* Analysis Tab */}
                {adminTab === 'analysis' && (
                   <div className="space-y-6 animate-slideUp">
                     <div className="glass-panel p-4 rounded-3xl flex flex-col lg:flex-row justify-between items-center gap-4 border border-white/60">
@@ -656,7 +694,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                )}
 
-               {/* Staff Tab */}
                {adminTab === 'staff_schedule' && currentUser.role === 'manager' && (
                   <div className="space-y-6">
                       <div className="glass-panel rounded-3xl shadow-lg p-6 border border-white/60">
@@ -694,10 +731,70 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                       </div>
                       {renderMonthlySchedule()}
+                      
+                      {/* Individual Schedule Settings */}
+                      <div className="mt-6">
+                        <h3 className="font-bold text-xl dark:text-white mb-4 flex items-center gap-3"><SettingsIcon className="text-indigo-500"/> 個別班表設定</h3>
+                        <div className="space-y-6">
+                            {coaches.map(c => {
+                               if (currentUser.role === 'coach' && currentUser.id !== c.id) return null;
+                               return (
+                               <div key={c.id} className="glass-panel p-6 rounded-3xl shadow-sm border border-white/60">
+                                  <div className="font-bold mb-6 dark:text-white flex items-center gap-3 text-xl border-b border-slate-100 dark:border-slate-700 pb-4">
+                                     <div className={`w-10 h-10 rounded-full flex items-center justify-center text-xl font-bold ${c.color} shadow-sm`}>{c.name[0]}</div>
+                                     {c.name} 班表設定
+                                  </div>
+                                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                     {['日','一','二','三','四','五','六'].map((d, i) => {
+                                       const isWorkDay = c.workDays?.includes(i);
+                                       const hours = c.dailyWorkHours?.[i.toString()] || { start: c.workStart, end: c.workEnd };
+                                       return (
+                                         <div key={i} className={`p-4 rounded-2xl border transition-all duration-300 ${isWorkDay ? 'border-indigo-200 bg-indigo-50/50 dark:bg-indigo-900/10 dark:border-indigo-800' : 'border-slate-100 bg-slate-50/50 dark:bg-slate-800/50 dark:border-slate-700 opacity-60'}`}>
+                                           <div className="flex items-center justify-between">
+                                             <div className="flex items-center gap-4">
+                                                <button 
+                                                  onClick={() => handleUpdateDayConfig(c, i, !isWorkDay, hours.start, hours.end)}
+                                                  className={`w-12 h-7 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                                                >
+                                                  <div className={`absolute top-1 left-1 bg-white w-5 h-5 rounded-full shadow-sm transition-transform duration-300 ${isWorkDay ? 'translate-x-5' : 'translate-x-0'}`}></div>
+                                                </button>
+                                                <span className={`font-bold ${isWorkDay ? 'text-slate-800 dark:text-slate-200' : 'text-slate-400'}`}>星期{d}</span>
+                                             </div>
+                                             {!isWorkDay && <span className="text-xs font-medium text-slate-400 bg-white dark:bg-slate-700 px-2 py-1 rounded">休假</span>}
+                                           </div>
+                                           
+                                           {isWorkDay && (
+                                             <div className="mt-4 flex items-center gap-2 bg-white/70 dark:bg-slate-700/50 p-2 rounded-xl border border-slate-100 dark:border-slate-600 shadow-sm">
+                                               <Clock size={14} className="text-slate-400 ml-1"/>
+                                               <select 
+                                                 value={hours.start} 
+                                                 onChange={(e) => handleUpdateDayConfig(c, i, true, e.target.value, hours.end)}
+                                                 className="flex-1 bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none cursor-pointer text-center"
+                                               >
+                                                 {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                               </select>
+                                               <ChevronRight size={14} className="text-slate-300"/>
+                                               <select 
+                                                 value={hours.end} 
+                                                 onChange={(e) => handleUpdateDayConfig(c, i, true, hours.start, e.target.value)}
+                                                 className="flex-1 bg-transparent text-sm font-medium text-slate-700 dark:text-slate-200 outline-none cursor-pointer text-center"
+                                               >
+                                                 {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                               </select>
+                                             </div>
+                                           )}
+                                         </div>
+                                       );
+                                     })}
+                                  </div>
+                               </div>
+                               );
+                             })}
+                        </div>
+                      </div>
                   </div>
                )}
                
-               {/* Logs Tab */}
                {adminTab === 'logs' && (
                   <div className="glass-panel rounded-3xl shadow-lg p-6 h-[600px] overflow-y-auto custom-scrollbar border border-white/60">
                      <h3 className="font-bold text-xl mb-6 dark:text-white flex items-center gap-2"><History className="text-slate-500"/> 系統日誌</h3>
@@ -719,14 +816,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   </div>
                )}
 
-               {/* Help Tab */}
                {adminTab === 'help' && (
                    <div className="glass-panel rounded-3xl shadow-lg p-8 border border-white/60">
                        <h3 className="font-bold text-2xl mb-8 dark:text-white flex items-center gap-2 border-b border-slate-100 dark:border-slate-700 pb-4">
                            <BookOpen className="text-indigo-500"/> 使用操作手冊
                        </h3>
                        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                           {/* ... Help Content (Kept as is for brevity) ... */}
                            <div className="space-y-6">
                                <div className="p-6 bg-indigo-50/50 dark:bg-indigo-900/10 rounded-2xl border border-indigo-100 dark:border-indigo-800">
                                    <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><CheckCircle size={20} className="text-indigo-600"/> 雙重核實扣點流程</h4>
@@ -741,7 +836,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                    </div>
                )}
 
-               {/* Coach Modal */}
                {isCoachModalOpen && (
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsCoachModalOpen(false)}>
                     <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
@@ -751,7 +845,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                         </div>
                         <div className="p-6">
                             <form onSubmit={handleSubmitCoach} className="space-y-6">
-                                {/* Form content same as before ... */}
                                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-xs font-bold text-slate-500 uppercase">姓名</label>
@@ -778,8 +871,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         </div>
                                     </div>
                                 )}
-                                {/* ... Color picker, schedule config, off dates ... */}
-                                {/* Keeping existing logic for brevity */}
                                 <button type="submit" className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg mt-4 hover:bg-indigo-700 transition-colors">儲存變更</button>
                             </form>
                         </div>
@@ -787,7 +878,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 </div>
                )}
 
-               {/* Inventory Edit Modal */}
                {isInventoryModalOpen && editingInventory && (
                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsInventoryModalOpen(false)}>
                        <div className="bg-white/70 dark:bg-slate-900/70 backdrop-blur-xl w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30" onClick={e => e.stopPropagation()}>
