@@ -980,6 +980,7 @@ export default function App() {
             toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
             handleBatchDelete={handleBatchDelete}
             onOpenBatchBlock={handleOpenBatchBlock}
+            onGoToBooking={() => setView('booking')}
             renderWeeklyCalendar={() => (
                <WeeklyCalendar 
                   currentWeekStart={currentWeekStart}

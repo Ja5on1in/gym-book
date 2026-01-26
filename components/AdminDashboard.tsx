@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown, RefreshCw } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown, RefreshCw, Home } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { formatDateKey, getDaysInMonth, getFirstDayOfMonth } from '../utils';
@@ -32,6 +32,7 @@ interface AdminDashboardProps {
   workoutPlans: WorkoutPlan[];
   onSavePlan: (plan: WorkoutPlan) => void;
   onDeletePlan: (id: string) => void;
+  onGoToBooking: () => void;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -40,12 +41,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   analysis: globalAnalysis, handleExportStatsCsv: globalExportCsv, handleExportJson, triggerImport, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
   inventories, onSaveInventory, onDeleteInventory,
-  workoutPlans, onSavePlan, onDeletePlan
+  workoutPlans, onSavePlan, onDeletePlan, onGoToBooking
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Mobile Sidebar Toggle
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   // Staff Management State
   const [isCoachModalOpen, setIsCoachModalOpen] = useState(false);
@@ -414,61 +416,91 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
        {/* Sidebar */}
        <aside className={`
-           fixed md:sticky top-0 left-0 h-screen w-64 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-50 transform transition-transform duration-300 overflow-y-auto
+           fixed md:sticky top-0 left-0 h-screen bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700 z-50 transform transition-width duration-300 flex flex-col
            ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+           ${isSidebarCollapsed ? 'w-20' : 'w-64'}
        `}>
-           <div className="p-6">
-               <h1 className="text-2xl font-bold dark:text-white mb-1 flex items-center gap-2 text-indigo-600">
-                   <LayoutDashboard className="fill-indigo-600 text-indigo-600"/> 活力學苑預約系統
-               </h1>
-               <div className="text-xs text-slate-500 font-medium px-1">管理後台</div>
+           <div className={`p-4 flex items-center justify-center border-b border-slate-100 dark:border-slate-700 shrink-0 transition-all ${isSidebarCollapsed ? 'h-[73px]' : 'h-[89px]'}`}>
+               {isSidebarCollapsed ? (
+                   <LayoutDashboard size={28} className="text-indigo-600"/>
+               ) : (
+                   <h1 className="text-xl font-bold dark:text-white flex items-center gap-2 text-indigo-600 whitespace-nowrap">
+                       <LayoutDashboard size={24} className="fill-indigo-600 text-indigo-600"/> 活力學苑管理
+                   </h1>
+               )}
            </div>
 
-           <div className="px-4 py-2">
-               <div className="bg-slate-100 dark:bg-slate-700/50 rounded-xl p-3 mb-6 flex items-center gap-3">
-                   <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-lg">
-                       {currentUser.name[0]}
-                   </div>
-                   <div className="overflow-hidden">
-                       <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name}</div>
-                       <div className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{currentUser.role}</div>
-                   </div>
-               </div>
+           <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar">
+                <div className="px-4 py-2">
+                    <div className={`bg-slate-100 dark:bg-slate-700/50 rounded-xl my-6 flex items-center gap-3 transition-all ${isSidebarCollapsed ? 'p-2 justify-center' : 'p-3'}`}>
+                        <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-lg shrink-0">
+                            {currentUser.name[0]}
+                        </div>
+                        {!isSidebarCollapsed && (
+                            <div className="overflow-hidden transition-opacity duration-200">
+                                <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name}</div>
+                                <div className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{currentUser.role}</div>
+                            </div>
+                        )}
+                    </div>
 
-               <nav className="space-y-6">
-                   {NAV_ITEMS.map((group, idx) => (
-                       <div key={idx}>
-                           <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-2">{group.category}</div>
-                           <div className="space-y-1">
-                               {group.items.map(item => {
-                                   if (item.role && currentUser.role !== item.role) return null;
-                                   const isActive = adminTab === item.id;
-                                   return (
-                                       <button 
-                                           key={item.id}
-                                           onClick={() => { setAdminTab(item.id); setIsSidebarOpen(false); }}
-                                           className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
-                                               ${isActive 
-                                                   ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 shadow-sm' 
-                                                   : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
-                                               }
-                                           `}
-                                       >
-                                           <item.icon size={18} className={isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}/>
-                                           {item.label}
-                                       </button>
-                                   )
-                               })}
-                           </div>
-                       </div>
-                   ))}
-               </nav>
-           </div>
+                    <nav className="space-y-6">
+                        <div>
+                            <div className={`text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-2 transition-all ${isSidebarCollapsed ? 'text-center' : 'px-3'}`}>導覽</div>
+                            <div className="space-y-1">
+                                <button 
+                                    onClick={onGoToBooking}
+                                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${isSidebarCollapsed ? 'justify-center' : ''}`}
+                                >
+                                    <Home size={18} className="text-slate-400"/>
+                                    {!isSidebarCollapsed && <span className="transition-opacity duration-200">返回前台</span>}
+                                </button>
+                            </div>
+                        </div>
+
+                        {NAV_ITEMS.map((group, idx) => (
+                            <div key={idx}>
+                                {!isSidebarCollapsed && <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-2">{group.category}</div>}
+                                <div className="space-y-1">
+                                    {group.items.map(item => {
+                                        if (item.role && currentUser.role !== item.role) return null;
+                                        const isActive = adminTab === item.id;
+                                        return (
+                                            <button 
+                                                key={item.id}
+                                                onClick={() => { setAdminTab(item.id); setIsSidebarOpen(false); }}
+                                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all
+                                                    ${isActive 
+                                                        ? 'bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 shadow-sm' 
+                                                        : 'text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50'
+                                                    }
+                                                    ${isSidebarCollapsed ? 'justify-center' : ''}
+                                                `}
+                                            >
+                                                <item.icon size={18} className={isActive ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}/>
+                                                {!isSidebarCollapsed && <span className="transition-opacity duration-200">{item.label}</span>}
+                                            </button>
+                                        )
+                                    })}
+                                </div>
+                            </div>
+                        ))}
+                    </nav>
+                </div>
+            </div>
            
-           <div className="p-4 mt-auto border-t border-slate-100 dark:border-slate-700">
-               <button onClick={onLogout} className="w-full flex items-center justify-center gap-2 p-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors font-medium text-sm">
-                   <LogOut size={16}/> 登出系統
-               </button>
+           <div className="shrink-0">
+                <div className="px-4 py-2 border-t border-slate-100 dark:border-slate-700">
+                    <button onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)} className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-700/50 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+                        {isSidebarCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+                        {!isSidebarCollapsed && <span className="transition-opacity duration-200">收合</span>}
+                    </button>
+                </div>
+               <div className={`p-4 border-t border-slate-100 dark:border-slate-700 ${isSidebarCollapsed ? 'text-center' : ''}`}>
+                   <button onClick={onLogout} className={`w-full flex items-center gap-2 p-3 rounded-xl text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors font-medium text-sm ${isSidebarCollapsed ? 'justify-center' : ''}`}>
+                       <LogOut size={16}/> {!isSidebarCollapsed && <span className="transition-opacity duration-200">登出系統</span>}
+                   </button>
+               </div>
            </div>
        </aside>
        
