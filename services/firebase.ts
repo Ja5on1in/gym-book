@@ -1,3 +1,4 @@
+
 import { initializeApp, getApp, getApps, deleteApp } from 'firebase/app';
 import { 
   getAuth, 
@@ -9,7 +10,7 @@ import {
   onAuthStateChanged,
   User as FirebaseUser
 } from 'firebase/auth';
-import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, getDoc, updateDoc, query, where, writeBatch } from 'firebase/firestore';
+import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, getDoc, updateDoc, query, where } from 'firebase/firestore';
 import { User } from '../types';
 
 // Your web app's Firebase configuration
@@ -259,33 +260,6 @@ export const saveToFirestore = async (col: string, id: string, data: any) => {
     } catch (e) {
         console.error(`Firestore save failed to ${col}/${id}`, e);
         throw new Error(`儲存資料失敗 (${col}): ${(e as any).message}`);
-    }
-};
-
-export const batchUpdateFirestore = async (updates: { col: string; id: string; data: any }[]) => {
-    if (!isFirebaseAvailable || !db) {
-        // Mock implementation for local storage
-        try {
-            for (const update of updates) {
-                // This is not atomic, but it's a fallback.
-                await saveToFirestore(update.col, update.id, update.data);
-            }
-        } catch (e) {
-            console.error("Mock batch update failed", e);
-            throw e;
-        }
-        return;
-    }
-    try {
-        const batch = writeBatch(db);
-        updates.forEach(update => {
-            const docRef = doc(db, update.col, update.id);
-            batch.set(docRef, update.data, { merge: true });
-        });
-        await batch.commit();
-    } catch (e) {
-        console.error("Firestore batch update failed", e);
-        throw new Error(`批次更新資料失敗: ${(e as any).message}`);
     }
 };
 

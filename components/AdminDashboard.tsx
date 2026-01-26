@@ -14,7 +14,7 @@ interface AdminDashboardProps {
   appointments: Appointment[];
   selectedBatch: Set<string>;
   toggleBatchSelect: (id: string) => void;
-  handleBatchCancel: () => void;
+  handleBatchDelete: () => void;
   analysis: any;
   handleExportStatsCsv: () => void;
   handleExportJson: () => void;
@@ -38,7 +38,7 @@ interface AdminDashboardProps {
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
   currentUser, onLogout, adminTab, setAdminTab, renderWeeklyCalendar,
-  appointments, selectedBatch, toggleBatchSelect, handleBatchCancel,
+  appointments, selectedBatch, toggleBatchSelect, handleBatchDelete,
   analysis: globalAnalysis, handleExportStatsCsv: globalExportCsv, handleExportJson, triggerImport, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
   inventories, onSaveInventory, onDeleteInventory,
@@ -77,7 +77,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Appointment List State
   const [collapsedDates, setCollapsedDates] = useState(new Set<string>());
-  const [showCancelled, setShowCancelled] = useState(false);
 
   // Initialize Dates
   useEffect(() => {
@@ -175,17 +174,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const filteredApps = useMemo(() => {
     return appointments
-        .filter(a => 
-            (currentUser.role === 'manager' || a.coachId === currentUser.id) &&
-            (showCancelled || a.status !== 'cancelled')
-        )
+        .filter(a => currentUser.role === 'manager' || a.coachId === currentUser.id)
         .sort((a,b) => {
+            // Sort by Date (Descending) then Time (Ascending)
             const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
             if (dateDiff !== 0) return dateDiff;
             return a.time.localeCompare(b.time);
         });
-  }, [appointments, currentUser, showCancelled]);
+  }, [appointments, currentUser]);
 
+  // Group appointments by Date for List View
   const appsByDate = useMemo(() => {
       return filteredApps.reduce((acc, app) => {
           (acc[app.date] = acc[app.date] || []).push(app);
@@ -526,19 +524,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                {adminTab === 'appointments' && (
                  <div className="glass-panel rounded-3xl shadow-lg p-6 border border-white/60">
-                   <div className="flex justify-between items-center mb-6">
-                      <div className="flex items-center gap-4">
-                        <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
-                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setShowCancelled(!showCancelled)}>
-                            <div className={`w-10 h-6 rounded-full p-1 transition-colors ${showCancelled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}>
-                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${showCancelled ? 'translate-x-4' : ''}`}/>
-                            </div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">顯示已取消</label>
-                        </div>
-                      </div>
+                   <div className="flex justify-between mb-6">
+                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
                      {selectedBatch.size > 0 && (
-                       <button onClick={handleBatchCancel} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn">
-                         <Trash2 size={16}/> 取消選取 ({selectedBatch.size})
+                       <button onClick={handleBatchDelete} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn">
+                         <Trash2 size={16}/> 刪除選取 ({selectedBatch.size})
                        </button>
                      )}
                    </div>
