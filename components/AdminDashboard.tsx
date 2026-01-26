@@ -392,7 +392,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const NAV_ITEMS = [
       { category: '營運核心', items: [
           { id: 'calendar', icon: Clock, label: '行事曆' },
-          { id: 'appointments', icon: List, label: '預約列表' },
+          // { id: 'appointments', icon: List, label: '預約列表' }, // Hidden per request
       ]},
       { category: '客戶管理', items: [
           { id: 'inventory', icon: CreditCard, label: '庫存管理' },
@@ -525,130 +525,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                  </>
                )}
 
-               {adminTab === 'appointments' && (
-                 <div className="glass-panel rounded-3xl shadow-lg p-6 border border-white/60">
-                   <div className="flex justify-between items-center mb-6">
-                      <div className="flex items-center gap-4">
-                        <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
-                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setShowCancelled(!showCancelled)}>
-                            <div className={`w-10 h-6 rounded-full p-1 transition-colors ${showCancelled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}>
-                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${showCancelled ? 'translate-x-4' : ''}`}/>
-                            </div>
-                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">顯示已取消</label>
-                        </div>
-                      </div>
-                     {selectedBatch.size > 0 && (
-                       <button onClick={handleBatchDelete} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn">
-                         <Trash2 size={16}/> 取消選取 ({selectedBatch.size})
-                       </button>
-                     )}
-                   </div>
-                   
-                   <div className="space-y-6">
-                     {Object.keys(appsByDate).sort((a,b) => new Date(b).getTime() - new Date(a).getTime()).map(date => {
-                        const isCollapsed = collapsedDates.has(date);
-                        return (
-                        <div key={date} className="animate-slideUp">
-                            <div 
-                                onClick={() => toggleDateCollapse(date)}
-                                className="sticky top-0 z-10 bg-slate-50/90 dark:bg-slate-900/90 backdrop-blur-sm py-2 px-1 mb-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between gap-2 cursor-pointer"
-                            >
-                                <div className="flex items-center gap-2">
-                                  <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                                  <h4 className="font-bold text-slate-600 dark:text-slate-300">{date} <span className="text-xs font-normal text-slate-400">({new Date(date).toLocaleDateString('en-US', {weekday: 'short'})})</span></h4>
-                                </div>
-                                <ChevronDown size={20} className={`text-slate-400 transition-transform ${isCollapsed ? '-rotate-180' : ''}`} />
-                            </div>
-                            {!isCollapsed && (
-                            <div className="space-y-3">
-                                {appsByDate[date].map(app => (
-                                    <div 
-                                        key={app.id} 
-                                        onClick={() => toggleBatchSelect(app.id)}
-                                        className={`
-                                            glass-card flex items-center gap-4 p-4 rounded-2xl group transition-all cursor-pointer select-none border
-                                            ${selectedBatch.has(app.id) 
-                                                ? 'border-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/30 shadow-md transform scale-[1.01]' 
-                                                : 'border-slate-100 dark:border-slate-700 hover:border-indigo-300 dark:hover:border-indigo-700'
-                                            }
-                                        `}
-                                    >
-                                        <div className={`
-                                                w-5 h-5 rounded border flex items-center justify-center transition-colors shrink-0
-                                                ${selectedBatch.has(app.id) ? 'bg-indigo-600 border-indigo-600' : 'border-slate-300 bg-white dark:bg-slate-800 dark:border-slate-600'}
-                                        `}>
-                                            {selectedBatch.has(app.id) && <X size={14} className="text-white rotate-45" strokeWidth={3} />}
-                                        </div>
-                                        
-                                        <div className="flex-1 pointer-events-none grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
-                                            <div className="md:col-span-2">
-                                                <div className="flex items-center gap-2 mb-1">
-                                                    <span className="bg-slate-100 dark:bg-slate-700 px-2 py-0.5 rounded text-sm font-bold text-slate-700 dark:text-slate-200">{app.time}</span>
-                                                    <span className="font-bold text-lg dark:text-white truncate">{app.type === 'private' ? app.customer?.name : app.reason}</span>
-                                                </div>
-                                                <div className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-3 flex-wrap">
-                                                    <span>教練: {coaches.find(c => c.id === app.coachId)?.name || app.coachName || '(已移除)'}</span>
-                                                    {app.customer?.phone && <span>電話: {app.customer.phone}</span>}
-                                                </div>
-                                            </div>
-                                            <div className="flex flex-col items-start md:items-end gap-1 pointer-events-auto">
-                                                <span className={`text-xs px-3 py-1 rounded-full font-bold whitespace-nowrap 
-                                                    ${app.status==='cancelled'
-                                                        ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
-                                                        : app.status==='completed'
-                                                            ? 'bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300'
-                                                            : app.status==='checked_in'
-                                                                ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
-                                                                : 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
-                                                    }`}>
-                                                    {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課 (不可取消)' : app.status === 'checked_in' ? '已簽到' : '已確認'}
-                                                </span>
-                                                {(app.status === 'confirmed' || app.status === 'checked_in') && (
-                                                     <button
-                                                        onClick={(e) => { e.stopPropagation(); onCancelAppointment(app); }}
-                                                        className="mt-1 text-xs px-2 py-1 rounded-md transition-colors shadow-sm font-bold flex items-center gap-1 bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
-                                                        title="取消預約"
-                                                    >
-                                                        <Trash2 size={12}/> 取消預約
-                                                    </button>
-                                                )}
-                                                {app.status === 'checked_in' && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
-                                                        className={`mt-1 text-xs px-2 py-1 rounded-md transition-colors shadow-sm font-bold flex items-center gap-1 ${
-                                                            currentUser.role === 'manager' 
-                                                                ? 'bg-red-100 text-red-700 hover:bg-red-200 animate-pulse' 
-                                                                : 'bg-orange-500 text-white hover:bg-orange-600 animate-pulse'
-                                                        }`}
-                                                        title={currentUser.role === 'manager' ? "管理員強迫核實" : "確認完課"}
-                                                    >
-                                                        {currentUser.role === 'manager' && <AlertTriangle size={12}/>}
-                                                        {currentUser.role === 'manager' ? "強迫核實" : "確認完課"}
-                                                    </button>
-                                                )}
-                                                {app.status === 'completed' && currentUser.role === 'manager' && (
-                                                    <button
-                                                        onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
-                                                        className="mt-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-md hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:hover:bg-yellow-900/50 transition-colors shadow-sm font-bold flex items-center gap-1"
-                                                        title="撤銷完課 (返還點數)"
-                                                    >
-                                                        <RefreshCw size={12}/> 撤銷完課
-                                                    </button>
-                                                )}
-                                                <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full mt-1">
-                                                  {app.service?.name || (app.type === 'group' ? '團體課' : app.type === 'block' ? '內部事務' : '私人課')}
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                            )}
-                        </div>
-                     )})}
-                   </div>
-                 </div>
-               )}
+               {/* adminTab === 'appointments' Block Hidden per request */}
 
                {adminTab === 'workout' && (
                   <WorkoutPlans 

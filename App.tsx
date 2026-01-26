@@ -658,6 +658,10 @@ export default function App() {
       if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
           showNotification('權限不足', 'error'); return;
       }
+      
+      // Secondary Confirmation via window.confirm
+      if (!window.confirm('確定要強制核實此課程並扣除學員點數嗎？')) return;
+
       if (app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error'); return;
       }
@@ -677,56 +681,44 @@ export default function App() {
         showNotification('僅管理員可執行此操作', 'error');
         return;
     }
-    setConfirmModal({
-        isOpen: true,
-        title: '撤銷完課並返還點數？',
-        message: `確定要將此課程狀態改回「已確認」，並返還學員 ${app.customer?.name || ''} 1 點私人課點數嗎？`,
-        isDanger: true,
-        showInput: false,
-        onConfirm: async () => {
-            let inventory = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name && i.phone === app.customer?.phone);
-            
-            // FIX: Explicitly type the 'updates' array to handle different object shapes for batch operations.
-            // This resolves a TypeScript error where the type was inferred too strictly from the first element.
-            const updates: { col: string; id: string; data: any }[] = [{ col: 'appointments', id: app.id, data: { status: 'confirmed' } }];
-            let logDetail = `管理員 ${currentUser.name} 撤銷完課`;
 
-            if (inventory && (app.type === 'private' || (app.type as string) === 'client')) {
-                const newCredits = (inventory.credits.private || 0) + 1;
-                updates.push({
-                    col: 'user_inventory',
-                    id: inventory.id,
-                    data: { credits: { ...inventory.credits, private: newCredits } }
-                });
-                logDetail += `，返還學員 ${inventory.name} 1 點私人課。剩餘: ${newCredits}`;
-            } else {
-                 logDetail += ' (未找到學員庫存或非私人課，未返還點數)';
-            }
-            
-            try {
-                await batchUpdateFirestore(updates);
-                addLog('庫存調整', logDetail);
-                showNotification('已撤銷完課並返還點數', 'success');
-            } catch(e) {
-                showNotification('操作失敗', 'error');
-            }
-        },
-        icon: <RefreshCw size={48} className="text-orange-500"/>
-    });
+    // Secondary Confirmation via window.confirm
+    if (!window.confirm('確定要撤銷此完課紀錄並返還學員點數嗎？')) return;
+
+    let inventory = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name && i.phone === app.customer?.phone);
+    
+    // FIX: Explicitly type the 'updates' array to handle different object shapes for batch operations.
+    // This resolves a TypeScript error where the type was inferred too strictly from the first element.
+    const updates: { col: string; id: string; data: any }[] = [{ col: 'appointments', id: app.id, data: { status: 'confirmed' } }];
+    let logDetail = `管理員 ${currentUser.name} 撤銷完課`;
+
+    if (inventory && (app.type === 'private' || (app.type as string) === 'client')) {
+        const newCredits = (inventory.credits.private || 0) + 1;
+        updates.push({
+            col: 'user_inventory',
+            id: inventory.id,
+            data: { credits: { ...inventory.credits, private: newCredits } }
+        });
+        logDetail += `，返還學員 ${inventory.name} 1 點私人課。剩餘: ${newCredits}`;
+    } else {
+            logDetail += ' (未找到學員庫存或非私人課，未返還點數)';
+    }
+    
+    try {
+        await batchUpdateFirestore(updates);
+        addLog('庫存調整', logDetail);
+        showNotification('已撤銷完課並返還點數', 'success');
+    } catch(e) {
+        showNotification('操作失敗', 'error');
+    }
   };
 
   const handleToggleComplete = async (app: Appointment) => {
     if (app.status === 'checked_in' || app.status === 'confirmed') {
-        setConfirmModal({
-            isOpen: true,
-            title: '確認核實完課？',
-            message: '這將標記課程為「已完成」。點數已於預約時扣除。',
-            isDanger: false,
-            showInput: false,
-            onConfirm: () => handleCoachConfirmCompletion(app),
-            icon: <CheckCircle2 size={48} className="text-green-500 animate-bounce-short"/>
-        });
+        // Direct call, confirmation moved inside function
+        handleCoachConfirmCompletion(app);
     } else if (app.status === 'completed' && currentUser?.role === 'manager') {
+        // Direct call, confirmation moved inside function
         handleRevertCompletion(app);
     } else {
         showNotification('無法變更此狀態或權限不足', 'info');

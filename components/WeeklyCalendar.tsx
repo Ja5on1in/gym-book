@@ -179,6 +179,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                         {visibleApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
                             const coach = coaches.find(c => c.id === app.coachId);
                             const colorClass = coach?.color || 'bg-slate-100 text-slate-800 border-slate-200';
+                            // Logic for owner/manager
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
                             const isCheckedIn = app.status === 'checked_in';
@@ -203,7 +204,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
                                     
                                     <div className="flex items-center gap-1">
-                                      {isMine && isCheckedIn && (
+                                      {/* Restore buttons for Managers and Owner Coaches */}
+                                      {(isMine || isManager) && isCheckedIn && (
                                           <button 
                                               onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
                                               className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
@@ -213,7 +215,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                           </button>
                                       )}
 
-                                      {isMine && currentUser.role === 'manager' && isCompleted && (
+                                      {/* Restore Revoke button specifically for Managers */}
+                                      {isManager && isCompleted && (
                                         <button 
                                           onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
                                           className="bg-yellow-100 hover:bg-yellow-200 rounded-full p-0.5 text-yellow-700 transition-colors shadow-sm" title="撤銷完課 (返還點數)"
@@ -222,7 +225,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                         </button>
                                       )}
 
-                                      {isMine && isCompleted && <CheckCircle size={10} className="text-green-800 md:w-3 md:h-3"/>}
+                                      {(isMine || isManager) && isCompleted && <CheckCircle size={10} className="text-green-800 md:w-3 md:h-3"/>}
                                     </div>
                                   </div>
                                   <div className="truncate font-medium opacity-90">{displayText}</div>
