@@ -37,7 +37,7 @@ import {
     batchUpdateFirestore
 } from './services/firebase';
 import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { writeBatch, doc, getDoc } from 'firebase/firestore';
+import { writeBatch, doc, getDoc, setDoc } from 'firebase/firestore';
 
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
@@ -116,6 +116,34 @@ export default function App() {
     else document.documentElement.classList.remove('dark');
   }, [isDarkMode]);
 
+  // Renamed and updated function as per request
+  const checkAndCreateUser = async (profile: { userId: string, displayName: string }) => {
+      if (!db) {
+        console.warn("Firestore is not available. Skipping user creation.");
+        return;
+      }
+      try {
+          const userDocRef = doc(db, 'user_inventory', profile.userId);
+          const docSnap = await getDoc(userDocRef);
+
+          if (!docSnap.exists()) {
+              const newInventory: UserInventory = {
+                  id: profile.userId,
+                  lineUserId: profile.userId,
+                  name: profile.displayName,
+                  phone: '',
+                  credits: { private: 0, group: 0 },
+                  lastUpdated: new Date().toISOString(),
+              };
+              await setDoc(userDocRef, newInventory);
+              addLog('新戶自動註冊', `LIFF 登入時自動建立學員資料: ${profile.displayName}`);
+          }
+      } catch (e) {
+          console.error("Error during user auto-registration:", e);
+          showNotification("自動註冊學員失敗", "error");
+      }
+  };
+  
   useEffect(() => {
     const start = async () => {
         await initAuth();
@@ -135,7 +163,7 @@ export default function App() {
                 if (liff.isLoggedIn()) {
                     const profile = await liff.getProfile();
                     setLiffProfile(profile);
-                    await handleRegisterInventory(profile);
+                    await checkAndCreateUser(profile);
                 }
             } catch (err) {
                 console.error('LIFF Init failed', err);
@@ -385,25 +413,6 @@ export default function App() {
             }
         }
     });
-  };
-
-  const handleRegisterInventory = async (profile: { userId: string, displayName: string }) => {
-      if (!db) return;
-      const userInvRef = doc(db, 'user_inventory', profile.userId);
-      const docSnap = await getDoc(userInvRef);
-
-      if (!docSnap.exists()) {
-        const newInventory: UserInventory = {
-            id: profile.userId,
-            lineUserId: profile.userId,
-            name: profile.displayName,
-            phone: '',
-            credits: { private: 0, group: 0 },
-            lastUpdated: new Date().toISOString(),
-        };
-        await saveToFirestore('user_inventory', profile.userId, newInventory);
-        addLog('新戶自動註冊', `LIFF 登入時自動建立學員資料: ${profile.displayName}`);
-      }
   };
 
   const handleSaveWorkoutPlan = async (plan: WorkoutPlan) => {
@@ -944,7 +953,7 @@ export default function App() {
                 handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
                 handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
                 inventories={inventories}
-                onRegisterUser={handleRegisterInventory}
+                onRegisterUser={checkAndCreateUser}
                 liffProfile={liffProfile}
                 onLogin={handleLiffLogin}
               />
