@@ -1,7 +1,6 @@
-
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User, UserInventory, WorkoutPlan, ExerciseLog, Exercise } from '../types';
-import { Search, Plus, X, Trash2, Dumbbell, Calendar, Save, Edit, BookCopy, Activity, AlertTriangle, Copy, FileText } from 'lucide-react';
+import { Search, Plus, X, Trash2, Dumbbell, Calendar, Save, Edit, BookCopy, Activity, AlertTriangle, Copy, FileText, CheckCircle } from 'lucide-react';
 import { EXERCISE_LIST } from '../constants';
 import { formatDateKey } from '../utils';
 
@@ -27,6 +26,8 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
   const [exerciseSearch, setExerciseSearch] = useState('');
   const [isExercisePickerOpen, setIsExercisePickerOpen] = useState(false);
   const exercisePickerRef = useRef<HTMLDivElement>(null);
+  
+  const [editingExerciseId, setEditingExerciseId] = useState<string | null>(null);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -92,6 +93,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
   
   const handleOpenModal = (plan?: WorkoutPlan, copy = false) => {
     if (!selectedUser) return;
+    setEditingExerciseId(null); // Reset editing state when opening modal
     if (plan) {
       const planToEdit: Partial<WorkoutPlan> = JSON.parse(JSON.stringify(plan));
       if (copy) {
@@ -159,7 +161,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
   const handleUpdatePlan = (field: keyof WorkoutPlan, value: any) => setCurrentPlan(prev => ({ ...prev, [field]: value }));
 
   const handleAddExercise = (exercise: { id: string, name: string }) => {
-    // Default: 3 sets, 12 reps, 20kg (arbitrary default)
+    // Default: 3 sets, 12 reps, 10kg (arbitrary default)
     const defaultSets = Array(3).fill(null).map((_, i) => ({
         id: `${Date.now()}_set_${i}`,
         reps: 12,
@@ -243,11 +245,11 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
       </div>
 
       {selectedUser ? (
-        <div className="flex flex-col xl:flex-row gap-6">
+        <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-320px)]">
           {/* Left Column: Health Profile */}
-          <div className="xl:w-1/3 space-y-4">
-              <div className="glass-card p-5 rounded-2xl border border-indigo-100 dark:border-indigo-900/30">
-                  <div className="flex justify-between items-center mb-4">
+          <div className="lg:w-1/3 flex flex-col">
+              <div className="glass-card p-5 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 flex-1 flex flex-col overflow-hidden">
+                  <div className="flex justify-between items-center mb-4 shrink-0">
                       <h4 className="font-bold text-lg dark:text-white flex items-center gap-2">
                           <Activity size={20} className="text-pink-500"/> 健康檔案
                       </h4>
@@ -258,45 +260,47 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                       )}
                   </div>
                   
-                  {canSeeSensitive ? (
-                      <div className="space-y-4">
-                          <div>
-                              <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><Dumbbell size={12}/> 訓練目標</label>
-                              <textarea 
-                                  className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                                  placeholder="增肌、減脂、提升力量..."
-                                  value={profileBuffer.goals}
-                                  onChange={e => { setProfileBuffer({...profileBuffer, goals: e.target.value}); setIsProfileDirty(true); }}
-                              />
-                          </div>
-                          <div>
-                              <label className="text-xs font-bold text-red-500 uppercase flex items-center gap-1 mb-1"><AlertTriangle size={12}/> 傷病史與禁忌</label>
-                              <textarea 
-                                  className="w-full bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-red-500/30 outline-none"
-                                  placeholder="例如：右肩韌帶舊傷、下背痛..."
-                                  value={profileBuffer.injuries}
-                                  onChange={e => { setProfileBuffer({...profileBuffer, injuries: e.target.value}); setIsProfileDirty(true); }}
-                              />
-                          </div>
-                          <div>
-                              <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><FileText size={12}/> 身體狀況備註</label>
-                              <textarea 
-                                  className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                                  placeholder="例如：最近睡眠不足、工作壓力大..."
-                                  value={profileBuffer.physicalNotes}
-                                  onChange={e => { setProfileBuffer({...profileBuffer, physicalNotes: e.target.value}); setIsProfileDirty(true); }}
-                              />
-                          </div>
-                      </div>
-                  ) : (
+                  <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
+                    {canSeeSensitive ? (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><Dumbbell size={12}/> 訓練目標</label>
+                                <textarea 
+                                    className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                                    placeholder="增肌、減脂、提升力量..."
+                                    value={profileBuffer.goals}
+                                    onChange={e => { setProfileBuffer({...profileBuffer, goals: e.target.value}); setIsProfileDirty(true); }}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-red-500 uppercase flex items-center gap-1 mb-1"><AlertTriangle size={12}/> 傷病史與禁忌</label>
+                                <textarea 
+                                    className="w-full bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-red-500/30 outline-none"
+                                    placeholder="例如：右肩韌帶舊傷、下背痛..."
+                                    value={profileBuffer.injuries}
+                                    onChange={e => { setProfileBuffer({...profileBuffer, injuries: e.target.value}); setIsProfileDirty(true); }}
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><FileText size={12}/> 身體狀況備註</label>
+                                <textarea 
+                                    className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                                    placeholder="例如：最近睡眠不足、工作壓力大..."
+                                    value={profileBuffer.physicalNotes}
+                                    onChange={e => { setProfileBuffer({...profileBuffer, physicalNotes: e.target.value}); setIsProfileDirty(true); }}
+                                />
+                            </div>
+                        </div>
+                    ) : (
                       <div className="text-center py-8 text-gray-400 text-sm">權限不足，無法查看詳細資料</div>
                   )}
+                  </div>
               </div>
           </div>
 
           {/* Right Column: Workout List */}
-          <div className="xl:w-2/3">
-              <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-4 rounded-2xl mb-4">
+          <div className="lg:w-2/3 flex flex-col">
+              <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-4 rounded-2xl mb-4 shrink-0">
                   <div>
                       <h4 className="font-bold text-lg dark:text-white">{selectedUser.name} <span className="text-sm font-normal text-gray-500">的課表紀錄</span></h4>
                   </div>
@@ -305,7 +309,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                   </button>
               </div>
               
-              <div className="space-y-3 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
+              <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-2">
                  {userPlans.length === 0 ? (
                      <div className="text-center py-20 text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">
                          <Dumbbell size={48} className="mx-auto mb-2 opacity-50"/>
@@ -402,14 +406,36 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                         </div>
 
                         <div className="space-y-3 mb-20">
-                            {(currentPlan.exercises || []).map((exLog: ExerciseLog, idx: number) => (
+                            {(currentPlan.exercises || []).map((exLog: ExerciseLog, idx: number) => {
+                                const isEditing = editingExerciseId === exLog.id;
+                                return (
                                 <div key={exLog.id} className="glass-card p-4 rounded-xl border border-gray-100 dark:border-gray-700 group hover:border-indigo-300 dark:hover:border-indigo-700 transition-colors">
                                     <div className="flex justify-between items-center mb-3 pb-2 border-b border-gray-100 dark:border-gray-700/50">
-                                        <div className="flex items-center gap-3">
-                                            <span className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 text-xs font-black w-6 h-6 flex items-center justify-center rounded-full">{idx + 1}</span>
-                                            <h5 className="font-bold text-gray-800 dark:text-white text-lg">{exLog.exerciseName}</h5>
+                                        <div className="flex items-center gap-3 flex-1 mr-2">
+                                            <span className="bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 text-xs font-black w-6 h-6 flex items-center justify-center rounded-full shrink-0">{idx + 1}</span>
+                                            {isEditing ? (
+                                                <input
+                                                    type="text"
+                                                    value={exLog.exerciseName}
+                                                    onChange={e => {
+                                                        const updatedExercises = (currentPlan.exercises || []).map(ex => 
+                                                            ex.id === exLog.id ? { ...ex, exerciseName: e.target.value } : ex
+                                                        );
+                                                        handleUpdatePlan('exercises', updatedExercises);
+                                                    }}
+                                                    className="w-full bg-white/50 dark:bg-gray-700/50 p-1 rounded-lg font-bold text-lg text-gray-800 dark:text-white outline-none focus:ring-2 focus:ring-indigo-500"
+                                                    autoFocus
+                                                />
+                                            ) : (
+                                                <h5 className="font-bold text-gray-800 dark:text-white text-lg truncate">{exLog.exerciseName}</h5>
+                                            )}
                                         </div>
-                                        <button onClick={() => handleRemoveExercise(exLog.id)} className="text-gray-300 hover:text-red-500 p-1 transition-colors"><Trash2 size={18}/></button>
+                                        <div className="flex items-center gap-1">
+                                            <button onClick={() => setEditingExerciseId(isEditing ? null : exLog.id)} className="text-gray-400 hover:text-indigo-600 p-2 rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/50 transition-colors">
+                                                {isEditing ? <CheckCircle size={16}/> : <Edit size={16}/>}
+                                            </button>
+                                            <button onClick={() => handleRemoveExercise(exLog.id)} className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/50 transition-colors"><Trash2 size={16}/></button>
+                                        </div>
                                     </div>
                                     
                                     <div className="overflow-x-auto">
@@ -446,7 +472,8 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                                         </div>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                             {(!currentPlan.exercises || currentPlan.exercises.length === 0) && (
                                 <div className="text-center py-12 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl text-gray-400 bg-white/20 dark:bg-gray-800/20">
                                     <Dumbbell size={32} className="mx-auto mb-2 opacity-50"/>

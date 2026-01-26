@@ -344,7 +344,8 @@ export default function App() {
         inputType: 'password',
         icon: <Trash2 size={48} className="text-red-500"/>,
         onConfirm: async (password) => {
-            if (!password) {
+            const trimmedPassword = (password || '').trim();
+            if (!trimmedPassword) {
                 showNotification('請輸入密碼', 'error');
                 return;
             }
@@ -354,7 +355,7 @@ export default function App() {
             }
 
             try {
-                const credential = EmailAuthProvider.credential(currentUser.email, password);
+                const credential = EmailAuthProvider.credential(currentUser.email, trimmedPassword);
                 await reauthenticateWithCredential(auth.currentUser, credential);
                 
                 // Re-auth successful, proceed with deletion
@@ -378,7 +379,7 @@ export default function App() {
                     showNotification('密碼錯誤，操作已取消', 'error');
                 } else {
                     console.error("Deletion error:", error);
-                    showNotification('刪除失敗，請稍後再試', 'error');
+                    showNotification(`刪除失敗：${error.message}`, 'error');
                 }
             }
         }
