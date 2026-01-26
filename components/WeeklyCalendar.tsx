@@ -115,8 +115,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     <div className="text-[10px] md:text-xs text-slate-500 font-medium mb-1">{['週日','週一','週二','週三','週四','週五','週六'][d.getDay()]}</div>
                     <div className={`font-bold text-sm md:text-lg inline-block w-6 h-6 md:w-8 md:h-8 leading-6 md:leading-8 rounded-full ${d.toDateString()===new Date().toDateString() ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 dark:text-slate-200'}`}>{d.getDate()}</div>
                     
-                     {/* Day Off Indicator */}
-                     {offCoaches.length > 0 && (
+                     {/* Day Off Indicator (Only in 'all' view) */}
+                     {selectedCoachId === 'all' && offCoaches.length > 0 && (
                         <div className="mt-1 flex flex-col items-center gap-0.5" title={offCoaches.map(c => c.name).join(', ') + ' 休假'}>
                            {offCoaches.map(c => (
                              <div key={c.id} className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full w-full max-w-[80px] truncate ${c.color}`}>{c.name}</div>
@@ -136,11 +136,14 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
               {weekDays.map((day) => {
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
                 
-                const targetCoach = selectedCoachId !== 'all' 
-                    ? coaches.find(c => c.id === selectedCoachId) 
-                    : (currentUser.role === 'manager' ? null : coaches.find(c => c.id === currentUser.id));
-
-                const isOff = targetCoach && isCoachDayOff(dateKey, targetCoach);
+                let isCellDisabled = false;
+                if (selectedCoachId !== 'all') {
+                    const selectedCoach = coaches.find(c => c.id === selectedCoachId);
+                    isCellDisabled = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
+                } else {
+                    const workingCoaches = coaches.filter(c => !isCoachDayOff(dateKey, c));
+                    isCellDisabled = workingCoaches.length === 0;
+                }
                 
                 const slotApps = appointments.filter(a => 
                     a.date === dateKey && 
@@ -159,10 +162,10 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                   <div 
                     key={`${dateKey}-${time}`} 
                     className={`border-r border-slate-100/50 dark:border-slate-700/50 p-1 md:p-1.5 relative group transition-all duration-200
-                      ${isOff ? 'bg-stripes-gray opacity-40' : 'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
+                      ${isCellDisabled ? 'bg-stripes-gray opacity-40 cursor-not-allowed' : 'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
                     `}
                     onClick={() => {
-                        if (!isOff && !isLoading) onSlotClick(dateKey, time);
+                        if (!isCellDisabled && !isLoading) onSlotClick(dateKey, time);
                     }}
                   >
                      <div className="flex flex-col gap-1 md:gap-1.5 h-full">
@@ -195,12 +198,9 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     <div className="flex items-center gap-1">
                                       {isMine && isCheckedIn && (
                                           <button 
-                                              onClick={(e) => { 
-                                                  e.stopPropagation(); 
-                                                  onToggleComplete(app); 
-                                              }}
+                                              onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
                                               className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
-                                              title="確認完課 (扣點)"
+                                              title={currentUser.role === 'manager' ? "管理員強迫核實" : "確認完課"}
                                           >
                                               <AlertCircle size={10} className="md:w-3 md:h-3"/>
                                           </button>
@@ -237,7 +237,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                           </div>
                         )}
                         
-                        {!isOff && visibleApps.length === 0 && (
+                        {!isCellDisabled && visibleApps.length === 0 && (
                             <div className="hidden group-hover:flex w-full h-full items-center justify-center">
                                 <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-indigo-50 dark:bg-slate-700 text-indigo-500 flex items-center justify-center">
                                     <Plus size={12} strokeWidth={3} className="md:w-3.5 md:h-3.5"/>

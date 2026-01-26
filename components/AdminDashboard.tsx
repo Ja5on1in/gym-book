@@ -77,6 +77,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Appointment List State
   const [collapsedDates, setCollapsedDates] = useState(new Set<string>());
+  const [showCancelled, setShowCancelled] = useState(false);
 
   // Initialize Dates
   useEffect(() => {
@@ -174,16 +175,17 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   const filteredApps = useMemo(() => {
     return appointments
-        .filter(a => currentUser.role === 'manager' || a.coachId === currentUser.id)
+        .filter(a => 
+            (currentUser.role === 'manager' || a.coachId === currentUser.id) &&
+            (showCancelled || a.status !== 'cancelled')
+        )
         .sort((a,b) => {
-            // Sort by Date (Descending) then Time (Ascending)
             const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
             if (dateDiff !== 0) return dateDiff;
             return a.time.localeCompare(b.time);
         });
-  }, [appointments, currentUser]);
+  }, [appointments, currentUser, showCancelled]);
 
-  // Group appointments by Date for List View
   const appsByDate = useMemo(() => {
       return filteredApps.reduce((acc, app) => {
           (acc[app.date] = acc[app.date] || []).push(app);
@@ -524,11 +526,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                {adminTab === 'appointments' && (
                  <div className="glass-panel rounded-3xl shadow-lg p-6 border border-white/60">
-                   <div className="flex justify-between mb-6">
-                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
+                   <div className="flex justify-between items-center mb-6">
+                      <div className="flex items-center gap-4">
+                        <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><List className="text-indigo-500"/> 預約列表</h3>
+                        <div className="flex items-center gap-2 cursor-pointer" onClick={() => setShowCancelled(!showCancelled)}>
+                            <div className={`w-10 h-6 rounded-full p-1 transition-colors ${showCancelled ? 'bg-indigo-600' : 'bg-slate-200 dark:bg-slate-700'}`}>
+                                <div className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform ${showCancelled ? 'translate-x-4' : ''}`}/>
+                            </div>
+                            <label className="text-xs font-medium text-slate-500 dark:text-slate-400">顯示已取消</label>
+                        </div>
+                      </div>
                      {selectedBatch.size > 0 && (
                        <button onClick={handleBatchDelete} className="bg-red-500 text-white px-4 py-2 rounded-xl text-sm flex items-center gap-2 shadow-lg hover:bg-red-600 transition-colors animate-fadeIn">
-                         <Trash2 size={16}/> 刪除選取 ({selectedBatch.size})
+                         <Trash2 size={16}/> 取消選取 ({selectedBatch.size})
                        </button>
                      )}
                    </div>
@@ -595,10 +605,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                 {app.status === 'checked_in' && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
-                                                        className="mt-1 text-xs bg-orange-500 text-white px-2 py-1 rounded-md hover:bg-orange-600 transition-colors shadow-sm font-bold animate-pulse"
-                                                        title="確認完課 (扣點)"
+                                                        className={`mt-1 text-xs px-2 py-1 rounded-md transition-colors shadow-sm font-bold flex items-center gap-1 ${
+                                                            currentUser.role === 'manager' 
+                                                                ? 'bg-red-100 text-red-700 hover:bg-red-200 animate-pulse' 
+                                                                : 'bg-orange-500 text-white hover:bg-orange-600 animate-pulse'
+                                                        }`}
+                                                        title={currentUser.role === 'manager' ? "管理員強迫核實" : "確認完課"}
                                                     >
-                                                        確認完課
+                                                        {currentUser.role === 'manager' && <AlertTriangle size={12}/>}
+                                                        {currentUser.role === 'manager' ? "強迫核實" : "確認完課"}
                                                     </button>
                                                 )}
                                                 {app.status === 'completed' && currentUser.role === 'manager' && (
