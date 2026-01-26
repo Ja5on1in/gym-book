@@ -37,7 +37,7 @@ import {
     batchUpdateFirestore
 } from './services/firebase';
 import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { writeBatch, doc } from 'firebase/firestore';
+import { writeBatch, doc, getDoc } from 'firebase/firestore';
 
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
@@ -135,6 +135,7 @@ export default function App() {
                 if (liff.isLoggedIn()) {
                     const profile = await liff.getProfile();
                     setLiffProfile(profile);
+                    await handleRegisterInventory(profile);
                 }
             } catch (err) {
                 console.error('LIFF Init failed', err);
@@ -387,15 +388,22 @@ export default function App() {
   };
 
   const handleRegisterInventory = async (profile: { userId: string, displayName: string }) => {
-      const newInventory: UserInventory = {
-          id: profile.userId,
-          lineUserId: profile.userId,
-          name: profile.displayName,
-          credits: { private: 0, group: 0 },
-          lastUpdated: new Date().toISOString(),
-      };
-      await saveToFirestore('user_inventory', profile.userId, newInventory);
-      addLog('新戶註冊', `自動建立學員資料: ${profile.displayName}`);
+      if (!db) return;
+      const userInvRef = doc(db, 'user_inventory', profile.userId);
+      const docSnap = await getDoc(userInvRef);
+
+      if (!docSnap.exists()) {
+        const newInventory: UserInventory = {
+            id: profile.userId,
+            lineUserId: profile.userId,
+            name: profile.displayName,
+            phone: '',
+            credits: { private: 0, group: 0 },
+            lastUpdated: new Date().toISOString(),
+        };
+        await saveToFirestore('user_inventory', profile.userId, newInventory);
+        addLog('新戶自動註冊', `LIFF 登入時自動建立學員資料: ${profile.displayName}`);
+      }
   };
 
   const handleSaveWorkoutPlan = async (plan: WorkoutPlan) => {
