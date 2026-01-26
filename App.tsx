@@ -1140,7 +1140,7 @@ export default function App() {
                         {blockForm.id ? '管理行程' : (isBatchMode ? '批次封鎖時段' : '新增行程')}
                     </h3>
                     <div className="flex gap-2">
-                        {blockForm.id && (
+                        {blockForm.id && !isLockedForEditing && (
                             <button onClick={() => setDeleteConfirm(true)} className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"><Trash2 size={20}/></button>
                         )}
                         {!blockForm.id && (
@@ -1171,11 +1171,11 @@ export default function App() {
                         <div className="grid grid-cols-2 gap-4">
                            <div>
                                <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
-                               <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.type} onChange={e => {
+                               <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.type} onChange={e => {
                                    const newType = e.target.value as any;
                                    setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
                                    if(newType !== 'private') setMemberSearchTerm('');
-                               }}>
+                               }} disabled={isLockedForEditing}>
                                    <option value="block">內部事務</option>
                                    <option value="private">私人課程</option>
                                    <option value="group">團體課程</option>
@@ -1184,7 +1184,7 @@ export default function App() {
                            {['manager', 'receptionist'].includes(currentUser?.role) && (
                                <div>
                                    <label className="text-xs font-bold text-slate-500 uppercase">指定教練</label>
-                                   <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})}>
+                                   <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})} disabled={isLockedForEditing}>
                                        {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                    </select>
                                </div>
@@ -1204,7 +1204,7 @@ export default function App() {
                              {isBatchMode && (
                                  <div className="w-full">
                                      <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">結束時間 (不含)</label>
-                                     <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})}>
+                                     <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})} disabled={isLockedForEditing}>
                                          {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                                      </select>
                                  </div>
@@ -1213,7 +1213,7 @@ export default function App() {
                         
                         {/* Type specific fields (Block Reason, Group Name, Private User Search) */}
                         {blockForm.type === 'block' && (
-                            <div>
+                            <fieldset disabled={isLockedForEditing}>
                                 <label className="text-xs font-bold text-slate-500 uppercase">內部事項標籤</label>
                                 <div className="flex flex-wrap gap-2 mt-2">
                                     {BLOCK_REASONS.map(r => (
@@ -1223,7 +1223,7 @@ export default function App() {
                                         </button>
                                     ))}
                                 </div>
-                            </div>
+                            </fieldset>
                         )}
                         {blockForm.type === 'group' && (
                              <div>
@@ -1231,15 +1231,16 @@ export default function App() {
                                  <input 
                                      type="text" 
                                      required 
-                                     className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" 
+                                     className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" 
                                      placeholder="例如：TRX 懸吊、瑜珈..." 
                                      value={blockForm.reason} 
                                      onChange={e => setBlockForm({...blockForm, reason: e.target.value})}
+                                     disabled={isLockedForEditing}
                                  />
                              </div>
                         )}
                         {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
-                            <div className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all">
+                            <fieldset disabled={isLockedForEditing} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                                 <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
                                 {blockForm.customer?.name ? (
                                     <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
@@ -1309,12 +1310,12 @@ export default function App() {
                                         )}
                                     </div>
                                 )}
-                            </div>
+                            </fieldset>
                         )}
                         {!blockForm.id && (
                             <div>
                                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
-                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})}>
+                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})} disabled={isLockedForEditing}>
                                     <option value={1}>單次事件</option>
                                     <option value={4}>重複 4 週</option>
                                     <option value={8}>重複 8 週</option>
@@ -1324,7 +1325,7 @@ export default function App() {
                         )}
 
                         <div className="pt-2 flex gap-3">
-                            {blockForm.id && (
+                            {blockForm.id && !isLockedForEditing && (
                                 <button 
                                     type="button" 
                                     onClick={() => setDeleteConfirm(true)} 

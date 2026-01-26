@@ -590,7 +590,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                                 ? 'bg-orange-100 text-orange-600 dark:bg-orange-900/30 dark:text-orange-400'
                                                                 : 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
                                                     }`}>
-                                                    {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課' : app.status === 'checked_in' ? '已簽到' : '已確認'}
+                                                    {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課 (不可取消)' : app.status === 'checked_in' ? '已簽到' : '已確認'}
                                                 </span>
                                                 {app.status === 'checked_in' && (
                                                     <button
@@ -599,6 +599,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                         title="確認完課 (扣點)"
                                                     >
                                                         確認完課
+                                                    </button>
+                                                )}
+                                                {app.status === 'completed' && currentUser.role === 'manager' && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
+                                                        className="mt-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-md hover:bg-yellow-200 dark:bg-yellow-900/30 dark:text-yellow-300 dark:hover:bg-yellow-900/50 transition-colors shadow-sm font-bold flex items-center gap-1"
+                                                        title="撤銷完課 (返還點數)"
+                                                    >
+                                                        <RefreshCw size={12}/> 撤銷完課
                                                     </button>
                                                 )}
                                                 <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full mt-1">
