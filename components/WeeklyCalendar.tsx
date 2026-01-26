@@ -23,6 +23,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   const [selectedCoachId, setSelectedCoachId] = useState<string>('all');
   const [selectedType, setSelectedType] = useState<'all' | 'private' | 'group'>('all'); 
   const weekDays = Array.from({length: 7}, (_, i) => addDays(currentWeekStart, i));
+  const isManager = currentUser.role === 'manager';
 
   // Helper for direct date input
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -137,12 +138,17 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
                 
                 let isCellDisabled = false;
-                if (selectedCoachId !== 'all') {
-                    const selectedCoach = coaches.find(c => c.id === selectedCoachId);
-                    isCellDisabled = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
-                } else {
-                    const workingCoaches = coaches.filter(c => !isCoachDayOff(dateKey, c));
-                    isCellDisabled = workingCoaches.length === 0;
+                
+                // Manager Override: Managers can click any cell regardless of off status or past time
+                if (!isManager) {
+                    if (selectedCoachId !== 'all') {
+                        const selectedCoach = coaches.find(c => c.id === selectedCoachId);
+                        isCellDisabled = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
+                    } else {
+                        // "All Coaches" view: Disabled only if ALL coaches are off
+                        const workingCoaches = coaches.filter(c => !isCoachDayOff(dateKey, c));
+                        isCellDisabled = workingCoaches.length === 0;
+                    }
                 }
                 
                 const slotApps = appointments.filter(a => 
@@ -165,7 +171,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                       ${isCellDisabled ? 'bg-stripes-gray opacity-40 cursor-not-allowed' : 'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
                     `}
                     onClick={() => {
-                        if (!isCellDisabled && !isLoading) onSlotClick(dateKey, time);
+                        // Manager can always click, otherwise check disabled status
+                        if ((!isCellDisabled || isManager) && !isLoading) onSlotClick(dateKey, time);
                     }}
                   >
                      <div className="flex flex-col gap-1 md:gap-1.5 h-full">

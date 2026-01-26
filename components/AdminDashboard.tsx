@@ -34,6 +34,7 @@ interface AdminDashboardProps {
   onDeletePlan: (id: string) => void;
   onGoToBooking: () => void;
   onToggleComplete: (app: Appointment) => void;
+  onCancelAppointment: (app: Appointment) => void; // New Prop
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -42,7 +43,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   analysis: globalAnalysis, handleExportStatsCsv: globalExportCsv, handleExportJson, triggerImport, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
   inventories, onSaveInventory, onDeleteInventory,
-  workoutPlans, onSavePlan, onDeletePlan, onGoToBooking, onToggleComplete
+  workoutPlans, onSavePlan, onDeletePlan, onGoToBooking, onToggleComplete, onCancelAppointment
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -590,7 +591,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                     {app.customer?.phone && <span>電話: {app.customer.phone}</span>}
                                                 </div>
                                             </div>
-                                            <div className="flex flex-col items-start md:items-end gap-1">
+                                            <div className="flex flex-col items-start md:items-end gap-1 pointer-events-auto">
                                                 <span className={`text-xs px-3 py-1 rounded-full font-bold whitespace-nowrap 
                                                     ${app.status==='cancelled'
                                                         ? 'bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-400'
@@ -602,6 +603,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                     }`}>
                                                     {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課 (不可取消)' : app.status === 'checked_in' ? '已簽到' : '已確認'}
                                                 </span>
+                                                {(app.status === 'confirmed' || app.status === 'checked_in') && (
+                                                     <button
+                                                        onClick={(e) => { e.stopPropagation(); onCancelAppointment(app); }}
+                                                        className="mt-1 text-xs px-2 py-1 rounded-md transition-colors shadow-sm font-bold flex items-center gap-1 bg-red-100 text-red-600 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50"
+                                                        title="取消預約"
+                                                    >
+                                                        <Trash2 size={12}/> 取消預約
+                                                    </button>
+                                                )}
                                                 {app.status === 'checked_in' && (
                                                     <button
                                                         onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}

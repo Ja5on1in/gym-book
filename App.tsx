@@ -955,6 +955,16 @@ export default function App() {
             onOpenBatchBlock={handleOpenBatchBlock}
             onGoToBooking={() => setView('booking')}
             onToggleComplete={handleToggleComplete}
+            onCancelAppointment={(app) => {
+                setConfirmModal({
+                     isOpen: true,
+                     title: '取消預約確認',
+                     message: `確定要取消 ${app.customer?.name} 的預約嗎？`,
+                     isDanger: true,
+                     showInput: true,
+                     onConfirm: (reason) => handleCustomerCancel(app, reason || '管理員後台取消')
+                });
+            }}
             renderWeeklyCalendar={() => (
                <WeeklyCalendar 
                   currentWeekStart={currentWeekStart}
