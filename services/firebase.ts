@@ -7,7 +7,9 @@ import {
   GoogleAuthProvider,
   signOut, 
   onAuthStateChanged,
-  User as FirebaseUser
+  User as FirebaseUser,
+  EmailAuthProvider,
+  reauthenticateWithCredential
 } from 'firebase/auth';
 import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, getDoc, updateDoc, query, where, writeBatch } from 'firebase/firestore';
 import { User } from '../types';
@@ -63,6 +65,18 @@ export const loginWithEmail = async (email: string, pass: string) => {
   } catch (error) {
     console.error("Email Login failed", error);
     throw error;
+  }
+};
+
+export const verifyCurrentPassword = async (password: string) => {
+  if (!isFirebaseAvailable || !auth.currentUser || !auth.currentUser.email) return true; // Offline mode always allows
+  try {
+    const credential = EmailAuthProvider.credential(auth.currentUser.email, password);
+    await reauthenticateWithCredential(auth.currentUser, credential);
+    return true;
+  } catch (error) {
+    console.error("Password verification failed", error);
+    return false;
   }
 };
 

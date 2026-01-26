@@ -33,7 +33,8 @@ import {
     auth,
     getUserProfile,
     createAuthUser,
-    batchUpdateFirestore
+    batchUpdateFirestore,
+    verifyCurrentPassword
 } from './services/firebase';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -330,8 +331,9 @@ export default function App() {
 
   const handleDeleteInventory = async (id: string) => {
       try {
+          const inv = inventories.find(i => i.id === id);
           await deleteFromFirestore('user_inventory', id);
-          addLog('學員管理', `刪除學員資料 ID: ${id}`);
+          addLog('學員管理', `刪除學員資料: ${inv?.name || id}`);
           showNotification('學員資料已刪除', 'success');
       } catch (e) {
           showNotification('刪除失敗', 'error');
@@ -976,6 +978,7 @@ export default function App() {
             workoutPlans={workoutPlans}
             onSavePlan={handleSaveWorkoutPlan}
             onDeletePlan={handleDeleteWorkoutPlan}
+            onVerifyPassword={verifyCurrentPassword}
          />
       );
   };
