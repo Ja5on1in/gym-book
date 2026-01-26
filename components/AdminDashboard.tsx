@@ -33,6 +33,7 @@ interface AdminDashboardProps {
   onSavePlan: (plan: WorkoutPlan) => void;
   onDeletePlan: (id: string) => void;
   onGoToBooking: () => void;
+  onToggleComplete: (app: Appointment) => void;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -41,7 +42,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   analysis: globalAnalysis, handleExportStatsCsv: globalExportCsv, handleExportJson, triggerImport, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
   inventories, onSaveInventory, onDeleteInventory,
-  workoutPlans, onSavePlan, onDeletePlan, onGoToBooking
+  workoutPlans, onSavePlan, onDeletePlan, onGoToBooking, onToggleComplete
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -591,6 +592,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                     }`}>
                                                     {app.status === 'cancelled' ? '已取消' : app.status === 'completed' ? '已完課' : app.status === 'checked_in' ? '已簽到' : '已確認'}
                                                 </span>
+                                                {app.status === 'checked_in' && (
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
+                                                        className="mt-1 text-xs bg-orange-500 text-white px-2 py-1 rounded-md hover:bg-orange-600 transition-colors shadow-sm font-bold animate-pulse"
+                                                        title="確認完課 (扣點)"
+                                                    >
+                                                        確認完課
+                                                    </button>
+                                                )}
                                                 <div className="text-[10px] text-indigo-600 dark:text-indigo-400 font-bold bg-indigo-50 dark:bg-indigo-900/30 px-2 py-0.5 rounded-full mt-1">
                                                   {app.service?.name || (app.type === 'group' ? '團體課' : app.type === 'block' ? '內部事務' : '私人課')}
                                                 </div>

@@ -78,14 +78,17 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
             const isCheckedIn = app.status === 'checked_in';
             const isConfirmed = app.status === 'confirmed';
             
-            // Allow check-in only if status is confirmed
-            const canCheckIn = isConfirmed; 
-            const isUpcoming = new Date(app.date + ' ' + app.time) > new Date() && !isCancelled;
+            const appointmentDateTime = new Date(`${app.date}T${app.time}`);
+            const now = new Date();
+            const hoursUntil = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-            // Unified Cancellation Permission:
-            // As long as it is confirmed and upcoming, the user can cancel it.
-            // We removed any checks regarding who created the booking.
-            const canCancel = isConfirmed && isUpcoming;
+            const isUpcoming = appointmentDateTime > now;
+            const isCancellableTime = hoursUntil >= 24;
+
+            const canCancel = isConfirmed && isUpcoming && isCancellableTime;
+            const cannotCancelLocked = isConfirmed && isUpcoming && !isCancellableTime;
+
+            const canCheckIn = isConfirmed;
 
             return (
               <div key={app.id} className={`glass-card p-5 rounded-2xl border-l-4 ${isCancelled ? 'border-l-red-400 opacity-70' : isCompleted ? 'border-l-gray-400' : isCheckedIn ? 'border-l-orange-500' : 'border-l-green-500'}`}>
@@ -126,6 +129,12 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                       </button>
                   )}
                 </div>
+                
+                {cannotCancelLocked && (
+                    <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">
+                        24小時內無法取消
+                    </div>
+                )}
                 
                 {isCompleted && (
                     <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">

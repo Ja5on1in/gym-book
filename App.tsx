@@ -981,6 +981,7 @@ export default function App() {
             handleBatchDelete={handleBatchDelete}
             onOpenBatchBlock={handleOpenBatchBlock}
             onGoToBooking={() => setView('booking')}
+            onToggleComplete={handleToggleComplete}
             renderWeeklyCalendar={() => (
                <WeeklyCalendar 
                   currentWeekStart={currentWeekStart}
@@ -1003,6 +1004,9 @@ export default function App() {
          />
       );
   };
+  
+  const currentAppointmentForModal = blockForm.id ? appointments.find(a => a.id === blockForm.id) : null;
+  const isLockedForEditing = !!currentAppointmentForModal && ['checked_in', 'completed'].includes(currentAppointmentForModal.status);
 
   return (
     <div className="min-h-screen text-slate-800 dark:text-slate-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
@@ -1158,7 +1162,12 @@ export default function App() {
                     </div>
                 ) : (
                     <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
-                        {/* Form contents same as original */}
+                        {isLockedForEditing && (
+                            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-xs text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800 flex items-center gap-2">
+                                <AlertTriangle size={16}/>
+                                <span>此預約已簽到或完課，無法修改時間。</span>
+                            </div>
+                        )}
                         <div className="grid grid-cols-2 gap-4">
                            <div>
                                <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
@@ -1183,12 +1192,12 @@ export default function App() {
                         </div>
                         <div>
                              <label className="text-xs font-bold text-slate-500 uppercase">日期</label>
-                             <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} />
+                             <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} disabled={isLockedForEditing} />
                         </div>
                         <div className="grid grid-cols-2 gap-4 items-end">
                              <div className="w-full">
                                  <label className="text-xs font-bold text-slate-500 uppercase">開始時間</label>
-                                 <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})}>
+                                 <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})} disabled={isLockedForEditing}>
                                      {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                                  </select>
                              </div>
@@ -1326,9 +1335,9 @@ export default function App() {
                             )}
                             <button 
                                 type="submit" 
-                                disabled={blockForm.type === 'private' && !blockForm.customer?.name}
+                                disabled={(blockForm.type === 'private' && !blockForm.customer?.name) || isLockedForEditing}
                                 className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
-                                    ${(blockForm.type === 'private' && !blockForm.customer?.name) 
+                                    ${(blockForm.type === 'private' && !blockForm.customer?.name) || isLockedForEditing
                                         ? 'bg-slate-400 cursor-not-allowed' 
                                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                             >
