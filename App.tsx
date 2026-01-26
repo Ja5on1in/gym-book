@@ -31,11 +31,14 @@ import {
     loginWithEmail, 
     logout,
     auth,
+    db,
     getUserProfile,
     createAuthUser,
     batchUpdateFirestore
 } from './services/firebase';
-import { onAuthStateChanged } from 'firebase/auth';
+import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
+import { writeBatch, doc } from 'firebase/firestore';
+
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
 import { User, Appointment, Coach, Log, Service, Customer, BlockFormState, UserInventory, WorkoutPlan } from './types';
@@ -96,9 +99,11 @@ export default function App() {
     isOpen: boolean, 
     title: string,
     message: string, 
-    onConfirm: ((reason?: string) => void) | null, 
+    onConfirm: ((reasonOrPassword?: string) => void) | null, 
     isDanger: boolean, 
     showInput: boolean,
+    inputLabel?: string,
+    inputType?: 'text' | 'password',
     icon?: React.ReactNode
   }>({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, showInput: false });
   
@@ -328,14 +333,56 @@ export default function App() {
       }
   };
 
-  const handleDeleteInventory = async (id: string) => {
-      try {
-          await deleteFromFirestore('user_inventory', id);
-          addLog('學員管理', `刪除學員資料 ID: ${id}`);
-          showNotification('學員資料已刪除', 'success');
-      } catch (e) {
-          showNotification('刪除失敗', 'error');
-      }
+  const handleDeleteInventory = async (inventory: UserInventory) => {
+    setConfirmModal({
+        isOpen: true,
+        title: '刪除會員確認',
+        message: `此操作將永久刪除學員 ${inventory.name} 的所有資料 (包含點數庫存與訓練課表)，且無法復原。請輸入您的登入密碼以確認執行。`,
+        isDanger: true,
+        showInput: true,
+        inputLabel: '管理員密碼',
+        inputType: 'password',
+        icon: <Trash2 size={48} className="text-red-500"/>,
+        onConfirm: async (password) => {
+            if (!password) {
+                showNotification('請輸入密碼', 'error');
+                return;
+            }
+            if (!currentUser || !currentUser.email || !auth.currentUser) {
+                showNotification('無法驗證管理員身份', 'error');
+                return;
+            }
+
+            try {
+                const credential = EmailAuthProvider.credential(currentUser.email, password);
+                await reauthenticateWithCredential(auth.currentUser, credential);
+                
+                // Re-auth successful, proceed with deletion
+                await deleteFromFirestore('user_inventory', inventory.id);
+                
+                const plansToDelete = workoutPlans.filter(p => p.userId === inventory.id);
+                if (plansToDelete.length > 0 && db) {
+                  const batch = writeBatch(db);
+                  plansToDelete.forEach(plan => {
+                    const planRef = doc(db, 'workout_plans', plan.id);
+                    batch.delete(planRef);
+                  });
+                  await batch.commit();
+                }
+
+                addLog('學員管理', `管理員 ${currentUser.name} 刪除了學員 ${inventory.name} (ID: ${inventory.id})`);
+                showNotification('學員已成功刪除', 'success');
+
+            } catch (error: any) {
+                if (error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+                    showNotification('密碼錯誤，操作已取消', 'error');
+                } else {
+                    console.error("Deletion error:", error);
+                    showNotification('刪除失敗，請稍後再試', 'error');
+                }
+            }
+        }
+    });
   };
 
   const handleRegisterInventory = async (profile: { userId: string, displayName: string }) => {
@@ -1071,12 +1118,16 @@ export default function App() {
                          {confirmModal.message}
                      </p>
                      {confirmModal.showInput && (
-                         <textarea 
-                            className="w-full glass-input p-4 rounded-2xl mb-6 h-24 dark:text-white resize-none focus:ring-2 focus:ring-indigo-500/50 outline-none" 
-                            placeholder="請輸入原因..." 
-                            value={cancelReason} 
-                            onChange={e => setCancelReason(e.target.value)}
-                         ></textarea>
+                         <div className='w-full mb-6'>
+                            <label className="text-xs font-bold text-slate-500 uppercase flex items-center justify-start gap-1 mb-1">{confirmModal.inputLabel || '原因'}</label>
+                            <input
+                                type={confirmModal.inputType || 'text'} 
+                                className="w-full glass-input p-4 rounded-2xl dark:text-white resize-none focus:ring-2 focus:ring-indigo-500/50 outline-none" 
+                                placeholder={confirmModal.inputLabel || '請輸入原因...'}
+                                value={cancelReason} 
+                                onChange={e => setCancelReason(e.target.value)}
+                            />
+                         </div>
                      )}
                      <div className="flex flex-col gap-3 w-full">
                          <button 

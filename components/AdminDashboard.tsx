@@ -28,13 +28,13 @@ interface AdminDashboardProps {
   onOpenBatchBlock: () => void;
   inventories: UserInventory[];
   onSaveInventory: (inv: UserInventory) => void;
-  onDeleteInventory: (id: string) => void;
+  onDeleteInventory: (inv: UserInventory) => void;
   workoutPlans: WorkoutPlan[];
   onSavePlan: (plan: WorkoutPlan) => void;
   onDeletePlan: (id: string) => void;
   onGoToBooking: () => void;
   onToggleComplete: (app: Appointment) => void;
-  onCancelAppointment: (app: Appointment) => void; // New Prop
+  onCancelAppointment: (app: Appointment) => void;
 }
 
 const AdminDashboard: React.FC<AdminDashboardProps> = ({
@@ -72,6 +72,16 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [isNewInventoryModalOpen, setIsNewInventoryModalOpen] = useState(false);
   const [newInventoryForm, setNewInventoryForm] = useState<Partial<UserInventory>>({ name: '', phone: '', email: '', credits: { private: 0, group: 0 } });
 
+  // Advanced Export State
+  const [isExportModalOpen, setIsExportModalOpen] = useState(false);
+  const [exportMode, setExportMode] = useState<'range' | 'user'>('range');
+  const [exportYear, setExportYear] = useState(new Date().getFullYear());
+  const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
+  const [exportStart, setExportStart] = useState('');
+  const [exportEnd, setExportEnd] = useState('');
+  const [exportUser, setExportUser] = useState<UserInventory | null>(null);
+  const [exportUserSearch, setExportUserSearch] = useState('');
+
   // Analysis Filter State
   const [statsStart, setStatsStart] = useState('');
   const [statsEnd, setStatsEnd] = useState('');
@@ -85,9 +95,65 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     const now = new Date();
     const start = new Date(now.getFullYear(), now.getMonth(), 1);
     const end = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-    setStatsStart(formatDateKey(start.getFullYear(), start.getMonth(), start.getDate()));
-    setStatsEnd(formatDateKey(end.getFullYear(), end.getMonth(), end.getDate()));
+    const startStr = formatDateKey(start.getFullYear(), start.getMonth(), start.getDate());
+    const endStr = formatDateKey(end.getFullYear(), end.getMonth(), end.getDate());
+    setStatsStart(startStr);
+    setStatsEnd(endStr);
+    setExportStart(startStr);
+    setExportEnd(endStr);
   }, []);
+
+  const handleAdvancedExport = () => {
+    let filtered = appointments.filter(a => a.status === 'completed');
+    let fileName = 'completed_report';
+
+    if (exportMode === 'range') {
+        if (!exportStart || !exportEnd) {
+            alert('請選擇有效的日期區間');
+            return;
+        }
+        filtered = filtered.filter(a => a.date >= exportStart && a.date <= exportEnd);
+        fileName += `_${exportStart}_to_${exportEnd}`;
+    } else { // user mode
+        if (!exportUser || !exportStart || !exportEnd) {
+            alert('請選擇學員與有效的日期區間');
+            return;
+        }
+        filtered = filtered.filter(a => 
+            a.customer?.name === exportUser.name && 
+            a.date >= exportStart && a.date <= exportEnd
+        );
+        fileName += `_${exportUser.name}_${exportStart}_to_${exportEnd}`;
+    }
+
+    const header = ["日期", "時間", "學員姓名", "教練姓名", "課程類型", "扣除點數"];
+    const rows = filtered.map(a => [
+        a.date,
+        a.time,
+        a.customer?.name || 'N/A',
+        a.coachName || 'N/A',
+        a.service?.name || a.reason || '課程',
+        (a.type === 'private' || (a.type as string) === 'client') ? 1 : 0
+    ].join(','));
+    
+    const csvContent = "\uFEFF" + [header.join(','), ...rows].join("\n");
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = `${fileName}.csv`;
+    link.click();
+    
+    setIsExportModalOpen(false);
+  };
+
+  const filteredExportUsers = useMemo(() => {
+    if (!exportUserSearch) return [];
+    return inventories.filter(i => 
+        i.name.toLowerCase().includes(exportUserSearch.toLowerCase()) || 
+        (i.phone && i.phone.includes(exportUserSearch))
+    ).slice(0, 5);
+  }, [exportUserSearch, inventories]);
+
 
   // --- Filtered Analysis Logic ---
   const filteredAnalysisData = useMemo(() => {
@@ -616,7 +682,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
                     <div className="flex justify-end gap-3">
                        <button onClick={handleCustomExportCancel} className="glass-card flex items-center gap-2 text-red-500 px-4 py-2 rounded-xl text-sm hover:bg-red-50 transition-colors shadow-sm"><FileWarning size={16}/> 匯出取消明細</button>
-                       <button onClick={handleCustomExportStats} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出報表</button>
+                       <button onClick={() => setIsExportModalOpen(true)} className="bg-emerald-500 text-white flex items-center gap-2 px-4 py-2 rounded-xl text-sm shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all"><FileSpreadsheet size={16}/> 匯出完課報表</button>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -767,7 +833,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                                   <li>在「營運分析」頁面，您可以使用頂部的日期選擇器或快捷按鈕（上月/本月）來設定您想分析的資料區間。</li>
                                   <li>所有圖表與數據將根據您選擇的區間即時更新。</li>
-                                  <li>點擊「匯出報表」可下載該區間的綜合營運數據 CSV 檔案。</li>
+                                  <li>點擊「匯出完課報表」可開啟進階匯出視窗，選擇依區間或特定學員匯出完課紀錄。</li>
                                   <li>點擊「匯出取消明細」可下載該區間內所有取消的預約紀錄。</li>
                                 </ol>
                             </div>
@@ -930,9 +996,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                    </div>
                                </div>
                                
-                               <div className="pt-4">
-                                   <button onClick={handleSaveInventoryChanges} disabled={currentUser.role === 'coach'} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:bg-slate-400 disabled:shadow-none disabled:cursor-not-allowed">
-                                       <Save size={18}/> 儲存修改
+                               <div className="pt-4 flex gap-2">
+                                    {currentUser.role === 'manager' && (
+                                      <button onClick={() => onDeleteInventory(editingInventory)} className="flex-1 py-3 bg-red-50 text-red-500 hover:bg-red-100 rounded-xl font-bold flex items-center justify-center gap-2 transition-colors">
+                                        <Trash2 size={18}/> 刪除
+                                      </button>
+                                    )}
+                                   <button onClick={handleSaveInventoryChanges} disabled={currentUser.role === 'coach'} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:bg-slate-400 disabled:shadow-none disabled:cursor-not-allowed">
+                                       <Save size={18}/> 儲存
                                    </button>
                                </div>
                            </div>
@@ -974,6 +1045,51 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                        </div>
                    </div>
                )}
+
+                {isExportModalOpen && (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsExportModalOpen(false)}>
+                        <div className="glass-panel w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30" onClick={e => e.stopPropagation()}>
+                            <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center">
+                               <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><FileSpreadsheet size={20} className="text-emerald-500"/> 匯出完課報表</h3>
+                               <button onClick={() => setIsExportModalOpen(false)}><X className="text-slate-500"/></button>
+                            </div>
+                            <div className="p-6">
+                               <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl mb-4">
+                                   <button onClick={() => setExportMode('range')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${exportMode === 'range' ? 'bg-white dark:bg-slate-700 shadow' : 'text-slate-500'}`}>依區間匯出</button>
+                                   <button onClick={() => setExportMode('user')} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${exportMode === 'user' ? 'bg-white dark:bg-slate-700 shadow' : 'text-slate-500'}`}>依學員匯出</button>
+                               </div>
+                               
+                               <div className="space-y-4">
+                                  {exportMode === 'user' && (
+                                     <div className="relative">
+                                       <label className="text-xs font-bold text-slate-500 uppercase">搜尋特定學員</label>
+                                       <input type="text" placeholder="搜尋學員姓名/電話" value={exportUserSearch} onChange={e => { setExportUserSearch(e.target.value); setExportUser(null); }} className="w-full glass-input p-3 rounded-xl mt-1"/>
+                                       {exportUserSearch && filteredExportUsers.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-gray-700">
+                                                {filteredExportUsers.map(u => (
+                                                    <div key={u.id} onClick={() => { setExportUser(u); setExportUserSearch(u.name); }} className="p-2 hover:bg-indigo-50 cursor-pointer">{u.name} ({u.phone})</div>
+                                                ))}
+                                            </div>
+                                       )}
+                                     </div>
+                                  )}
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">開始日期</label>
+                                        <input type="date" value={exportStart} onChange={e => setExportStart(e.target.value)} className="w-full glass-input p-3 rounded-xl mt-1"/>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-slate-500 uppercase">結束日期</label>
+                                        <input type="date" value={exportEnd} onChange={e => setExportEnd(e.target.value)} className="w-full glass-input p-3 rounded-xl mt-1"/>
+                                    </div>
+                                  </div>
+                               </div>
+
+                               <button onClick={handleAdvancedExport} className="w-full py-3 mt-6 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/30 hover:bg-emerald-600 transition-all">確認匯出</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
            </div>
        </main>
     </div>
