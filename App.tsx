@@ -63,6 +63,7 @@ export default function App() {
   const [dbStatus, setDbStatus] = useState('connecting');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
+  const [isProcessing, setIsProcessing] = useState(false); // Bugfix: State to prevent double actions
   
   const [loginForm, setLoginForm] = useState({ email: '', password: '' });
   
@@ -500,26 +501,48 @@ export default function App() {
   };
 
   const handleCustomerCancel = async (app: Appointment, reason: string) => {
-      const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
-      await saveToFirestore('appointments', app.id, updated);
-      addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
-      
-      // Refund credit if it's a private lesson that was not completed
-      if (app.type === 'private' || (app.type as string) === 'client') {
-          let inventory = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name);
-          if (inventory) {
-              const invRef = doc(db, 'user_inventory', inventory.id);
-              await updateDoc(invRef, { 'credits.private': increment(1) });
-              
-              setInventories(prev => prev.map(inv => inv.id === inventory!.id ? { ...inv, credits: { ...inv.credits, private: (inv.credits.private || 0) + 1 } } : inv));
-              addLog('庫存調整', `因取消預約，返還 ${inventory.name} 1 點私人課。剩餘: ${(inventory.credits.private || 0) + 1}`);
+      if (isProcessing) return;
+      setIsProcessing(true);
+      try {
+          const originalStatus = app.status;
+          const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
+          await saveToFirestore('appointments', app.id, updated);
+          addLog('客戶取消', `取消 ${app.customer?.name} (${originalStatus}) - ${reason}`);
+  
+          // Bugfix: Only refund credit if the class was already completed (and point deducted)
+          if ((app.type === 'private' || (app.type as string) === 'client') && originalStatus === 'completed') {
+              // Bugfix: Improved lookup logic
+              let inventory: UserInventory | undefined;
+              if (app.lineUserId) {
+                  inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+              }
+              if (!inventory && app.customer?.phone) {
+                  inventory = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
+              }
+              if (!inventory && app.customer?.name) { // Fallback
+                  inventory = inventories.find(i => i.name === app.customer.name);
+              }
+  
+              if (inventory) {
+                  const invRef = doc(db, 'user_inventory', inventory.id);
+                  const newPrivateCredits = (inventory.credits.private || 0) + 1;
+                  await updateDoc(invRef, { 'credits.private': increment(1) });
+                  
+                  setInventories(prev => prev.map(inv => inv.id === inventory!.id ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } : inv));
+                  addLog('庫存調整', `因取消已完課預約，返還 ${inventory.name} 1 點私人課。剩餘: ${newPrivateCredits}`);
+              }
           }
+  
+          const coach = coaches.find(c => c.id === app.coachId);
+          sendToGoogleScript({ action: 'cancel_booking', id: app.id, reason, lineUserId: app.lineUserId || "", coachName: app.coachName, title: coach?.title || '教練', date: app.date, time: app.time }).catch(e => console.warn("Cancel webhook failed", e));
+          
+          showNotification('已取消預約', 'info');
+      } catch (e) {
+          console.error("Cancellation Error", e);
+          showNotification('取消失敗', 'error');
+      } finally {
+          setIsProcessing(false);
       }
-
-      const coach = coaches.find(c => c.id === app.coachId);
-      sendToGoogleScript({ action: 'cancel_booking', id: app.id, reason, lineUserId: app.lineUserId || "", coachName: app.coachName, title: coach?.title || '教練', date: app.date, time: app.time }).catch(e => console.warn("Cancel webhook failed", e));
-      
-      showNotification('已取消預約', 'info');
   };
 
   const resetBooking = () => {
@@ -715,6 +738,7 @@ export default function App() {
   };
 
   const handleCoachConfirmCompletion = async (app: Appointment, force = false) => {
+      if (isProcessing) return;
       if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
           showNotification('權限不足', 'error'); return;
       }
@@ -722,53 +746,76 @@ export default function App() {
       if (!force && app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error'); return;
       }
-
+  
       const proceed = force ? true : window.confirm('確定要核實此課程並扣除學員點數嗎？');
       if (!proceed) return;
-
-      const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
-      let inventoryToUpdate = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name);
-
-      if (isPrivateLesson && inventoryToUpdate && inventoryToUpdate.credits.private <= 0) {
-          if (!window.confirm(`學員 ${inventoryToUpdate.name} 點數不足 (剩餘 0)，仍要將課程標示為完課嗎？(此操作不會扣點)`)) {
-              return;
-          }
-      }
-
+  
+      setIsProcessing(true);
       try {
+          const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+          
+          // Bugfix: Improved lookup logic
+          let inventoryToUpdate: UserInventory | undefined;
+          if (app.lineUserId) {
+              inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
+          }
+          if (!inventoryToUpdate && app.customer?.phone) {
+              inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
+          }
+          if (!inventoryToUpdate && app.customer?.name) { // Fallback
+              inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
+          }
+  
+          if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) <= 0) {
+              if (!window.confirm(`學員 ${inventoryToUpdate.name} 點數不足 (剩餘 0)，仍要將課程標示為完課嗎？(此操作不會扣點)`)) {
+                  setIsProcessing(false);
+                  return;
+              }
+          }
+  
           const batch = writeBatch(db);
           const appRef = doc(db, 'appointments', app.id);
           batch.update(appRef, { status: 'completed' });
-
+  
           let pointDeducted = false;
-          if (isPrivateLesson && inventoryToUpdate && inventoryToUpdate.credits.private > 0) {
+          let newPrivateCredits = -1;
+  
+          if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) > 0) {
               const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
               batch.update(invRef, { 'credits.private': increment(-1) });
               pointDeducted = true;
+              newPrivateCredits = (inventoryToUpdate.credits.private || 0) - 1;
           }
-
+  
           await batch.commit();
-
-          // Update local state for immediate feedback
+  
           setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'completed' } : a));
+          
           let logDetail = `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課`;
           if (pointDeducted && inventoryToUpdate) {
-              setInventories(prev => prev.map(inv => inv.id === inventoryToUpdate!.id ? { ...inv, credits: { ...inv.credits, private: inv.credits.private - 1 } } : inv));
-              logDetail += `，並扣除 1 點。剩餘: ${inventoryToUpdate.credits.private - 1}`;
+              setInventories(prev => prev.map(inv => 
+                  inv.id === inventoryToUpdate!.id 
+                  ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
+                  : inv
+              ));
+              logDetail += `，並扣除 1 點。剩餘: ${newPrivateCredits}`;
           } else {
               logDetail += ` (未扣點)。`;
           }
           
           addLog('完課確認', logDetail);
           showNotification(`完課確認成功！`, 'success');
-
+  
       } catch (e) {
           console.error(e);
           showNotification('更新失敗', 'error');
+      } finally {
+          setIsProcessing(false);
       }
   };
   
   const handleRevertCompletion = async (app: Appointment) => {
+    if (isProcessing) return;
     if (!currentUser || currentUser.role !== 'manager') {
         showNotification('僅管理員可執行此操作', 'error');
         return;
@@ -776,29 +823,47 @@ export default function App() {
 
     if (!window.confirm('確定要撤銷此完課紀錄並返還學員點數嗎？')) return;
 
-    const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
-    let inventoryToUpdate = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name && i.phone === app.customer?.phone);
-    
+    setIsProcessing(true);
     try {
+        const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+        
+        // Bugfix: Improved lookup logic
+        let inventoryToUpdate: UserInventory | undefined;
+        if (app.lineUserId) {
+            inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
+        }
+        if (!inventoryToUpdate && app.customer?.phone) {
+            inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
+        }
+        if (!inventoryToUpdate && app.customer?.name) { // Fallback
+            inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
+        }
+        
         const batch = writeBatch(db);
         const appRef = doc(db, 'appointments', app.id);
         batch.update(appRef, { status: 'confirmed' });
 
         let pointRefunded = false;
+        let newPrivateCredits = -1;
+
         if (isPrivateLesson && inventoryToUpdate) {
             const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
             batch.update(invRef, { 'credits.private': increment(1) });
             pointRefunded = true;
+            newPrivateCredits = (inventoryToUpdate.credits.private || 0) + 1;
         }
 
         await batch.commit();
 
-        // Update local state
         setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'confirmed' } : a));
         let logDetail = `管理員 ${currentUser.name} 撤銷完課`;
         if (pointRefunded && inventoryToUpdate) {
-            setInventories(prev => prev.map(inv => inv.id === inventoryToUpdate!.id ? { ...inv, credits: { ...inv.credits, private: (inv.credits.private || 0) + 1 } } : inv));
-            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點私人課。剩餘: ${(inventoryToUpdate.credits.private || 0) + 1}`;
+            setInventories(prev => prev.map(inv => 
+                inv.id === inventoryToUpdate!.id 
+                ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
+                : inv
+            ));
+            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點私人課。剩餘: ${newPrivateCredits}`;
         } else {
             logDetail += ' (非私人課或找不到學員庫存，未返還點數)';
         }
@@ -809,6 +874,8 @@ export default function App() {
     } catch(e) {
         console.error("Revert completion error:", e);
         showNotification('操作失敗', 'error');
+    } finally {
+        setIsProcessing(false);
     }
   };
 
@@ -1064,7 +1131,7 @@ export default function App() {
                   onSlotClick={handleSlotClick}
                   onAppointmentClick={handleAppointmentClick}
                   onToggleComplete={handleToggleComplete}
-                  isLoading={dbStatus === 'connecting'} 
+                  isLoading={dbStatus === 'connecting' || isProcessing} 
                />
             )}
             inventories={inventories}
