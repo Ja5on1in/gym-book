@@ -36,9 +36,21 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     );
   }
 
-  // Filter appointments strictly by Line User ID
+  // Filter appointments: by Line User ID, and also by matching name/phone from linked inventory
   const myApps = appointments
-      .filter(a => a.lineUserId === liffProfile.userId)
+      .filter(a => {
+        if (!liffProfile) return false;
+        // Primary match: direct lineUserId on appointment
+        if (a.lineUserId === liffProfile.userId) {
+          return true;
+        }
+        // Secondary match: if we have a linked inventory, try matching by name and phone.
+        // This finds appointments created by admin before the user's LINE was linked.
+        if (myInventory && myInventory.phone && a.customer?.phone === myInventory.phone && a.customer?.name === myInventory.name) {
+          return true;
+        }
+        return false;
+      })
       .sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime());
 
   return (

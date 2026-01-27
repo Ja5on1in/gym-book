@@ -986,18 +986,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">點數變動紀錄</h4>
                                    <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
-                                       {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)))
-                                           .slice(0, 10)
-                                           .map(log => (
+                                       {(() => {
+                                           if (!editingInventory) return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
+
+                                           const relevantLogs = logs
+                                               .filter(log =>
+                                                   (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)) &&
+                                                   (log.action === '庫存調整' || (log.action === '完課確認' && log.details.includes('扣除')))
+                                               )
+                                               .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+                                               .slice(0, 10);
+
+                                           if (relevantLogs.length === 0) {
+                                               return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
+                                           }
+
+                                           return relevantLogs.map(log => (
                                                <div key={log.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
                                                    <p className="font-medium text-slate-600 dark:text-slate-300">{log.details}</p>
                                                    <p className="text-slate-400">{new Date(log.time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>
                                                </div>
-                                           ))
-                                       }
-                                        {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id))).length === 0 && (
-                                            <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>
-                                        )}
+                                           ));
+                                       })()}
                                    </div>
                                </div>
                                
@@ -1070,7 +1080,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                        <label className="text-xs font-bold text-slate-500 uppercase">搜尋特定學員</label>
                                        <input type="text" placeholder="搜尋學員姓名/電話" value={exportUserSearch} onChange={e => { setExportUserSearch(e.target.value); setExportUser(null); }} className="w-full glass-input p-3 rounded-xl mt-1"/>
                                        {exportUserSearch && filteredExportUsers.length > 0 && (
-                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-gray-700">
+                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700">
                                                 {filteredExportUsers.map(u => (
                                                     <div key={u.id} onClick={() => { setExportUser(u); setExportUserSearch(u.name); }} className="p-2 hover:bg-indigo-50 cursor-pointer">{u.name} ({u.phone})</div>
                                                 ))}
