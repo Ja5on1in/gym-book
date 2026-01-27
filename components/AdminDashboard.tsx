@@ -957,10 +957,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <button onClick={() => setIsInventoryModalOpen(false)}><X className="text-slate-500"/></button>
                            </div>
                            <div className="p-6">
-                               <div className="glass-card p-3 rounded-xl bg-white/50 dark:bg-slate-800/50 mb-4">
-                                   <div className="text-xs text-slate-400 uppercase font-bold">學員資料</div>
-                                   <div className="font-bold text-lg dark:text-white">{inventoryForm.name}</div>
-                                   <div className="text-sm text-slate-500">{inventoryForm.phone}</div>
+                               <div className="space-y-4 mb-4">
+                                   <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase">姓名</label>
+                                       <input type="text" disabled={currentUser.role === 'coach'} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.name} onChange={e => setInventoryForm({...inventoryForm, name: e.target.value})}/>
+                                   </div>
+                                   <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase">電話</label>
+                                       <input type="tel" disabled={currentUser.role === 'coach'} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.phone} onChange={e => setInventoryForm({...inventoryForm, phone: e.target.value})}/>
+                                   </div>
                                </div>
 
                                <div className="grid grid-cols-2 gap-4 mb-4">

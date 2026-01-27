@@ -64,9 +64,20 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
   useEffect(() => {
     if (liffProfile) {
-        setFormData(prev => ({ ...prev, name: liffProfile.displayName }));
+        const userInventory = inventories.find(i => i.lineUserId === liffProfile.userId);
+        if (userInventory) {
+            // Found user in DB, use their details
+            setFormData(prev => ({
+                ...prev,
+                name: userInventory.name,
+                phone: userInventory.phone || ''
+            }));
+        } else {
+            // Not found in DB, use LIFF display name
+            setFormData(prev => ({ ...prev, name: liffProfile.displayName, phone: prev.phone || '' }));
+        }
     }
-  }, [liffProfile, setFormData]);
+  }, [liffProfile, inventories, setFormData]);
 
   const handleLineSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -404,15 +415,15 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><User size={12}/> 姓名</label>
-                <input required type="text" className="w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm" 
-                       placeholder="請輸入您的姓名"
-                       value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+                <input readOnly type="text" className="w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm bg-slate-100 dark:bg-slate-800 cursor-not-allowed" 
+                       placeholder="請先登入 LINE"
+                       value={formData.name} />
              </div>
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><Phone size={12}/> 電話</label>
-                <input required type="tel" className="w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm" 
-                       placeholder="0912-345-678"
-                       value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
+                <input readOnly type="tel" className="w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm bg-slate-100 dark:bg-slate-800 cursor-not-allowed" 
+                       placeholder="請先登入 LINE"
+                       value={formData.phone} />
              </div>
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><Mail size={12}/> Email (選填)</label>
