@@ -714,16 +714,17 @@ export default function App() {
       }
   };
 
-  const handleCoachConfirmCompletion = async (app: Appointment) => {
+  const handleCoachConfirmCompletion = async (app: Appointment, force = false) => {
       if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
           showNotification('權限不足', 'error'); return;
       }
       
-      if (!window.confirm('確定要核實此課程並扣除學員點數嗎？')) return;
-
-      if (app.status !== 'checked_in' && app.status !== 'confirmed') {
+      if (!force && app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error'); return;
       }
+
+      const proceed = force ? true : window.confirm('確定要核實此課程並扣除學員點數嗎？');
+      if (!proceed) return;
 
       const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
       let inventoryToUpdate = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name);
@@ -1400,13 +1401,18 @@ export default function App() {
                         )}
 
                         <div className="pt-2 flex gap-3">
-                            {blockForm.id && !isLockedForEditing && (
-                                <button 
-                                    type="button" 
-                                    onClick={() => setDeleteConfirm(true)} 
-                                    className="flex-1 py-3 bg-red-50 text-red-500 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 rounded-xl font-bold transition-colors"
+                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
+                                <button
+                                    type="button"
+                                    onClick={() => {
+                                        if (window.confirm('確定要強制結課並扣除點數嗎？') && currentAppointmentForModal) {
+                                            handleCoachConfirmCompletion(currentAppointmentForModal, true);
+                                            setIsBlockModalOpen(false);
+                                        }
+                                    }}
+                                    className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/30 transition-colors hover:bg-emerald-600"
                                 >
-                                    {blockForm.type === 'private' ? '取消預約' : '刪除'}
+                                    強制結課
                                 </button>
                             )}
                             <button 
