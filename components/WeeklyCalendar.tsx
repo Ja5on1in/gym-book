@@ -136,19 +136,16 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
               <div className="p-1 md:p-2 text-center text-[10px] md:text-xs font-medium text-slate-400 border-r border-slate-100/50 dark:border-slate-700/50 flex items-center justify-center bg-white dark:bg-slate-900 sticky left-0 z-30 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">{time}</div>
               {weekDays.map((day) => {
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
+                const isPast = isPastTime(dateKey, time);
                 
                 let isCellDisabled = false;
                 
-                // Manager Override: Managers can click any cell regardless of off status or past time
-                if (!isManager) {
-                    if (selectedCoachId !== 'all') {
-                        const selectedCoach = coaches.find(c => c.id === selectedCoachId);
-                        isCellDisabled = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
-                    } else {
-                        // "All Coaches" view: Disabled only if ALL coaches are off
-                        const workingCoaches = coaches.filter(c => !isCoachDayOff(dateKey, c));
-                        isCellDisabled = workingCoaches.length === 0;
-                    }
+                if (selectedCoachId !== 'all') {
+                    const selectedCoach = coaches.find(c => c.id === selectedCoachId);
+                    isCellDisabled = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
+                } else {
+                    const workingCoaches = coaches.filter(c => !isCoachDayOff(dateKey, c));
+                    isCellDisabled = workingCoaches.length === 0;
                 }
                 
                 const slotApps = appointments.filter(a => 
@@ -168,18 +165,20 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                   <div 
                     key={`${dateKey}-${time}`} 
                     className={`border-r border-slate-100/50 dark:border-slate-700/50 p-1 md:p-1.5 relative group transition-all duration-200
-                      ${isCellDisabled ? 'bg-stripes-gray opacity-40 cursor-not-allowed' : 'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
+                      ${isCellDisabled ? 'bg-stripes-gray opacity-40 cursor-not-allowed' : 
+                        (isPast && !isManager) ? 'opacity-60 cursor-not-allowed bg-slate-50 dark:bg-slate-900/50' :
+                        'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
                     `}
                     onClick={() => {
-                        // Manager can always click, otherwise check disabled status
-                        if ((!isCellDisabled || isManager) && !isLoading) onSlotClick(dateKey, time);
+                        if (((!isCellDisabled && !isPast) || isManager) && !isLoading) {
+                            onSlotClick(dateKey, time);
+                        }
                     }}
                   >
                      <div className="flex flex-col gap-1 md:gap-1.5 h-full">
                         {visibleApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
                             const coach = coaches.find(c => c.id === app.coachId);
                             const colorClass = coach?.color || 'bg-slate-100 text-slate-800 border-slate-200';
-                            // Logic for owner/manager
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
                             const isCheckedIn = app.status === 'checked_in';
@@ -201,10 +200,11 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                    `}
                               >
                                   <div className="flex justify-between items-center mb-0.5">
-                                    <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
-                                    
+                                    <div className="flex items-center gap-1.5 truncate">
+                                        <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
+                                        {app.type === 'group' && <span className="text-[9px] bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200 px-1.5 py-0.5 rounded-full font-semibold">團體課</span>}
+                                    </div>
                                     <div className="flex items-center gap-1">
-                                      {/* Restore buttons for Managers and Owner Coaches */}
                                       {(isMine || isManager) && isCheckedIn && (
                                           <button 
                                               onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
@@ -214,8 +214,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                               <AlertCircle size={10} className="md:w-3 md:h-3"/>
                                           </button>
                                       )}
-
-                                      {/* Restore Revoke button specifically for Managers */}
                                       {isManager && isCompleted && (
                                         <button 
                                           onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
@@ -224,7 +222,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                           <RefreshCw size={10} className="md:w-3 md:h-3"/>
                                         </button>
                                       )}
-
                                       {(isMine || isManager) && isCompleted && <CheckCircle size={10} className="text-green-800 md:w-3 md:h-3"/>}
                                     </div>
                                   </div>
@@ -247,7 +244,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                           </div>
                         )}
                         
-                        {!isCellDisabled && visibleApps.length === 0 && (
+                        {!isCellDisabled && visibleApps.length === 0 && (!isPast || isManager) && (
                             <div className="hidden group-hover:flex w-full h-full items-center justify-center">
                                 <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-indigo-50 dark:bg-slate-700 text-indigo-500 flex items-center justify-center">
                                     <Plus size={12} strokeWidth={3} className="md:w-3.5 md:h-3.5"/>

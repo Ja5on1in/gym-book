@@ -56,8 +56,18 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
     return inventories.filter(u => 
         u.name.toLowerCase().includes(lowerTerm) || 
         (u.phone && u.phone.includes(lowerTerm))
-    ).slice(0, 5);
+    ).slice(0, 10);
   }, [searchTerm, inventories]);
+
+  const recentlyUpdatedUsers = useMemo(() => {
+    return [...inventories]
+      .sort((a, b) => {
+        const dateA = a.lastUpdated ? new Date(a.lastUpdated).getTime() : 0;
+        const dateB = b.lastUpdated ? new Date(b.lastUpdated).getTime() : 0;
+        return dateB - dateA;
+      })
+      .slice(0, 10);
+  }, [inventories]);
 
   const userPlans = useMemo(() => {
     if (!selectedUser) return [];
@@ -340,10 +350,25 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
           </div>
         </div>
       ) : (
-        <div className="text-center py-24 bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
-            <Search size={64} className="mx-auto text-gray-300 dark:text-gray-600 mb-6"/>
-            <h4 className="text-xl font-bold text-gray-400 dark:text-gray-500">請先搜尋學員</h4>
-            <p className="font-medium text-gray-400 mt-2">選取學員後即可管理健康檔案與訓練課表</p>
+        <div>
+            <h4 className="font-bold text-gray-500 dark:text-gray-400 mb-4">或從最近更新的學員中選取：</h4>
+            {inventories.length > 0 ? (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {recentlyUpdatedUsers.map(user => (
+                        <button key={user.id} onClick={() => handleSelectUser(user)} className="glass-card p-4 rounded-2xl text-left hover:shadow-md transition-shadow group border border-gray-100 dark:border-gray-700 hover:border-indigo-300">
+                            <div className="font-bold text-gray-800 dark:text-white group-hover:text-indigo-600">{user.name}</div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{user.phone}</div>
+                            <div className="text-[10px] text-gray-400 mt-2">上次更新: {user.lastUpdated ? new Date(user.lastUpdated).toLocaleDateString() : 'N/A'}</div>
+                        </button>
+                    ))}
+                </div>
+            ) : (
+                <div className="text-center py-24 bg-gray-50/50 dark:bg-gray-800/20 rounded-2xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+                    <Search size={64} className="mx-auto text-gray-300 dark:text-gray-600 mb-6"/>
+                    <h4 className="text-xl font-bold text-gray-400 dark:text-gray-500">尚無學員資料</h4>
+                    <p className="font-medium text-gray-400 mt-2">請至「庫存管理」新增學員</p>
+                </div>
+            )}
         </div>
       )}
 
