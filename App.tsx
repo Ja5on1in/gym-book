@@ -278,10 +278,11 @@ export default function App() {
   };
 
   const addLog = (action: string, details: string) => {
+    const userName = currentUser ? (currentUser.name || currentUser.email || '未知員工') : '系統/客戶';
     saveToFirestore('logs', Date.now().toString(), { 
         id: Date.now().toString(), 
         time: new Date().toISOString(), 
-        user: currentUser ? currentUser.name : '系統/客戶', 
+        user: userName, 
         action, details 
     });
   };
@@ -403,8 +404,8 @@ export default function App() {
                   });
                   await batch.commit();
                 }
-
-                addLog('學員管理', `管理員 ${currentUser.name} 刪除了學員 ${inventory.name} (ID: ${inventory.id})`);
+                const userNameForLog = currentUser.name || currentUser.email || '管理員';
+                addLog('學員管理', `管理員 ${userNameForLog} 刪除了學員 ${inventory.name} (ID: ${inventory.id})`);
                 showNotification('學員已成功刪除', 'success');
 
             } catch (error: any) {
@@ -791,7 +792,8 @@ export default function App() {
   
           setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'completed' } : a));
           
-          let logDetail = `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課`;
+          const userNameForLog = currentUser.name || currentUser.email || '未知員工';
+          let logDetail = `教練 ${userNameForLog} 確認 ${app.customer?.name} 完課`;
           if (pointDeducted && inventoryToUpdate) {
               setInventories(prev => prev.map(inv => 
                   inv.id === inventoryToUpdate!.id 
@@ -856,7 +858,8 @@ export default function App() {
         await batch.commit();
 
         setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'confirmed' } : a));
-        let logDetail = `管理員 ${currentUser.name} 撤銷完課`;
+        const userNameForLog = currentUser.name || currentUser.email || '未知員工';
+        let logDetail = `管理員 ${userNameForLog} 撤銷完課`;
         if (pointRefunded && inventoryToUpdate) {
             setInventories(prev => prev.map(inv => 
                 inv.id === inventoryToUpdate!.id 

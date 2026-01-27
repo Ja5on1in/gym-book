@@ -504,11 +504,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="px-4 py-2">
                     <div className={`bg-slate-100 dark:bg-slate-700/50 rounded-xl my-6 flex items-center gap-3 transition-all ${isSidebarCollapsed ? 'p-2 justify-center' : 'p-3'}`}>
                         <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-lg shrink-0">
-                            {currentUser.name[0]}
+                            {currentUser.name ? currentUser.name[0] : (currentUser.email ? currentUser.email[0].toUpperCase() : 'U')}
                         </div>
                         {!isSidebarCollapsed && (
                             <div className="overflow-hidden transition-opacity duration-200">
-                                <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name}</div>
+                                <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name || currentUser.email || '未命名'}</div>
                                 <div className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{currentUser.role}</div>
                             </div>
                         )}
