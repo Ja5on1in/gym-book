@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { User, UserInventory, WorkoutPlan, ExerciseLog, Exercise } from '../types';
-import { Search, Plus, X, Trash2, Dumbbell, Calendar, Save, Edit, BookCopy, Activity, AlertTriangle, Copy, FileText, CheckCircle } from 'lucide-react';
+import { Search, Plus, X, Trash2, Dumbbell, Calendar, Save, Edit, BookCopy, Activity, AlertTriangle, Copy, FileText, CheckCircle, ChevronLeft } from 'lucide-react';
 import { EXERCISE_LIST } from '../constants';
 import { formatDateKey } from '../utils';
 
@@ -231,27 +231,42 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
   return (
     <div className="glass-panel rounded-3xl shadow-lg p-6 animate-slideUp border border-white/60">
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
-        <h3 className="font-bold text-xl dark:text-white flex items-center gap-2"><Dumbbell className="text-indigo-500"/> 課表與學員檔案</h3>
-        <div className="relative w-full md:w-1/3">
-          <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"/>
-          <input 
-            type="text" 
-            placeholder="搜尋學員姓名/電話..." 
-            className="w-full pl-10 pr-4 py-2 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white glass-input" 
-            value={searchTerm} 
-            onChange={e => setSearchTerm(e.target.value)} 
-          />
-          {filteredUsers.length > 0 && searchTerm && (
-            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700 overflow-hidden">
-                {filteredUsers.map(user => (
-                    <button key={user.id} onClick={() => handleSelectUser(user)} className="w-full text-left px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex justify-between items-center">
-                        <span className="font-bold dark:text-gray-200">{user.name}</span>
-                        <span className="text-xs text-gray-400">{user.phone}</span>
-                    </button>
-                ))}
-            </div>
-          )}
+        <div className="flex items-center gap-2">
+            {selectedUser && (
+                <button 
+                    onClick={() => setSelectedUser(null)}
+                    className="p-2 -ml-2 text-slate-500 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-full transition-colors"
+                    title="返回列表"
+                >
+                    <ChevronLeft size={24} />
+                </button>
+            )}
+            <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
+                <Dumbbell className="text-indigo-500"/> 課表與學員檔案
+            </h3>
         </div>
+        {!selectedUser && (
+            <div className="relative w-full md:w-1/3">
+              <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400"/>
+              <input 
+                type="text" 
+                placeholder="搜尋學員姓名/電話..." 
+                className="w-full pl-10 pr-4 py-2 bg-white/50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all dark:text-white glass-input" 
+                value={searchTerm} 
+                onChange={e => setSearchTerm(e.target.value)} 
+              />
+              {filteredUsers.length > 0 && searchTerm && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700 overflow-hidden">
+                    {filteredUsers.map(user => (
+                        <button key={user.id} onClick={() => handleSelectUser(user)} className="w-full text-left px-4 py-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 flex justify-between items-center">
+                            <span className="font-bold dark:text-gray-200">{user.name}</span>
+                            <span className="text-xs text-gray-400">{user.phone}</span>
+                        </button>
+                    ))}
+                </div>
+              )}
+            </div>
+        )}
       </div>
 
       {selectedUser ? (

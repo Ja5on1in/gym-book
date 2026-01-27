@@ -16,7 +16,8 @@ import {
   X,
   CreditCard,
   CheckCircle2,
-  Edit3
+  Edit3,
+  ChevronLeft
 } from 'lucide-react';
 
 import { 
@@ -37,7 +38,7 @@ import {
     batchUpdateFirestore
 } from './services/firebase';
 import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { writeBatch, doc, getDoc, setDoc } from 'firebase/firestore';
+import { writeBatch, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
@@ -378,13 +379,15 @@ export default function App() {
                 showNotification('請輸入密碼', 'error');
                 return;
             }
-            if (!currentUser || !currentUser.email || !auth.currentUser) {
-                showNotification('無法驗證管理員身份', 'error');
+            
+            const adminEmail = auth.currentUser?.email || currentUser?.email;
+            if (!currentUser || !adminEmail || !auth.currentUser) {
+                showNotification('無法驗證管理員身份，請重新登入再試一次', 'error');
                 return;
             }
 
             try {
-                const credential = EmailAuthProvider.credential(currentUser.email, trimmedPassword);
+                const credential = EmailAuthProvider.credential(adminEmail, trimmedPassword);
                 await reauthenticateWithCredential(auth.currentUser, credential);
                 
                 // Re-auth successful, proceed with deletion
@@ -469,15 +472,8 @@ export default function App() {
             }
         }
         
-        // Deduct credit on booking for private lessons
-        if (inventory && selectedService?.id === 'coaching') {
-            if (inventory.credits.private > 0) {
-                const newCredits = inventory.credits.private - 1;
-                await saveToFirestore('user_inventory', inventory.id, { ...inventory, credits: { ...inventory.credits, private: newCredits } });
-                addLog('庫存調整', `前台預約扣除 ${inventory.name} 1 點私人課。剩餘: ${newCredits}`);
-            } else {
-                showNotification('您的點數不足，仍可預約，請記得補足點數', 'info');
-            }
+        if (inventory && selectedService?.id === 'coaching' && inventory.credits.private <= 0) {
+            showNotification('提醒：您的點數不足，仍可預約，請記得在上課前補足點數', 'info');
         }
 
         const id = Date.now().toString();
@@ -508,13 +504,15 @@ export default function App() {
       await saveToFirestore('appointments', app.id, updated);
       addLog('客戶取消', `取消 ${app.customer?.name} - ${reason}`);
       
-      // Refund credit if it's a private lesson
+      // Refund credit if it's a private lesson that was not completed
       if (app.type === 'private' || (app.type as string) === 'client') {
           let inventory = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name);
           if (inventory) {
-              const newCredits = (inventory.credits.private || 0) + 1;
-              await saveToFirestore('user_inventory', inventory.id, { ...inventory, credits: { ...inventory.credits, private: newCredits } });
-              addLog('庫存調整', `因取消預約，返還 ${inventory.name} 1 點私人課。剩餘: ${newCredits}`);
+              const invRef = doc(db, 'user_inventory', inventory.id);
+              await updateDoc(invRef, { 'credits.private': increment(1) });
+              
+              setInventories(prev => prev.map(inv => inv.id === inventory!.id ? { ...inv, credits: { ...inv.credits, private: (inv.credits.private || 0) + 1 } } : inv));
+              addLog('庫存調整', `因取消預約，返還 ${inventory.name} 1 點私人課。剩餘: ${(inventory.credits.private || 0) + 1}`);
           }
       }
 
@@ -589,12 +587,9 @@ export default function App() {
     try {
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
         
-        const privateLessonsCount = isPrivate ? batchOps.length : 0;
-        if (privateLessonsCount > 0 && targetInventory) {
-            const newCredits = targetInventory.credits.private - privateLessonsCount;
-            await saveToFirestore('user_inventory', targetInventory.id, { ...targetInventory, credits: { ...targetInventory.credits, private: newCredits } });
-            addLog('庫存調整', `後台預約扣除 ${targetInventory.name} ${privateLessonsCount} 點私人課。剩餘: ${newCredits}`);
-        }
+        // Note: Point deduction is moved to completion logic.
+        // const privateLessonsCount = isPrivate ? batchOps.length : 0;
+        // if (privateLessonsCount > 0 && targetInventory) { ... }
 
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
@@ -724,17 +719,48 @@ export default function App() {
           showNotification('權限不足', 'error'); return;
       }
       
-      // Secondary Confirmation via window.confirm
-      if (!window.confirm('確定要強制核實此課程並扣除學員點數嗎？')) return;
+      if (!window.confirm('確定要核實此課程並扣除學員點數嗎？')) return;
 
       if (app.status !== 'checked_in' && app.status !== 'confirmed') {
           showNotification('只能確認已簽到或已預約的課程', 'error'); return;
       }
 
+      const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+      let inventoryToUpdate = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name);
+
+      if (isPrivateLesson && inventoryToUpdate && inventoryToUpdate.credits.private <= 0) {
+          if (!window.confirm(`學員 ${inventoryToUpdate.name} 點數不足 (剩餘 0)，仍要將課程標示為完課嗎？(此操作不會扣點)`)) {
+              return;
+          }
+      }
+
       try {
-          await saveToFirestore('appointments', app.id, { ...app, status: 'completed' });
-          addLog('完課確認', `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課`);
+          const batch = writeBatch(db);
+          const appRef = doc(db, 'appointments', app.id);
+          batch.update(appRef, { status: 'completed' });
+
+          let pointDeducted = false;
+          if (isPrivateLesson && inventoryToUpdate && inventoryToUpdate.credits.private > 0) {
+              const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
+              batch.update(invRef, { 'credits.private': increment(-1) });
+              pointDeducted = true;
+          }
+
+          await batch.commit();
+
+          // Update local state for immediate feedback
+          setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'completed' } : a));
+          let logDetail = `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課`;
+          if (pointDeducted && inventoryToUpdate) {
+              setInventories(prev => prev.map(inv => inv.id === inventoryToUpdate!.id ? { ...inv, credits: { ...inv.credits, private: inv.credits.private - 1 } } : inv));
+              logDetail += `，並扣除 1 點。剩餘: ${inventoryToUpdate.credits.private - 1}`;
+          } else {
+              logDetail += ` (未扣點)。`;
+          }
+          
+          addLog('完課確認', logDetail);
           showNotification(`完課確認成功！`, 'success');
+
       } catch (e) {
           console.error(e);
           showNotification('更新失敗', 'error');
@@ -747,43 +773,48 @@ export default function App() {
         return;
     }
 
-    // Secondary Confirmation via window.confirm
     if (!window.confirm('確定要撤銷此完課紀錄並返還學員點數嗎？')) return;
 
-    let inventory = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name && i.phone === app.customer?.phone);
-    
-    // FIX: Explicitly type the 'updates' array to handle different object shapes for batch operations.
-    // This resolves a TypeScript error where the type was inferred too strictly from the first element.
-    const updates: { col: string; id: string; data: any }[] = [{ col: 'appointments', id: app.id, data: { status: 'confirmed' } }];
-    let logDetail = `管理員 ${currentUser.name} 撤銷完課`;
-
-    if (inventory && (app.type === 'private' || (app.type as string) === 'client')) {
-        const newCredits = (inventory.credits.private || 0) + 1;
-        updates.push({
-            col: 'user_inventory',
-            id: inventory.id,
-            data: { credits: { ...inventory.credits, private: newCredits } }
-        });
-        logDetail += `，返還學員 ${inventory.name} 1 點私人課。剩餘: ${newCredits}`;
-    } else {
-            logDetail += ' (未找到學員庫存或非私人課，未返還點數)';
-    }
+    const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+    let inventoryToUpdate = app.lineUserId ? inventories.find(i => i.lineUserId === app.lineUserId) : inventories.find(i => i.name === app.customer?.name && i.phone === app.customer?.phone);
     
     try {
-        await batchUpdateFirestore(updates);
+        const batch = writeBatch(db);
+        const appRef = doc(db, 'appointments', app.id);
+        batch.update(appRef, { status: 'confirmed' });
+
+        let pointRefunded = false;
+        if (isPrivateLesson && inventoryToUpdate) {
+            const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
+            batch.update(invRef, { 'credits.private': increment(1) });
+            pointRefunded = true;
+        }
+
+        await batch.commit();
+
+        // Update local state
+        setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'confirmed' } : a));
+        let logDetail = `管理員 ${currentUser.name} 撤銷完課`;
+        if (pointRefunded && inventoryToUpdate) {
+            setInventories(prev => prev.map(inv => inv.id === inventoryToUpdate!.id ? { ...inv, credits: { ...inv.credits, private: (inv.credits.private || 0) + 1 } } : inv));
+            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點私人課。剩餘: ${(inventoryToUpdate.credits.private || 0) + 1}`;
+        } else {
+            logDetail += ' (非私人課或找不到學員庫存，未返還點數)';
+        }
+        
         addLog('庫存調整', logDetail);
         showNotification('已撤銷完課並返還點數', 'success');
+
     } catch(e) {
+        console.error("Revert completion error:", e);
         showNotification('操作失敗', 'error');
     }
   };
 
   const handleToggleComplete = async (app: Appointment) => {
     if (app.status === 'checked_in' || app.status === 'confirmed') {
-        // Direct call, confirmation moved inside function
         handleCoachConfirmCompletion(app);
     } else if (app.status === 'completed' && currentUser?.role === 'manager') {
-        // Direct call, confirmation moved inside function
         handleRevertCompletion(app);
     } else {
         showNotification('無法變更此狀態或權限不足', 'info');
