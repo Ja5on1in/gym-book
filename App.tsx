@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -1036,6 +1037,7 @@ export default function App() {
                   onCancel={handleCustomerCancel}
                   onCheckIn={handleUserCheckIn}
                   inventories={inventories}
+                  workoutPlans={workoutPlans}
               />
           );
       }
