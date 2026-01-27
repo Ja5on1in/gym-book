@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown, RefreshCw, Home } from 'lucide-react';
+import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown, RefreshCw, Home, BookText } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
 import { ALL_TIME_SLOTS, COLOR_OPTIONS } from '../constants';
 import { formatDateKey, getDaysInMonth, getFirstDayOfMonth } from '../utils';
@@ -75,8 +75,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   // Advanced Export State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [exportMode, setExportMode] = useState<'range' | 'user'>('range');
-  const [exportYear, setExportYear] = useState(new Date().getFullYear());
-  const [exportMonth, setExportMonth] = useState(new Date().getMonth() + 1);
   const [exportStart, setExportStart] = useState('');
   const [exportEnd, setExportEnd] = useState('');
   const [exportUser, setExportUser] = useState<UserInventory | null>(null);
@@ -86,9 +84,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [statsStart, setStatsStart] = useState('');
   const [statsEnd, setStatsEnd] = useState('');
 
-  // Appointment List State
-  const [collapsedDates, setCollapsedDates] = useState(new Set<string>());
-  const [showCancelled, setShowCancelled] = useState(false);
+  // Coach Dashboard State
+  const [expandedNotes, setExpandedNotes] = useState<string | null>(null);
 
   // Initialize Dates
   useEffect(() => {
@@ -203,26 +200,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setStatsEnd(formatDateKey(newEnd.getFullYear(), newEnd.getMonth(), newEnd.getDate()));
   };
 
-  const handleCustomExportStats = () => {
-      const stats = filteredAnalysisData;
-      const rows = [
-          ["統計區間", `${statsStart} ~ ${statsEnd}`],
-          ["統計項目", "數值"], 
-          ["總預約數", stats.totalActive + stats.totalCancelled + stats.totalCompleted], 
-          ["有效預約(含完課)", stats.totalActive + stats.totalCompleted], 
-          ["已取消", stats.totalCancelled], 
-          [], 
-          ["教練", "個人課", "團課/其他", "總計"], 
-          ...stats.coachStats.map((c: any) => [c.name, c.personal, c.group, c.total])
-      ];
-      const csvContent = "\uFEFF" + rows.map(e => e.join(",")).join("\n");
-      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-      const link = document.createElement("a");
-      link.href = URL.createObjectURL(blob);
-      link.download = `stats_${statsStart}_to_${statsEnd}.csv`;
-      link.click();
-  };
-
   const handleCustomExportCancel = () => {
       const cancelledApps = filteredAnalysisData.rangeApps.filter((a: Appointment) => 
         a.status === 'cancelled' && 
@@ -239,26 +216,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       link.download = `cancellations_${statsStart}_to_${statsEnd}.csv`;
       link.click();
   };
-
-  const filteredApps = useMemo(() => {
-    return appointments
-        .filter(a => 
-            (currentUser.role === 'manager' || a.coachId === currentUser.id) &&
-            (showCancelled || a.status !== 'cancelled')
-        )
-        .sort((a,b) => {
-            const dateDiff = new Date(b.date).getTime() - new Date(a.date).getTime();
-            if (dateDiff !== 0) return dateDiff;
-            return a.time.localeCompare(b.time);
-        });
-  }, [appointments, currentUser, showCancelled]);
-
-  const appsByDate = useMemo(() => {
-      return filteredApps.reduce((acc, app) => {
-          (acc[app.date] = acc[app.date] || []).push(app);
-          return acc;
-      }, {} as Record<string, Appointment[]>);
-  }, [filteredApps]);
 
   const filteredInventories = inventories.filter(i => 
     i.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
@@ -381,18 +338,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       setNewInventoryForm({ name: '', phone: '', email: '', credits: { private: 0, group: 0 } });
   };
 
-  const toggleDateCollapse = (date: string) => {
-    setCollapsedDates(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(date)) {
-            newSet.delete(date);
-        } else {
-            newSet.add(date);
-        }
-        return newSet;
-    });
-  };
-
   const renderMonthlySchedule = () => {
       const year = scheduleDate.getFullYear();
       const month = scheduleDate.getMonth();
@@ -455,22 +400,37 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       );
   };
 
-  const NAV_ITEMS = [
+  const NAV_ITEMS_MANAGER = [
       { category: '營運核心', items: [
           { id: 'calendar', icon: Clock, label: '行事曆' },
-          // { id: 'appointments', icon: List, label: '預約列表' }, // Hidden per request
       ]},
       { category: '客戶管理', items: [
           { id: 'inventory', icon: CreditCard, label: '庫存管理' },
           { id: 'workout', icon: Dumbbell, label: '訓練課表' },
       ]},
       { category: '系統設定', items: [
-          { id: 'staff_schedule', icon: Users, label: '員工與班表', role: 'manager' }, 
+          { id: 'staff_schedule', icon: Users, label: '員工與班表' }, 
           { id: 'analysis', icon: BarChart3, label: '營運分析' },
           { id: 'logs', icon: History, label: '操作紀錄' },
           { id: 'help', icon: BookOpen, label: '使用手冊' },
       ]}
   ];
+
+  const NAV_ITEMS_COACH = [
+       { category: '我的工作', items: [
+          { id: 'coach_dashboard', icon: LayoutDashboard, label: '今日看板' },
+          { id: 'calendar', icon: Clock, label: '完整行事曆' },
+      ]},
+      { category: '客戶管理', items: [
+          { id: 'inventory', icon: CreditCard, label: '學員庫存' },
+          { id: 'workout', icon: Dumbbell, label: '訓練課表' },
+      ]},
+      { category: '其他', items: [
+          { id: 'help', icon: BookOpen, label: '使用手冊' },
+      ]}
+  ];
+  
+  const NAV_ITEMS = currentUser.role === 'coach' ? NAV_ITEMS_COACH : NAV_ITEMS_MANAGER;
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900 flex flex-col md:flex-row">
@@ -533,7 +493,6 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 {!isSidebarCollapsed && <div className="text-[10px] font-bold text-slate-400 uppercase tracking-widest px-3 mb-2">{group.category}</div>}
                                 <div className="space-y-1">
                                     {group.items.map(item => {
-                                        if (item.role && currentUser.role !== item.role) return null;
                                         const isActive = adminTab === item.id;
                                         return (
                                             <button 
@@ -579,19 +538,90 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
            {isSidebarOpen && <div className="fixed inset-0 bg-black/50 z-40 md:hidden" onClick={() => setIsSidebarOpen(false)}></div>}
 
            <div className="max-w-7xl mx-auto animate-fadeIn pb-24">
+               {adminTab === 'coach_dashboard' && (
+                 <>
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3"><LayoutDashboard className="text-indigo-500"/> 今日看板</h2>
+                        <div className="text-lg font-bold text-slate-500 dark:text-slate-400">{new Date().toLocaleDateString('zh-TW', { year: 'numeric', month: 'long', day: 'numeric' })}</div>
+                    </div>
+                    <div className="space-y-4">
+                        {appointments
+                            .filter(a => a.date === formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()) && a.coachId === currentUser.id && a.status !== 'cancelled')
+                            .sort((a,b) => a.time.localeCompare(b.time))
+                            .map(app => {
+                                const lastPlan = workoutPlans
+                                    .filter(p => p.userName === app.customer?.name && p.userId === app.customer?.phone) // Match by name and phone for accuracy
+                                    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+
+                                const isNotesExpanded = expandedNotes === app.id;
+                                const buttonAction = {
+                                    confirmed: { text: "簽到", action: () => onToggleComplete(app), color: "bg-blue-500 hover:bg-blue-600 shadow-blue-500/30", icon: <CheckCircle size={16}/> },
+                                    checked_in: { text: "確認完課", action: () => onToggleComplete(app), color: "bg-orange-500 hover:bg-orange-600 shadow-orange-500/30 animate-pulse", icon: <CheckCircle size={16}/> },
+                                    completed: { text: "已完課", action: null, color: "bg-slate-400 cursor-not-allowed", icon: <CheckCircle size={16}/> }
+                                };
+                                const currentAction = buttonAction[app.status as keyof typeof buttonAction];
+                                
+                                return (
+                                <div key={app.id} className="glass-card p-4 rounded-2xl border border-white/50">
+                                    <div className="flex flex-col sm:flex-row gap-4">
+                                        <div className="flex-1">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <div className="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{app.time}</div>
+                                                    <div className="text-lg font-bold text-slate-800 dark:text-white">{app.customer?.name}</div>
+                                                    <div className="text-sm text-slate-500">{app.service?.name || app.reason}</div>
+                                                </div>
+                                                {lastPlan && (
+                                                    <button onClick={() => setExpandedNotes(isNotesExpanded ? null : app.id)} className="text-xs bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1.5 hover:bg-slate-200 transition-colors">
+                                                        <BookText size={14}/> 上次筆記
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {currentAction && (
+                                            <button 
+                                                onClick={currentAction.action || undefined} 
+                                                disabled={!currentAction.action}
+                                                className={`w-full sm:w-32 h-24 flex flex-col items-center justify-center text-white font-bold rounded-xl shadow-lg transition-all text-lg ${currentAction.color}`}
+                                            >
+                                                {currentAction.icon}
+                                                {currentAction.text}
+                                            </button>
+                                        )}
+                                    </div>
+                                    {isNotesExpanded && lastPlan && (
+                                        <div className="mt-4 pt-4 border-t border-slate-100 dark:border-slate-700 animate-fadeIn">
+                                            <h5 className="font-bold text-sm mb-2 text-slate-600 dark:text-slate-300">{lastPlan.date} - {lastPlan.name}</h5>
+                                            <div className="space-y-2 text-xs text-slate-500 dark:text-slate-400">
+                                                {lastPlan.exercises.map(ex => (
+                                                    <div key={ex.id} className="p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
+                                                        <span className="font-bold text-slate-700 dark:text-slate-200">{ex.exerciseName}:</span>
+                                                        <span className="ml-2">{ex.sets.map(s => `${s.weight}kg x ${s.reps}r`).join(', ')}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                )
+                            })}
+                    </div>
+                 </>
+               )}
+
                {adminTab === 'calendar' && (
                  <>
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3"><Clock className="text-indigo-500"/> 行事曆總覽</h2>
-                        <button onClick={onOpenBatchBlock} className="flex items-center gap-2 bg-slate-800 text-white dark:bg-white dark:text-slate-900 px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity">
-                             <Layers size={16}/> 批次管理
-                        </button>
+                        { currentUser.role !== 'coach' &&
+                          <button onClick={onOpenBatchBlock} className="flex items-center gap-2 bg-slate-800 text-white dark:bg-white dark:text-slate-900 px-4 py-2 rounded-xl text-sm font-bold shadow-lg hover:opacity-90 transition-opacity">
+                              <Layers size={16}/> 批次管理
+                          </button>
+                        }
                     </div>
                     {renderWeeklyCalendar()}
                  </>
                )}
-
-               {/* adminTab === 'appointments' Block Hidden per request */}
 
                {adminTab === 'workout' && (
                   <WorkoutPlans 
@@ -619,9 +649,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                       onChange={e => setSearchQuery(e.target.value)}
                                   />
                               </div>
-                              <button onClick={() => setIsNewInventoryModalOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
-                                  <Plus size={16}/> 新增學員
-                              </button>
+                              { currentUser.role !== 'coach' &&
+                                <button onClick={() => setIsNewInventoryModalOpen(true)} className="bg-indigo-600 text-white px-4 py-2 rounded-xl text-sm font-bold flex items-center gap-2 shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 transition-all">
+                                    <Plus size={16}/> 新增學員
+                                </button>
+                              }
                           </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -815,8 +847,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                 <h4 className="font-bold text-lg dark:text-white mb-3 flex items-center gap-2"><CheckCircle size={20} className="text-indigo-600"/> 點數核實流程</h4>
                                 <ol className="list-decimal list-inside space-y-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
                                     <li><strong className="text-indigo-600">學員簽到</strong>：學員在「我的預約」中點擊「立即簽到」，狀態變為「等待確認」。</li>
-                                    <li><strong className="text-indigo-600">教練確認</strong>：課程結束後，教練在行事曆中點擊該橘色閃爍課程。</li>
-                                    <li><strong className="text-indigo-600">系統扣點</strong>：點擊「確認核實完課」按鈕，系統將自動扣除學員 1 點庫存，課程狀態變為「已完課」。</li>
+                                    <li><strong className="text-indigo-600">教練確認</strong>：課程結束後，教練在行事曆或今日看板點擊該橘色閃爍課程。</li>
+                                    <li><strong className="text-indigo-600">系統扣點</strong>：點擊「確認完課」按鈕，系統將自動扣除學員 1 點庫存，課程狀態變為「已完課」。</li>
                                 </ol>
                             </div>
                             <div className="p-6 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100 dark:border-blue-800">
@@ -900,21 +932,21 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         const isWorkDay = editingCoach.workDays?.includes(i);
                                         const hours = editingCoach.dailyWorkHours?.[i.toString()] || { start: editingCoach.workStart, end: editingCoach.workEnd };
                                         return (
-                                            <div key={i} className={`p-3 rounded-xl border transition-all ${isWorkDay ? 'border-indigo-200 bg-indigo-50/50' : 'opacity-60'}`}>
+                                            <div key={i} className={`p-3 rounded-xl border transition-all ${isWorkDay ? 'border-indigo-200 dark:border-indigo-800 bg-indigo-50/50 dark:bg-indigo-900/10' : 'border-slate-200 dark:border-slate-700 opacity-60'}`}>
                                                 <div className="flex items-center justify-between">
-                                                    <span className="font-bold">星期{d}</span>
-                                                    <button type="button" onClick={() => handleModalDayConfig(i, !isWorkDay, hours.start, hours.end)}
-                                                        className={`w-10 h-6 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-slate-300'}`}>
+                                                    <span className="font-bold dark:text-white">星期{d}</span>
+                                                    <button type="button" onClick={() => handleModalDayConfig(i, !isWorkDay, hours?.start, hours?.end)}
+                                                        className={`w-10 h-6 rounded-full transition-colors relative shadow-inner ${isWorkDay ? 'bg-indigo-500' : 'bg-slate-300 dark:bg-slate-600'}`}>
                                                         <div className={`absolute top-0.5 left-0.5 bg-white w-5 h-5 rounded-full shadow transition-transform ${isWorkDay ? 'translate-x-4' : 'translate-x-0'}`}/>
                                                     </button>
                                                 </div>
                                                 {isWorkDay && (
                                                     <div className="mt-2 flex items-center gap-1 text-sm">
-                                                        <select value={hours.start} onChange={e => handleModalDayConfig(i, true, e.target.value, hours.end)} className="glass-input rounded-md p-1 w-full text-center">
+                                                        <select value={hours?.start} onChange={e => handleModalDayConfig(i, true, e.target.value, hours?.end)} className="glass-input rounded-md p-1 w-full text-center dark:text-white">
                                                             {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
                                                         </select>
-                                                        <span>-</span>
-                                                         <select value={hours.end} onChange={e => handleModalDayConfig(i, true, hours.start, e.target.value)} className="glass-input rounded-md p-1 w-full text-center">
+                                                        <span className="text-slate-400">-</span>
+                                                         <select value={hours?.end} onChange={e => handleModalDayConfig(i, true, hours?.start, e.target.value)} className="glass-input rounded-md p-1 w-full text-center dark:text-white">
                                                             {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
                                                         </select>
                                                     </div>
@@ -930,7 +962,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                    <label className="font-bold dark:text-white mb-2 block">特定日期休假</label>
                                    <div className="flex gap-2 mb-3">
                                        <input type="date" className="flex-1 glass-input rounded-xl p-2 text-sm" value={tempOffDate} onChange={e => setTempOffDate(e.target.value)} />
-                                       <button type="button" onClick={handleAddOffDate} className="bg-slate-200 px-4 rounded-xl font-bold text-sm hover:bg-slate-300">新增</button>
+                                       <button type="button" onClick={handleAddOffDate} className="bg-slate-200 dark:bg-slate-700 px-4 rounded-xl font-bold text-sm hover:bg-slate-300 dark:hover:bg-slate-600">新增</button>
                                    </div>
                                    <div className="flex flex-wrap gap-2">
                                        {editingCoach.offDates?.map(date => (
@@ -986,28 +1018,18 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">點數變動紀錄</h4>
                                    <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
-                                       {(() => {
-                                           if (!editingInventory) return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
-
-                                           const relevantLogs = logs
-                                               .filter(log =>
-                                                   (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)) &&
-                                                   (log.action === '庫存調整' || (log.action === '完課確認' && log.details.includes('扣除')))
-                                               )
-                                               .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-                                               .slice(0, 10);
-
-                                           if (relevantLogs.length === 0) {
-                                               return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
-                                           }
-
-                                           return relevantLogs.map(log => (
+                                       {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)))
+                                           .slice(0, 10)
+                                           .map(log => (
                                                <div key={log.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
                                                    <p className="font-medium text-slate-600 dark:text-slate-300">{log.details}</p>
                                                    <p className="text-slate-400">{new Date(log.time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>
                                                </div>
-                                           ));
-                                       })()}
+                                           ))
+                                       }
+                                        {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id))).length === 0 && (
+                                            <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>
+                                        )}
                                    </div>
                                </div>
                                
@@ -1035,20 +1057,20 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                            <div className="p-6 space-y-4">
                                <div>
                                    <label className="text-xs font-bold text-slate-500 uppercase">姓名*</label>
-                                   <input type="text" value={newInventoryForm.name} onChange={e => setNewInventoryForm({...newInventoryForm, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                                   <input type="text" value={newInventoryForm.name || ''} onChange={e => setNewInventoryForm({...newInventoryForm, name: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                                </div>
                                <div>
                                    <label className="text-xs font-bold text-slate-500 uppercase">電話*</label>
-                                   <input type="tel" value={newInventoryForm.phone} onChange={e => setNewInventoryForm({...newInventoryForm, phone: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                                   <input type="tel" value={newInventoryForm.phone || ''} onChange={e => setNewInventoryForm({...newInventoryForm, phone: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                                </div>
                                 <div className="grid grid-cols-2 gap-4">
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase">私人課</label>
-                                       <input type="number" value={newInventoryForm.credits?.private} onChange={e => setNewInventoryForm({...newInventoryForm, credits: {...newInventoryForm.credits, private: Number(e.target.value)}})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                                       <input type="number" value={newInventoryForm.credits?.private || 0} onChange={e => setNewInventoryForm({...newInventoryForm, credits: {...newInventoryForm.credits, private: Number(e.target.value)}})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                                    </div>
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase">團體課</label>
-                                       <input type="number" value={newInventoryForm.credits?.group} onChange={e => setNewInventoryForm({...newInventoryForm, credits: {...newInventoryForm.credits, group: Number(e.target.value)}})} className="w-full glass-input rounded-xl p-3 mt-1"/>
+                                       <input type="number" value={newInventoryForm.credits?.group || 0} onChange={e => setNewInventoryForm({...newInventoryForm, credits: {...newInventoryForm.credits, group: Number(e.target.value)}})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
                                    </div>
                                </div>
                                 <div className="pt-2">
@@ -1078,11 +1100,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   {exportMode === 'user' && (
                                      <div className="relative">
                                        <label className="text-xs font-bold text-slate-500 uppercase">搜尋特定學員</label>
-                                       <input type="text" placeholder="搜尋學員姓名/電話" value={exportUserSearch} onChange={e => { setExportUserSearch(e.target.value); setExportUser(null); }} className="w-full glass-input p-3 rounded-xl mt-1"/>
+                                       <input type="text" placeholder="搜尋學員姓名/電話" value={exportUserSearch} onChange={e => { setExportUserSearch(e.target.value); setExportUser(null); }} className="w-full glass-input p-3 rounded-xl mt-1 dark:text-white"/>
                                        {exportUserSearch && filteredExportUsers.length > 0 && (
-                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700">
+                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-gray-700">
                                                 {filteredExportUsers.map(u => (
-                                                    <div key={u.id} onClick={() => { setExportUser(u); setExportUserSearch(u.name); }} className="p-2 hover:bg-indigo-50 cursor-pointer">{u.name} ({u.phone})</div>
+                                                    <div key={u.id} onClick={() => { setExportUser(u); setExportUserSearch(u.name); }} className="p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 cursor-pointer">{u.name} ({u.phone})</div>
                                                 ))}
                                             </div>
                                        )}
@@ -1091,11 +1113,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                   <div className="grid grid-cols-2 gap-4">
                                     <div>
                                         <label className="text-xs font-bold text-slate-500 uppercase">開始日期</label>
-                                        <input type="date" value={exportStart} onChange={e => setExportStart(e.target.value)} className="w-full glass-input p-3 rounded-xl mt-1"/>
+                                        <input type="date" value={exportStart} onChange={e => setExportStart(e.target.value)} className="w-full glass-input p-3 rounded-xl mt-1 dark:text-white"/>
                                     </div>
                                     <div>
                                         <label className="text-xs font-bold text-slate-500 uppercase">結束日期</label>
-                                        <input type="date" value={exportEnd} onChange={e => setExportEnd(e.target.value)} className="w-full glass-input p-3 rounded-xl mt-1"/>
+                                        <input type="date" value={exportEnd} onChange={e => setExportEnd(e.target.value)} className="w-full glass-input p-3 rounded-xl mt-1 dark:text-white"/>
                                     </div>
                                   </div>
                                </div>

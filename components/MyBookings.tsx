@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard } from 'lucide-react';
+import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard, Trophy, ChevronRight } from 'lucide-react';
 import { Appointment, Coach, UserInventory } from '../types';
 
 interface MyBookingsProps {
@@ -9,9 +9,10 @@ interface MyBookingsProps {
   onCancel: (app: Appointment, reason: string) => void;
   onCheckIn: (app: Appointment) => void;
   inventories: UserInventory[];
+  onNavigateToProgress: () => void;
 }
 
-const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn, inventories }) => {
+const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn, inventories, onNavigateToProgress }) => {
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
   const [checkInConfirmApp, setCheckInConfirmApp] = useState<Appointment | null>(null);
 
@@ -55,7 +56,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
 
   return (
     <div className="max-w-2xl mx-auto animate-slideUp pb-24">
-      <div className="flex items-start gap-4 mb-8">
+      <div className="flex items-start gap-4 mb-4">
         <img src={`https://ui-avatars.com/api/?name=${liffProfile.displayName}&background=0D8ABC&color=fff&size=128`} className="w-16 h-16 rounded-full border-4 border-white dark:border-gray-800 shadow-lg"/>
         <div>
           <h1 className="text-2xl font-bold dark:text-white">{liffProfile.displayName} 的預約</h1>
@@ -72,6 +73,22 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
             )}
         </div>
       </div>
+      
+      <button 
+        onClick={onNavigateToProgress}
+        className="w-full glass-card p-4 rounded-2xl flex items-center justify-between text-left mb-6 hover:shadow-lg transition-all border border-yellow-200 dark:border-yellow-800 hover:border-yellow-300 dark:hover:border-yellow-600"
+      >
+        <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-500 rounded-full flex items-center justify-center">
+                <Trophy size={24}/>
+            </div>
+            <div>
+                <h3 className="font-bold text-lg dark:text-white">我的成就</h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400">查看您的訓練進度圖表</p>
+            </div>
+        </div>
+        <ChevronRight className="text-slate-400"/>
+      </button>
 
       {myApps.length === 0 ? (
         <div className="glass-panel p-10 rounded-3xl text-center">
