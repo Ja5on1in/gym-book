@@ -1,4 +1,3 @@
-
 import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { LogOut, Trash2, FileSpreadsheet, Database, Clock, ChevronRight, ChevronLeft, FileWarning, BarChart3, List, Settings as SettingsIcon, History, User as UserIcon, Users, Plus, Edit2, X, Mail, Key, CalendarX, Layers, CreditCard, Search, BookOpen, Menu, LayoutDashboard, Dumbbell, Save, Activity, CheckCircle, AlertTriangle, HelpCircle, Calendar as CalendarIcon, Filter, ChevronDown, RefreshCw, Home } from 'lucide-react';
 import { User, Appointment, Coach, Log, UserInventory, WorkoutPlan } from '../types';
@@ -134,7 +133,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
         a.customer?.name || 'N/A',
         a.coachName || 'N/A',
         a.service?.name || a.reason || '課程',
-        (a.type === 'private' || (a.type as string) === 'client') ? 1 : (a.type === 'group' ? 1 : 0)
+        (a.type === 'private' || (a.type as string) === 'client') ? 1 : 0
     ].join(','));
     
     const csvContent = "\uFEFF" + [header.join(','), ...rows].join("\n");
@@ -181,11 +180,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
       const coachStats = coaches.map(c => {
           const cApps = rangeApps.filter(a => a.coachId === c.id && a.status !== 'cancelled');
           const personal = cApps.filter(a => a.type === 'private' || (a.type as string) === 'client').length;
-          
-          // Req 3: 團課統計應按時段計算，避免因多人報名而重複計算
-          const groupSlots = new Set(cApps.filter(a => a.type === 'group').map(a => `${a.date}_${a.time}`));
-          const group = groupSlots.size;
-
+          const group = cApps.filter(a => a.type === 'group').length;
           return { id: c.id, name: c.name, personal, group, total: personal + group };
       });
 
@@ -463,6 +458,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const NAV_ITEMS = [
       { category: '營運核心', items: [
           { id: 'calendar', icon: Clock, label: '行事曆' },
+          // { id: 'appointments', icon: List, label: '預約列表' }, // Hidden per request
       ]},
       { category: '客戶管理', items: [
           { id: 'inventory', icon: CreditCard, label: '庫存管理' },
@@ -508,11 +504,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="px-4 py-2">
                     <div className={`bg-slate-100 dark:bg-slate-700/50 rounded-xl my-6 flex items-center gap-3 transition-all ${isSidebarCollapsed ? 'p-2 justify-center' : 'p-3'}`}>
                         <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-lg shrink-0">
-                            {currentUser.name[0]}
+                            {currentUser.name ? currentUser.name[0] : (currentUser.email ? currentUser.email[0].toUpperCase() : 'U')}
                         </div>
                         {!isSidebarCollapsed && (
                             <div className="overflow-hidden transition-opacity duration-200">
-                                <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name}</div>
+                                <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name || currentUser.email || '未命名'}</div>
                                 <div className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{currentUser.role}</div>
                             </div>
                         )}
@@ -594,6 +590,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                     {renderWeeklyCalendar()}
                  </>
                )}
+
+               {/* adminTab === 'appointments' Block Hidden per request */}
 
                {adminTab === 'workout' && (
                   <WorkoutPlans 
@@ -988,18 +986,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">點數變動紀錄</h4>
                                    <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
-                                       {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)))
-                                           .slice(0, 10)
-                                           .map(log => (
+                                       {(() => {
+                                           if (!editingInventory) return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
+
+                                           const relevantLogs = logs
+                                               .filter(log =>
+                                                   (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)) &&
+                                                   (log.action === '庫存調整' || (log.action === '完課確認' && log.details.includes('扣除')))
+                                               )
+                                               .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+                                               .slice(0, 10);
+
+                                           if (relevantLogs.length === 0) {
+                                               return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
+                                           }
+
+                                           return relevantLogs.map(log => (
                                                <div key={log.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
                                                    <p className="font-medium text-slate-600 dark:text-slate-300">{log.details}</p>
                                                    <p className="text-slate-400">{new Date(log.time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>
                                                </div>
-                                           ))
-                                       }
-                                        {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id))).length === 0 && (
-                                            <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>
-                                        )}
+                                           ));
+                                       })()}
                                    </div>
                                </div>
                                
