@@ -1,6 +1,4 @@
 
-
-
 import { Coach, Appointment, SlotStatus } from './types';
 
 export const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
@@ -27,7 +25,6 @@ export const formatDateTime = (isoString: string) => {
   try {
     const d = new Date(isoString);
     if (isNaN(d.getTime())) return '-';
-    // Force Taipei Time display
     return d.toLocaleString('zh-TW', { 
         timeZone: 'Asia/Taipei',
         year: 'numeric',
@@ -47,31 +44,22 @@ export const isPastTime = (dateKey: string, time: string) => {
   return target < now;
 };
 
-// Check if current time is within [Start - 30mins, End]
 export const isCheckInWindow = (dateKey: string, time: string, durationStr: string = '50 分鐘') => {
   if (!dateKey || !time) return false;
   const now = new Date();
   const startTime = new Date(`${dateKey}T${time}`);
-  
-  // Calculate duration in minutes (simple parsing)
   const durationMatch = durationStr.match(/\d+/);
   const duration = durationMatch ? parseInt(durationMatch[0]) : 50;
-  
   const endTime = new Date(startTime.getTime() + duration * 60000);
-  const checkInStart = new Date(startTime.getTime() - 30 * 60000); // 30 mins before
-
+  const checkInStart = new Date(startTime.getTime() - 30 * 60000);
   return now >= checkInStart && now <= endTime;
 };
 
 export const isCoachDayOff = (dateKey: string, coach: Coach) => {
   if (!coach) return false;
-  
-  // 1. Check Specific Date Off (New Feature)
   if (coach.offDates && coach.offDates.includes(dateKey)) {
       return true;
   }
-
-  // 2. Check Weekly Schedule
   if (!coach.workDays) return false;
   const dayOfWeek = new Date(dateKey).getDay();
   return !coach.workDays.includes(dayOfWeek);
@@ -79,11 +67,9 @@ export const isCoachDayOff = (dateKey: string, coach: Coach) => {
 
 export const getCoachWorkHours = (dateKey: string, coach: Coach) => {
     const day = new Date(dateKey).getDay();
-    // Check for specific daily hours
     if (coach.dailyWorkHours && coach.dailyWorkHours[day.toString()]) {
         return coach.dailyWorkHours[day.toString()];
     }
-    // Fallback to default global hours
     return { start: coach.workStart, end: coach.workEnd };
 };
 
@@ -97,11 +83,8 @@ export const getSlotStatus = (
   if (!coach) return { status: 'unavailable' };
   if (isCoachDayOff(date, coach)) return { status: 'unavailable', type: 'off' };
   
-  // Get dynamic work hours for this specific day
   const { start, end } = getCoachWorkHours(date, coach);
 
-  // Robust Time Comparison
-  // Convert "HH:mm" to minutes for accurate comparison
   const parseMinutes = (t: string) => {
       const [h, m] = t.split(':').map(Number);
       return h * 60 + (m || 0);
@@ -111,10 +94,9 @@ export const getSlotStatus = (
   const startMins = parseMinutes(start);
   const endMins = parseMinutes(end);
 
-  // If slot time is before start or >= end time (closing time), it's unavailable
   if (slotMins < startMins || slotMins >= endMins) return { status: 'unavailable' };
   
-  const rec = appointments.find(a => 
+  const relevantApps = appointments.filter(a => 
     a.date === date && 
     a.time === time && 
     a.coachId === coach.id && 
@@ -122,7 +104,34 @@ export const getSlotStatus = (
     (ignoreId ? a.id !== ignoreId : true)
   );
 
-  if (rec) return { status: 'booked', type: rec.type, reason: rec.reason, record: rec };
+  if (relevantApps.length > 0) {
+    const firstApp = relevantApps[0];
+    if (firstApp.type === 'group') {
+      const currentCount = relevantApps.length;
+      const maxCount = firstApp.maxAttendees || 8;
+      
+      if (currentCount < maxCount) {
+        return { 
+          status: 'available', 
+          type: 'group', 
+          currentAttendees: currentCount, 
+          maxAttendees: maxCount,
+          record: firstApp 
+        };
+      } else {
+        return { 
+          status: 'booked', 
+          type: 'group', 
+          currentAttendees: currentCount, 
+          maxAttendees: maxCount,
+          record: firstApp 
+        };
+      }
+    } else {
+      // Private or block
+      return { status: 'booked', type: firstApp.type, reason: firstApp.reason, record: firstApp };
+    }
+  }
   
   return { status: 'available' };
 };

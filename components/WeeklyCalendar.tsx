@@ -26,7 +26,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   const weekDays = Array.from({length: 7}, (_, i) => addDays(currentWeekStart, i));
   const isManager = currentUser.role === 'manager';
 
-  // Helper for direct date input
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
       const selected = new Date(e.target.value);
       if (!isNaN(selected.getTime())) {
@@ -41,7 +40,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   return (
     <div className="glass-panel rounded-3xl overflow-hidden shadow-sm animate-fadeIn relative flex flex-col h-[750px] border border-white/50">
       
-      {/* Loading Overlay */}
       {isLoading && (
         <div className="absolute inset-0 z-[60] bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl">
             <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400 mb-2" size={48} />
@@ -51,7 +49,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
 
       <div className="p-4 md:p-5 border-b border-slate-100 dark:border-slate-700 flex flex-col md:flex-row justify-between items-center gap-4 bg-white/50 dark:bg-slate-900/50 z-20 relative backdrop-blur-md">
         <div className="flex items-center gap-4 w-full md:w-auto">
-          {/* Navigation Controls */}
            <div className="flex items-center gap-2">
                <button 
                 onClick={handleJumpToToday}
@@ -79,7 +76,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
            </span>
         </div>
         <div className="flex items-center gap-2 w-full md:w-auto">
-              {/* Filters */}
               <div className="flex gap-2">
                   <select 
                       className="glass-input dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-2 py-2 text-xs md:text-sm font-bold outline-none shadow-sm focus:ring-2 focus:ring-indigo-500/50 dark:text-white cursor-pointer w-full md:w-auto"
@@ -102,10 +98,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
         </div>
       </div>
       
-      {/* Calendar Grid Container */}
       <div className="flex-1 overflow-auto custom-scrollbar bg-white/30 dark:bg-slate-900/30 relative">
         <div className="min-w-[700px] md:min-w-[900px]">
-          {/* Header Row (Sticky Top) */}
           <div className="grid grid-cols-8 border-b border-slate-200/50 dark:border-slate-700/50 bg-white/95 dark:bg-slate-900/95 sticky top-0 z-40 shadow-sm backdrop-blur-sm">
             <div className="p-2 md:p-4 text-center text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest border-r border-slate-100 dark:border-slate-700/50 sticky left-0 z-50 bg-white dark:bg-slate-900 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)] flex items-center justify-center">時間</div>
             {weekDays.map((d, i) => {
@@ -116,8 +110,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                 <div key={i} className={`p-2 md:p-3 text-center border-r border-slate-100 dark:border-slate-700/50 ${d.toDateString()===new Date().toDateString()?'bg-indigo-50/50 dark:bg-indigo-900/20':''}`}>
                     <div className="text-[10px] md:text-xs text-slate-500 font-medium mb-1">{['週日','週一','週二','週三','週四','週五','週六'][d.getDay()]}</div>
                     <div className={`font-bold text-sm md:text-lg inline-block w-6 h-6 md:w-8 md:h-8 leading-6 md:leading-8 rounded-full ${d.toDateString()===new Date().toDateString() ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-700 dark:text-slate-200'}`}>{d.getDate()}</div>
-                    
-                     {/* Day Off Indicator (Only in 'all' view) */}
                      {selectedCoachId === 'all' && offCoaches.length > 0 && (
                         <div className="mt-1 flex flex-col items-center gap-0.5" title={offCoaches.map(c => c.name).join(', ') + ' 休假'}>
                            {offCoaches.map(c => (
@@ -130,17 +122,14 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
             })}
           </div>
           
-          {/* Time Slots */}
           {ALL_TIME_SLOTS.map(time => (
             <div key={time} className="grid grid-cols-8 border-b border-slate-100/50 dark:border-slate-700/50 min-h-[80px] md:min-h-[90px]">
-              {/* Time Label (Sticky Left) */}
               <div className="p-1 md:p-2 text-center text-[10px] md:text-xs font-medium text-slate-400 border-r border-slate-100/50 dark:border-slate-700/50 flex items-center justify-center bg-white dark:bg-slate-900 sticky left-0 z-30 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">{time}</div>
               {weekDays.map((day) => {
                 const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
                 const isPast = isPastTime(dateKey, time);
                 
                 let isCellDisabled = false;
-                
                 if (selectedCoachId !== 'all') {
                     const selectedCoach = coaches.find(c => c.id === selectedCoachId);
                     isCellDisabled = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
@@ -158,37 +147,31 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
 
                 const visibleApps = slotApps.filter(a => {
                     if (selectedType === 'all') return true;
-                    const normalizedType = (a.type as string) === 'client' ? 'private' : a.type;
-                    return normalizedType === selectedType;
+                    return a.type === selectedType;
                 });
 
-                // Group group-type appointments for visual clarity
-                const processedApps: (Appointment & { isGroupParent?: boolean; participants?: Appointment[]; count?: number })[] = [];
-                const groupMap: Record<string, any> = {};
+                // Aggregation Logic for Group Classes
+                const aggregatedApps: (Appointment & { currentCount?: number; maxCount?: number; isGroupHeader?: boolean })[] = [];
+                const groups: Record<string, any> = {};
 
                 visibleApps.forEach(app => {
                     if (app.type === 'group') {
-                        const key = `${app.coachId}-${app.reason}`;
-                        if (!groupMap[key]) {
-                            groupMap[key] = {
+                        const key = `${app.coachId}_${app.reason}`;
+                        if (!groups[key]) {
+                            groups[key] = {
                                 ...app,
-                                isGroupParent: true,
-                                participants: [app],
-                                count: 1
+                                isGroupHeader: true,
+                                currentCount: 1,
+                                maxCount: app.maxAttendees || 8
                             };
-                            processedApps.push(groupMap[key]);
+                            aggregatedApps.push(groups[key]);
                         } else {
-                            groupMap[key].participants.push(app);
-                            groupMap[key].count++;
-                            // If any member is checked-in, highlight the whole block
-                            if (app.status === 'checked_in') groupMap[key].status = 'checked_in';
-                            // If all completed, it stays completed; if one is not, it should probably show confirmed
-                            if (groupMap[key].status === 'completed' && app.status !== 'completed') {
-                                groupMap[key].status = 'confirmed';
-                            }
+                            groups[key].currentCount++;
+                            // If any in group is checked_in, highlight the aggregated card
+                            if (app.status === 'checked_in') groups[key].status = 'checked_in';
                         }
                     } else {
-                        processedApps.push(app);
+                        aggregatedApps.push(app);
                     }
                 });
 
@@ -207,16 +190,15 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     }}
                   >
                      <div className="flex flex-col gap-1 md:gap-1.5 h-full">
-                        {processedApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
+                        {aggregatedApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
                             const coach = coaches.find(c => c.id === app.coachId);
                             const colorClass = coach?.color || 'bg-slate-100 text-slate-800 border-slate-200';
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
                             const isCheckedIn = app.status === 'checked_in';
-                            const isGroupParent = app.isGroupParent;
 
-                            const displayText = isGroupParent 
-                              ? `${app.reason || '團體課程'} (${app.count}人)`
+                            const displayText = app.isGroupHeader 
+                              ? `${app.reason || '團體課'} (${app.currentCount}/${app.maxCount})`
                               : (app.type === 'block' ? (app.reason || '內部事項') : (app.customer?.name || '私人課'));
 
                             return (
@@ -228,19 +210,20 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                       ${isCompleted ? 'opacity-60 grayscale' : ''} 
                                       ${!isMine ? 'opacity-80' : ''}
                                       ${isCheckedIn ? 'ring-2 ring-orange-400 ring-offset-1 dark:ring-offset-slate-900 animate-pulse' : ''}
+                                      ${app.isGroupHeader && (app.currentCount || 0) < (app.maxCount || 8) ? 'border-dashed border-2' : ''}
                                    `}
                               >
                                   <div className="flex justify-between items-center mb-0.5">
                                     <div className="flex items-center gap-1.5 truncate">
                                         <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
-                                        {isGroupParent && <Users size={10} className="text-indigo-600 dark:text-indigo-400 shrink-0" />}
+                                        {app.isGroupHeader && <Users size={10} className="text-indigo-600 dark:text-indigo-400 shrink-0" />}
                                     </div>
                                     <div className="flex items-center gap-1">
                                       {(isMine || isManager) && isCheckedIn && (
                                           <button 
                                               onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
                                               className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
-                                              title={currentUser.role === 'manager' ? "管理員強迫核實" : "確認完課"}
+                                              title="確認完課"
                                           >
                                               <AlertCircle size={10} className="md:w-3 md:h-3"/>
                                           </button>
@@ -248,7 +231,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                       {isManager && isCompleted && (
                                         <button 
                                           onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
-                                          className="bg-yellow-100 hover:bg-yellow-200 rounded-full p-0.5 text-yellow-700 transition-colors shadow-sm" title="撤銷完課 (返還點數)"
+                                          className="bg-yellow-100 hover:bg-yellow-200 rounded-full p-0.5 text-yellow-700 transition-colors shadow-sm" title="撤銷完課"
                                         >
                                           <RefreshCw size={10} className="md:w-3 md:h-3"/>
                                         </button>
@@ -257,25 +240,23 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     </div>
                                   </div>
                                   <div className="truncate font-bold opacity-90">{displayText}</div>
-                                  {!isGroupParent && app.type === 'private' && app.service?.name && (
+                                  {app.type === 'private' && app.service?.name && (
                                     <div className="text-[8px] md:text-[10px] opacity-70 truncate mt-0.5">{app.service.name}</div>
                                   )}
-                                  {isCheckedIn && <div className="text-[8px] md:text-[9px] font-bold text-orange-600 mt-0.5">等待確認</div>}
                               </div>
                             );
                         })}
-                        {processedApps.length > 2 && expandedCell !== `${dateKey}-${time}` && (
+                        {aggregatedApps.length > 2 && expandedCell !== `${dateKey}-${time}` && (
                           <div onClick={(e) => { e.stopPropagation(); setExpandedCell(`${dateKey}-${time}`); }} className="text-[9px] md:text-[10px] text-center text-indigo-500 font-bold bg-indigo-50 dark:bg-indigo-900/30 rounded-lg cursor-pointer hover:bg-indigo-100 py-1 transition-colors">
-                            +{processedApps.length - 2}
+                            +{aggregatedApps.length - 2}
                           </div>
                         )}
-                        {expandedCell === `${dateKey}-${time}` && processedApps.length > 2 && (
+                        {expandedCell === `${dateKey}-${time}` && aggregatedApps.length > 2 && (
                           <div onClick={(e) => { e.stopPropagation(); setExpandedCell(null); }} className="text-[9px] md:text-[10px] text-center text-slate-400 cursor-pointer py-1 hover:text-slate-600">
                             收起
                           </div>
                         )}
-                        
-                        {!isCellDisabled && processedApps.length === 0 && (!isPast || isManager) && (
+                        {!isCellDisabled && aggregatedApps.length === 0 && (!isPast || isManager) && (
                             <div className="hidden group-hover:flex w-full h-full items-center justify-center">
                                 <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-indigo-50 dark:bg-slate-700 text-indigo-500 flex items-center justify-center">
                                     <Plus size={12} strokeWidth={3} className="md:w-3.5 md:h-3.5"/>

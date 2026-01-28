@@ -2,7 +2,7 @@
 export interface User {
   id: string;
   name: string;
-  role: 'manager' | 'coach' | 'staff' | 'receptionist'; // Added receptionist
+  role: 'manager' | 'coach' | 'staff' | 'receptionist';
   email?: string;
   photoURL?: string;
   color?: string;
@@ -10,8 +10,8 @@ export interface User {
   workEnd?: string;
   workDays?: number[];
   dailyWorkHours?: Record<string, { start: string; end: string }>;
-  status?: 'active' | 'disabled'; // New field for access control
-  title?: string; // Added title for coach/therapist distinction
+  status?: 'active' | 'disabled';
+  title?: string;
 }
 
 export interface Customer {
@@ -29,7 +29,7 @@ export interface Service {
 
 export interface Appointment {
   id: string;
-  type: 'private' | 'group' | 'block'; // 'client' is deprecated, normalized to 'private' in logic
+  type: 'private' | 'group' | 'block'; 
   date: string; // YYYY-MM-DD
   time: string; // HH:mm
   coachId: string;
@@ -37,11 +37,13 @@ export interface Appointment {
   service?: Service | null;
   customer?: Customer | null;
   reason?: string;
-  status: 'confirmed' | 'cancelled' | 'completed' | 'checked_in'; // Added checked_in status
+  status: 'confirmed' | 'cancelled' | 'completed' | 'checked_in';
   createdAt: string;
   cancelReason?: string;
-  lineUserId?: string; // LINE LIFF Integration
-  lineName?: string;   // LINE LIFF Integration
+  lineUserId?: string;
+  lineName?: string;
+  maxAttendees?: number; // New field for group capacity
+  groupId?: string; // New field to group participants of the same session
 }
 
 export interface Coach extends User {
@@ -50,8 +52,8 @@ export interface Coach extends User {
   workDays: number[];
   color: string;
   dailyWorkHours?: Record<string, { start: string; end: string }>;
-  offDates?: string[]; // Specific dates off (YYYY-MM-DD)
-  title?: string; // Added title field
+  offDates?: string[];
+  title?: string;
 }
 
 export interface Log {
@@ -67,23 +69,24 @@ export interface SlotStatus {
   type?: 'private' | 'group' | 'block' | 'off';
   reason?: string;
   record?: Appointment;
+  currentAttendees?: number;
+  maxAttendees?: number;
 }
 
 export interface BlockFormState {
   id: string | null;
-  type: 'block' | 'private' | 'group'; // Normalized inputs
+  type: 'block' | 'private' | 'group';
   coachId: string;
   date: string;
   time: string;
-  endTime?: string; // For batch blocking
+  endTime?: string;
   reason: string;
   customer: Customer | null;
   repeatWeeks?: number;
 }
 
-// New: Inventory System
 export interface UserInventory {
-  id: string; // Use lineUserId or Email as ID
+  id: string;
   name: string;
   lineUserId?: string;
   email?: string;
@@ -93,13 +96,11 @@ export interface UserInventory {
       group: number;
   };
   lastUpdated: string;
-  // Health Profile Fields
   goals?: string;
   injuries?: string;
   physicalNotes?: string;
 }
 
-// New: Workout Plan System
 export interface Exercise {
   id: string;
   name: string;
@@ -121,12 +122,12 @@ export interface ExerciseLog {
 
 export interface WorkoutPlan {
   id: string;
-  userId: string; // Links to UserInventory id
+  userId: string;
   userName: string;
   coachId: string;
   coachName: string;
-  date: string; // YYYY-MM-DD
-  name: string; // e.g., "胸部 & 三頭"
+  date: string;
+  name: string;
   exercises: ExerciseLog[];
   createdAt: string;
 }
