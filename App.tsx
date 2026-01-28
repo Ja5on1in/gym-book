@@ -511,9 +511,8 @@ export default function App() {
           await saveToFirestore('appointments', app.id, updated);
           addLog('客戶取消', `取消 ${app.customer?.name} (${originalStatus}) - ${reason}`);
   
-          // Bugfix: Only refund credit if the class was already completed (and point deducted)
-          if ((app.type === 'private' || (app.type as string) === 'client') && originalStatus === 'completed') {
-              // Bugfix: Improved lookup logic
+          // Refund credit if the class was already completed (and point deducted)
+          if ((app.type === 'private' || app.type === 'group' || (app.type as string) === 'client') && originalStatus === 'completed') {
               let inventory: UserInventory | undefined;
               if (app.lineUserId) {
                   inventory = inventories.find(i => i.lineUserId === app.lineUserId);
@@ -527,11 +526,12 @@ export default function App() {
   
               if (inventory) {
                   const invRef = doc(db, 'user_inventory', inventory.id);
-                  const newPrivateCredits = (inventory.credits.private || 0) + 1;
-                  await updateDoc(invRef, { 'credits.private': increment(1) });
+                  const isPrivate = app.type === 'private' || (app.type as string) === 'client';
+                  const creditKey = isPrivate ? 'credits.private' : 'credits.group';
                   
-                  setInventories(prev => prev.map(inv => inv.id === inventory!.id ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } : inv));
-                  addLog('庫存調整', `因取消已完課預約，返還 ${inventory.name} 1 點私人課。剩餘: ${newPrivateCredits}`);
+                  await updateDoc(invRef, { [creditKey]: increment(1) });
+                  
+                  showNotification(`已返還學員 ${inventory.name} 1 點${isPrivate ? '私人' : '團體'}課`, 'info');
               }
           }
   
@@ -559,8 +559,10 @@ export default function App() {
     
     const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
     const isPrivate = finalType === 'private';
+    const isGroup = finalType === 'group';
     
-    if (isPrivate && !blockForm.customer?.name) {
+    // 團體課與私人課都需要選擇學員 (Req 2)
+    if ((isPrivate || isGroup) && !blockForm.customer?.name) {
         showNotification('請先搜尋並選擇學員', 'error');
         return;
     }
@@ -575,12 +577,8 @@ export default function App() {
     }
 
     let targetInventory: UserInventory | undefined;
-    if (isPrivate && blockForm.customer?.name) {
+    if ((isPrivate || isGroup) && blockForm.customer?.name) {
         targetInventory = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
-        const creditsNeeded = (blockForm.repeatWeeks || 1) * targetSlots.length;
-        if (targetInventory && targetInventory.credits.private < creditsNeeded) {
-             if(!window.confirm(`學員 ${targetInventory.name} 點數不足 (剩 ${targetInventory.credits.private} 點, 需 ${creditsNeeded} 點)，確定要預約嗎？`)) return;
-        }
     }
     
     const repeat = blockForm.repeatWeeks || 1;
@@ -594,28 +592,44 @@ export default function App() {
         const dKey = formatDateKey(targetDate.getFullYear(), targetDate.getMonth(), targetDate.getDate());
 
         for (const slot of targetSlots) {
+             // 團體課人數上限檢查 (Req 1: 上限 8 人)
+             if (isGroup) {
+                 const currentGroupCount = appointments.filter(a => 
+                     a.date === dKey && 
+                     a.time === slot && 
+                     a.coachId === coach.id && 
+                     a.type === 'group' && 
+                     a.status !== 'cancelled' &&
+                     (blockForm.id ? a.id !== blockForm.id : true)
+                 ).length;
+                 
+                 if (currentGroupCount >= 8) {
+                     showNotification(`預約失敗：${dKey} ${slot} 團體課人數已達 8 人上限`, 'error');
+                     return; 
+                 }
+             }
+
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
-             if (status.status === 'available') {
+             // 團體課在 booked 狀態 (已有其他團員) 仍然可以新增，只要不超過 8 人
+             const canAddGroup = isGroup && (status.status === 'available' || (status.status === 'booked' && status.type === 'group'));
+             const canAddNormal = status.status === 'available';
+
+             if (canAddNormal || canAddGroup) {
                  const id = (!isBatchMode && i === 0 && blockForm.id) ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  batchOps.push({ 
                      id, type: finalType as any, date: dKey, time: slot,
                      coachId: coach.id, coachName: coach.name, reason: blockForm.reason, status: 'confirmed', 
-                     customer: (isPrivate && blockForm.customer) ? { ...blockForm.customer } : null,
+                     customer: (targetInventory) ? { name: targetInventory.name, phone: targetInventory.phone || "", email: targetInventory.email || "" } : null,
                      createdAt: new Date().toISOString(), lineUserId: targetInventory?.lineUserId || ""
                  });
              }
         }
     }
 
-    if (batchOps.length === 0) { showNotification('選定時段已被占用或無效', 'error'); return; }
+    if (batchOps.length === 0) { showNotification('選定時段無法預約', 'error'); return; }
     
     try {
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
-        
-        // Note: Point deduction is moved to completion logic.
-        // const privateLessonsCount = isPrivate ? batchOps.length : 0;
-        // if (privateLessonsCount > 0 && targetInventory) { ... }
-
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
         setIsBlockModalOpen(false);
@@ -630,7 +644,7 @@ export default function App() {
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
-     if (target.type === 'private' || (target.type as string) === 'client') { 
+     if (target.type === 'private' || target.type === 'group' || (target.type as string) === 'client') { 
          setConfirmModal({
              isOpen: true, title: '取消原因', message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
@@ -658,14 +672,11 @@ export default function App() {
     if (!currentUser) return;
 
     if (['manager', 'receptionist'].includes(currentUser.role)) {
-        // For managers, find the first available coach for that day to pre-fill the modal
         const firstAvailableCoach = coaches.find(c => !isCoachDayOff(date, c));
-        
         if (!firstAvailableCoach) {
             showNotification('該日無教練上班，無法新增預約', 'error');
             return;
         }
-
         setBlockForm({ 
             id: null, type: 'block', coachId: firstAvailableCoach.id, 
             date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, 
@@ -675,8 +686,7 @@ export default function App() {
         setDeleteConfirm(false); 
         setIsBatchMode(false);
         setIsBlockModalOpen(true);
-
-    } else { // Coach logic remains the same
+    } else { 
         const targetCoachId = currentUser.id;
         const coach = coaches.find(c => c.id === targetCoachId);
         if (coach && isCoachDayOff(date, coach)) { 
@@ -755,8 +765,8 @@ export default function App() {
       setIsProcessing(true);
       try {
           const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+          const isGroupLesson = app.type === 'group';
           
-          // Bugfix: Improved lookup logic
           let inventoryToUpdate: UserInventory | undefined;
           if (app.lineUserId) {
               inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
@@ -764,14 +774,20 @@ export default function App() {
           if (!inventoryToUpdate && app.customer?.phone) {
               inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
           }
-          if (!inventoryToUpdate && app.customer?.name) { // Fallback
+          if (!inventoryToUpdate && app.customer?.name) { 
               inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
           }
   
-          if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) <= 0) {
-              if (!window.confirm(`學員 ${inventoryToUpdate.name} 點數不足 (剩餘 0)，仍要將課程標示為完課嗎？(此操作不會扣點)`)) {
-                  setIsProcessing(false);
-                  return;
+          // Req 3: 個人帳戶扣點
+          if ((isPrivateLesson || isGroupLesson) && inventoryToUpdate) {
+              const creditKey = isPrivateLesson ? 'private' : 'group';
+              const currentCredits = inventoryToUpdate.credits[creditKey] || 0;
+
+              if (currentCredits <= 0) {
+                  if (!window.confirm(`學員 ${inventoryToUpdate.name} ${isPrivateLesson ? '私人' : '團體'}課點數不足 (剩餘 0)，仍要完課嗎？(此操作不會扣點)`)) {
+                      setIsProcessing(false);
+                      return;
+                  }
               }
           }
   
@@ -780,13 +796,16 @@ export default function App() {
           batch.update(appRef, { status: 'completed' });
   
           let pointDeducted = false;
-          let newPrivateCredits = -1;
-  
-          if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) > 0) {
-              const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
-              batch.update(invRef, { 'credits.private': increment(-1) });
-              pointDeducted = true;
-              newPrivateCredits = (inventoryToUpdate.credits.private || 0) - 1;
+          let newCredits = -1;
+
+          if ((isPrivateLesson || isGroupLesson) && inventoryToUpdate) {
+              const creditKey = isPrivateLesson ? 'private' : 'group';
+              if ((inventoryToUpdate.credits[creditKey] || 0) > 0) {
+                  const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
+                  batch.update(invRef, { [`credits.${creditKey}`]: increment(-1) });
+                  pointDeducted = true;
+                  newCredits = (inventoryToUpdate.credits[creditKey] || 0) - 1;
+              }
           }
   
           await batch.commit();
@@ -794,16 +813,15 @@ export default function App() {
           setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'completed' } : a));
           
           const userNameForLog = currentUser.name || currentUser.email || '未知員工';
-          let logDetail = `教練 ${userNameForLog} 確認 ${app.customer?.name} 完課`;
+          let logDetail = `教練 ${userNameForLog} 確認 ${app.customer?.name} 完課 (${app.type === 'group' ? '團體課' : '私人課'})`;
           if (pointDeducted && inventoryToUpdate) {
+              const creditType = isPrivateLesson ? 'private' : 'group';
               setInventories(prev => prev.map(inv => 
                   inv.id === inventoryToUpdate!.id 
-                  ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
+                  ? { ...inv, credits: { ...inv.credits, [creditType]: newCredits } } 
                   : inv
               ));
-              logDetail += `，並扣除 1 點。剩餘: ${newPrivateCredits}`;
-          } else {
-              logDetail += ` (未扣點)。`;
+              logDetail += `，並扣除 1 點${isPrivateLesson ? '私人' : '團體'}課。剩餘: ${newCredits}`;
           }
           
           addLog('完課確認', logDetail);
@@ -829,8 +847,8 @@ export default function App() {
     setIsProcessing(true);
     try {
         const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+        const isGroupLesson = app.type === 'group';
         
-        // Bugfix: Improved lookup logic
         let inventoryToUpdate: UserInventory | undefined;
         if (app.lineUserId) {
             inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
@@ -838,22 +856,20 @@ export default function App() {
         if (!inventoryToUpdate && app.customer?.phone) {
             inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
         }
-        if (!inventoryToUpdate && app.customer?.name) { // Fallback
-            inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
-        }
         
         const batch = writeBatch(db);
         const appRef = doc(db, 'appointments', app.id);
         batch.update(appRef, { status: 'confirmed' });
 
         let pointRefunded = false;
-        let newPrivateCredits = -1;
+        let newCredits = -1;
+        let creditKey: 'private' | 'group' = isPrivateLesson ? 'private' : 'group';
 
-        if (isPrivateLesson && inventoryToUpdate) {
+        if ((isPrivateLesson || isGroupLesson) && inventoryToUpdate) {
             const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
-            batch.update(invRef, { 'credits.private': increment(1) });
+            batch.update(invRef, { [`credits.${creditKey}`]: increment(1) });
             pointRefunded = true;
-            newPrivateCredits = (inventoryToUpdate.credits.private || 0) + 1;
+            newCredits = (inventoryToUpdate.credits[creditKey] || 0) + 1;
         }
 
         await batch.commit();
@@ -864,12 +880,10 @@ export default function App() {
         if (pointRefunded && inventoryToUpdate) {
             setInventories(prev => prev.map(inv => 
                 inv.id === inventoryToUpdate!.id 
-                ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
+                ? { ...inv, credits: { ...inv.credits, [creditKey]: newCredits } } 
                 : inv
             ));
-            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點私人課。剩餘: ${newPrivateCredits}`;
-        } else {
-            logDetail += ' (非私人課或找不到學員庫存，未返還點數)';
+            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點${isPrivateLesson ? '私人' : '團體'}課。剩餘: ${newCredits}`;
         }
         
         addLog('庫存調整', logDetail);
@@ -895,7 +909,6 @@ export default function App() {
 
   const handleBatchDelete = async () => {
       const selectedApps = Array.from(selectedBatch).map(id => appointments.find(a => a.id === id)).filter(Boolean) as Appointment[];
-      
       const hasCompleted = selectedApps.some(a => a.status === 'completed' || a.status === 'checked_in');
       
       if (hasCompleted) {
@@ -981,7 +994,11 @@ export default function App() {
     const coachStats = coaches.map(c => {
         const apps = appointments.filter(a => a.coachId === c.id && a.status !== 'cancelled' && a.date.startsWith(currentMonthPrefix));
         const personalCount = apps.filter(a => a.type === 'private' || (a.type as string) === 'client').length;
-        const groupCount = apps.filter(a => a.type === 'group').length;
+        
+        // Req 3: 團課實現只會為單堂，請勿重複計算 (按時段計數)
+        const groupSlots = new Set(apps.filter(a => a.type === 'group').map(a => `${a.date}_${a.time}`));
+        const groupCount = groupSlots.size;
+
         return { id: c.id, name: c.name, personal: personalCount, group: groupCount, total: personalCount + groupCount };
     });
 
@@ -1208,7 +1225,7 @@ export default function App() {
 
       </main>
 
-      {/* Confirmation Modal and others remain the same */}
+      {/* Navigation Footer */}
       {view !== 'admin' && (
         <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-slate-800 flex justify-around p-3 z-50 backdrop-blur-xl">
             <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
@@ -1229,7 +1246,7 @@ export default function App() {
       {/* Confirmation Modal */}
       {confirmModal.isOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
-             <div className="glass-panel w-full max-w-sm rounded-3xl p-8 animate-slideUp shadow-2xl border border-white/60 dark:border-slate-700/60 relative overflow-hidden">
+             <div className="glass-panel w-full max-sm rounded-3xl p-8 animate-slideUp shadow-2xl border border-white/60 dark:border-slate-700/60 relative overflow-hidden">
                  <div className="absolute -top-10 -right-10 w-32 h-32 bg-indigo-500/10 rounded-full blur-2xl"></div>
                  <div className="relative z-10 flex flex-col items-center text-center">
                      <div className="mb-6 scale-125">
@@ -1322,7 +1339,8 @@ export default function App() {
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.type} onChange={e => {
                                    const newType = e.target.value as any;
                                    setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
-                                   if(newType !== 'private') setMemberSearchTerm('');
+                                   // 私人課與團體課現在都支援學員選擇
+                                   if(newType === 'block') setMemberSearchTerm('');
                                }} disabled={isLockedForEditing}>
                                    <option value="block">內部事務</option>
                                    <option value="private">私人課程</option>
@@ -1387,7 +1405,8 @@ export default function App() {
                                  />
                              </div>
                         )}
-                        {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
+                        {/* 私人與團體課程現在都支援指定學員 (Req 2) */}
+                        {(blockForm.type === 'private' || blockForm.type === 'group' || (blockForm.type as string) === 'client') && (
                             <fieldset disabled={isLockedForEditing} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                                 <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
                                 {blockForm.customer?.name ? (
@@ -1400,7 +1419,8 @@ export default function App() {
                                             {(() => {
                                                 const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
                                                 if (linkedInv) {
-                                                    return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {linkedInv.credits.private} 堂</div>
+                                                    const creditKey = blockForm.type === 'private' ? 'private' : 'group';
+                                                    return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘{blockForm.type === 'private' ? '私人' : '團體'}課: {linkedInv.credits[creditKey]} 堂</div>
                                                 }
                                                 return null;
                                             })()}
@@ -1447,7 +1467,7 @@ export default function App() {
                                                             <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
                                                             <div className="flex justify-between text-xs text-slate-500 mt-0.5">
                                                                 <span>{m.phone || '無電話'}</span>
-                                                                <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
+                                                                <span className="font-bold text-indigo-500">餘: {blockForm.type === 'private' ? m.credits.private : m.credits.group}</span>
                                                             </div>
                                                         </div>
                                                     ))
@@ -1473,7 +1493,7 @@ export default function App() {
                         )}
 
                         <div className="pt-2 flex gap-3">
-                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
+                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || currentAppointmentForModal.type === 'group' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1489,9 +1509,9 @@ export default function App() {
                             )}
                             <button 
                                 type="submit" 
-                                disabled={(blockForm.type === 'private' && !blockForm.customer?.name) || isLockedForEditing}
+                                disabled={((blockForm.type === 'private' || blockForm.type === 'group') && !blockForm.customer?.name) || isLockedForEditing}
                                 className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
-                                    ${(blockForm.type === 'private' && !blockForm.customer?.name) || isLockedForEditing
+                                    ${((blockForm.type === 'private' || blockForm.type === 'group') && !blockForm.customer?.name) || isLockedForEditing
                                         ? 'bg-slate-400 cursor-not-allowed' 
                                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                             >
