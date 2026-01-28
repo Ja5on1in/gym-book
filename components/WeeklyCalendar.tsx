@@ -1,5 +1,6 @@
+
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX, RefreshCw } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX, RefreshCw, Users } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime, getStartOfWeek } from '../utils';
@@ -161,6 +162,36 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     return normalizedType === selectedType;
                 });
 
+                // Group group-type appointments for visual clarity
+                const processedApps: (Appointment & { isGroupParent?: boolean; participants?: Appointment[]; count?: number })[] = [];
+                const groupMap: Record<string, any> = {};
+
+                visibleApps.forEach(app => {
+                    if (app.type === 'group') {
+                        const key = `${app.coachId}-${app.reason}`;
+                        if (!groupMap[key]) {
+                            groupMap[key] = {
+                                ...app,
+                                isGroupParent: true,
+                                participants: [app],
+                                count: 1
+                            };
+                            processedApps.push(groupMap[key]);
+                        } else {
+                            groupMap[key].participants.push(app);
+                            groupMap[key].count++;
+                            // If any member is checked-in, highlight the whole block
+                            if (app.status === 'checked_in') groupMap[key].status = 'checked_in';
+                            // If all completed, it stays completed; if one is not, it should probably show confirmed
+                            if (groupMap[key].status === 'completed' && app.status !== 'completed') {
+                                groupMap[key].status = 'confirmed';
+                            }
+                        }
+                    } else {
+                        processedApps.push(app);
+                    }
+                });
+
                 return (
                   <div 
                     key={`${dateKey}-${time}`} 
@@ -176,17 +207,17 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                     }}
                   >
                      <div className="flex flex-col gap-1 md:gap-1.5 h-full">
-                        {visibleApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
+                        {processedApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
                             const coach = coaches.find(c => c.id === app.coachId);
                             const colorClass = coach?.color || 'bg-slate-100 text-slate-800 border-slate-200';
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
                             const isCheckedIn = app.status === 'checked_in';
-                            const isGroupOrBlock = app.type === 'group' || app.type === 'block';
+                            const isGroupParent = app.isGroupParent;
 
-                            const displayText = isGroupOrBlock 
-                              ? (app.reason || '團體課程')
-                              : (app.customer?.name || app.reason || '私人課');
+                            const displayText = isGroupParent 
+                              ? `${app.reason || '團體課程'} (${app.count}人)`
+                              : (app.type === 'block' ? (app.reason || '內部事項') : (app.customer?.name || '私人課'));
 
                             return (
                               <div key={app.id} 
@@ -202,7 +233,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                   <div className="flex justify-between items-center mb-0.5">
                                     <div className="flex items-center gap-1.5 truncate">
                                         <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
-                                        {app.type === 'group' && <span className="text-[9px] bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200 px-1.5 py-0.5 rounded-full font-semibold">團體課</span>}
+                                        {isGroupParent && <Users size={10} className="text-indigo-600 dark:text-indigo-400 shrink-0" />}
                                     </div>
                                     <div className="flex items-center gap-1">
                                       {(isMine || isManager) && isCheckedIn && (
@@ -225,26 +256,26 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                       {(isMine || isManager) && isCompleted && <CheckCircle size={10} className="text-green-800 md:w-3 md:h-3"/>}
                                     </div>
                                   </div>
-                                  <div className="truncate font-medium opacity-90">{displayText}</div>
-                                  {app.type === 'private' && app.service?.name && (
+                                  <div className="truncate font-bold opacity-90">{displayText}</div>
+                                  {!isGroupParent && app.type === 'private' && app.service?.name && (
                                     <div className="text-[8px] md:text-[10px] opacity-70 truncate mt-0.5">{app.service.name}</div>
                                   )}
                                   {isCheckedIn && <div className="text-[8px] md:text-[9px] font-bold text-orange-600 mt-0.5">等待確認</div>}
                               </div>
                             );
                         })}
-                        {visibleApps.length > 2 && expandedCell !== `${dateKey}-${time}` && (
+                        {processedApps.length > 2 && expandedCell !== `${dateKey}-${time}` && (
                           <div onClick={(e) => { e.stopPropagation(); setExpandedCell(`${dateKey}-${time}`); }} className="text-[9px] md:text-[10px] text-center text-indigo-500 font-bold bg-indigo-50 dark:bg-indigo-900/30 rounded-lg cursor-pointer hover:bg-indigo-100 py-1 transition-colors">
-                            +{visibleApps.length - 2}
+                            +{processedApps.length - 2}
                           </div>
                         )}
-                        {expandedCell === `${dateKey}-${time}` && visibleApps.length > 2 && (
+                        {expandedCell === `${dateKey}-${time}` && processedApps.length > 2 && (
                           <div onClick={(e) => { e.stopPropagation(); setExpandedCell(null); }} className="text-[9px] md:text-[10px] text-center text-slate-400 cursor-pointer py-1 hover:text-slate-600">
                             收起
                           </div>
                         )}
                         
-                        {!isCellDisabled && visibleApps.length === 0 && (!isPast || isManager) && (
+                        {!isCellDisabled && processedApps.length === 0 && (!isPast || isManager) && (
                             <div className="hidden group-hover:flex w-full h-full items-center justify-center">
                                 <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-indigo-50 dark:bg-slate-700 text-indigo-500 flex items-center justify-center">
                                     <Plus size={12} strokeWidth={3} className="md:w-3.5 md:h-3.5"/>

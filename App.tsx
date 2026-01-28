@@ -18,7 +18,10 @@ import {
   CreditCard,
   CheckCircle2,
   Edit3,
-  ChevronLeft
+  ChevronLeft,
+  Users,
+  CheckCircle,
+  Clock
 } from 'lucide-react';
 
 import { 
@@ -1169,6 +1172,17 @@ export default function App() {
   const currentAppointmentForModal = blockForm.id ? appointments.find(a => a.id === blockForm.id) : null;
   const isLockedForEditing = !!currentAppointmentForModal && ['checked_in', 'completed'].includes(currentAppointmentForModal.status);
 
+  // Group members calculation for group class detail view
+  const groupParticipants = (blockForm.type === 'group' && blockForm.coachId && blockForm.date && blockForm.time && blockForm.reason) 
+    ? appointments.filter(a => 
+        a.date === blockForm.date && 
+        a.time === blockForm.time && 
+        a.coachId === blockForm.coachId && 
+        a.type === 'group' && 
+        a.status !== 'cancelled' &&
+        a.reason === blockForm.reason
+    ) : [];
+
   return (
     <div className="min-h-screen text-slate-800 dark:text-slate-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
       {/* Dynamic Background */}
@@ -1298,11 +1312,11 @@ export default function App() {
       {/* Block/Event Modal */}
       {isBlockModalOpen && (
          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
-            <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
-                <div className="bg-white/50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+            <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40 flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+                <div className="bg-white/50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
-                        {blockForm.id ? <Settings size={20}/> : <CalendarIcon size={20}/>}
-                        {blockForm.id ? '管理行程' : (isBatchMode ? '批次封鎖時段' : '新增行程')}
+                        {blockForm.id ? (blockForm.type === 'group' ? <Users size={20}/> : <Settings size={20}/>) : <CalendarIcon size={20}/>}
+                        {blockForm.id ? (blockForm.type === 'group' ? '團體課管理' : '管理行程') : (isBatchMode ? '批次封鎖時段' : '新增行程')}
                     </h3>
                     <div className="flex gap-2">
                         {blockForm.id && !isLockedForEditing && (
@@ -1313,8 +1327,11 @@ export default function App() {
                               <Layers size={20}/>
                            </button>
                         )}
+                        <button onClick={() => setIsBlockModalOpen(false)} className="md:hidden p-2"><X size={20}/></button>
                     </div>
                 </div>
+                
+                <div className="overflow-y-auto custom-scrollbar flex-1">
                 {deleteConfirm ? (
                     <div className="p-8 text-center">
                         <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4 text-red-500"><AlertTriangle size={32}/></div>
@@ -1327,7 +1344,7 @@ export default function App() {
                     </div>
                 ) : (
                     <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
-                        {isLockedForEditing && (
+                        {isLockedForEditing && blockForm.type !== 'group' && (
                             <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-xs text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800 flex items-center gap-2">
                                 <AlertTriangle size={16}/>
                                 <span>此預約已簽到或完課，無法修改時間。</span>
@@ -1339,9 +1356,8 @@ export default function App() {
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.type} onChange={e => {
                                    const newType = e.target.value as any;
                                    setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
-                                   // 私人課與團體課現在都支援學員選擇
                                    if(newType === 'block') setMemberSearchTerm('');
-                               }} disabled={isLockedForEditing}>
+                               }} disabled={!!blockForm.id}>
                                    <option value="block">內部事務</option>
                                    <option value="private">私人課程</option>
                                    <option value="group">團體課程</option>
@@ -1377,7 +1393,6 @@ export default function App() {
                              )}
                         </div>
                         
-                        {/* Type specific fields (Block Reason, Group Name, Private User Search) */}
                         {blockForm.type === 'block' && (
                             <fieldset disabled={isLockedForEditing}>
                                 <label className="text-xs font-bold text-slate-500 uppercase">內部事項標籤</label>
@@ -1405,11 +1420,76 @@ export default function App() {
                                  />
                              </div>
                         )}
-                        {/* 私人與團體課程現在都支援指定學員 (Req 2) */}
+
+                        {/* Group Class Participants List - The Core Request */}
+                        {blockForm.type === 'group' && blockForm.id && (
+                            <div className="space-y-3 pt-4 border-t border-slate-100 dark:border-slate-700">
+                                <h4 className="text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2">
+                                    <Users size={18}/> 參與學員列表 ({groupParticipants.length}/8)
+                                </h4>
+                                <div className="space-y-2">
+                                    {groupParticipants.map(participant => (
+                                        <div key={participant.id} className="glass-card p-3 rounded-xl border border-slate-100 dark:border-slate-700 flex justify-between items-center group/item hover:shadow-sm">
+                                            <div className="flex-1">
+                                                <div className="font-bold text-sm dark:text-white">{participant.customer?.name}</div>
+                                                <div className="text-[10px] text-slate-500">{participant.customer?.phone}</div>
+                                                <div className={`text-[10px] font-bold mt-1 ${participant.status === 'completed' ? 'text-green-600' : participant.status === 'checked_in' ? 'text-orange-500 animate-pulse' : 'text-slate-400'}`}>
+                                                    {participant.status === 'completed' ? '已核實完課' : participant.status === 'checked_in' ? '等待教練核實' : '已預約'}
+                                                </div>
+                                            </div>
+                                            <div className="flex gap-1">
+                                                {(participant.status === 'checked_in' || participant.status === 'confirmed') && (
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => handleCoachConfirmCompletion(participant)}
+                                                        className="p-1.5 bg-emerald-50 text-emerald-600 hover:bg-emerald-500 hover:text-white rounded-lg transition-all"
+                                                        title="單人完課"
+                                                    >
+                                                        <CheckCircle size={16}/>
+                                                    </button>
+                                                )}
+                                                {participant.status === 'completed' && currentUser?.role === 'manager' && (
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => handleRevertCompletion(participant)}
+                                                        className="p-1.5 bg-yellow-50 text-yellow-600 hover:bg-yellow-500 hover:text-white rounded-lg transition-all"
+                                                        title="撤銷完課"
+                                                    >
+                                                        <RefreshCw size={16}/>
+                                                    </button>
+                                                )}
+                                                {participant.status !== 'completed' && (
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => {
+                                                            if(window.confirm(`確定要移除學員 ${participant.customer?.name} 嗎？`)) {
+                                                                handleCustomerCancel(participant, '教練手動移除');
+                                                            }
+                                                        }}
+                                                        className="p-1.5 bg-red-50 text-red-500 hover:bg-red-500 hover:text-white rounded-lg transition-all"
+                                                        title="移除學員"
+                                                    >
+                                                        <Trash2 size={16}/>
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {groupParticipants.length === 0 && (
+                                        <div className="text-center py-4 text-xs text-slate-400 italic">尚未有學員加入</div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Add Member Section - For both Private and Group */}
                         {(blockForm.type === 'private' || blockForm.type === 'group' || (blockForm.type as string) === 'client') && (
-                            <fieldset disabled={isLockedForEditing} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-                                <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
-                                {blockForm.customer?.name ? (
+                            <fieldset disabled={isLockedForEditing && blockForm.type !== 'group'} className={`p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all ${isLockedForEditing && blockForm.type !== 'group' ? 'opacity-60 cursor-not-allowed' : ''}`}>
+                                <div className="text-xs font-bold text-indigo-500 uppercase mb-2 flex justify-between items-center">
+                                    <span>{blockForm.type === 'group' ? '加入新學員' : '客戶/學員資料'}</span>
+                                    {blockForm.type === 'group' && <span className="text-[10px] font-normal lowercase italic text-indigo-400">目前剩餘 {8 - groupParticipants.length} 名額</span>}
+                                </div>
+                                {blockForm.customer?.name && blockForm.type !== 'group' ? (
                                     <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
                                         <div>
                                             <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
@@ -1443,9 +1523,9 @@ export default function App() {
                                             placeholder="輸入關鍵字..."
                                             value={memberSearchTerm}
                                             onChange={(e) => setMemberSearchTerm(e.target.value)}
-                                            autoFocus
+                                            autoFocus={!blockForm.id}
                                         />
-                                        {memberSearchTerm && !blockForm.customer && (
+                                        {memberSearchTerm && (
                                             <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
                                                 {filteredMembers.length > 0 ? (
                                                     filteredMembers.map(m => (
@@ -1467,7 +1547,7 @@ export default function App() {
                                                             <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
                                                             <div className="flex justify-between text-xs text-slate-500 mt-0.5">
                                                                 <span>{m.phone || '無電話'}</span>
-                                                                <span className="font-bold text-indigo-500">餘: {blockForm.type === 'private' ? m.credits.private : m.credits.group}</span>
+                                                                <span className="font-bold text-indigo-500">餘: {blockForm.type === 'group' ? m.credits.group : m.credits.private}</span>
                                                             </div>
                                                         </div>
                                                     ))
@@ -1493,7 +1573,7 @@ export default function App() {
                         )}
 
                         <div className="pt-2 flex gap-3">
-                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || currentAppointmentForModal.type === 'group' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
+                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1509,17 +1589,18 @@ export default function App() {
                             )}
                             <button 
                                 type="submit" 
-                                disabled={((blockForm.type === 'private' || blockForm.type === 'group') && !blockForm.customer?.name) || isLockedForEditing}
+                                disabled={((blockForm.type === 'private' || (blockForm.type === 'group' && !blockForm.id)) && !blockForm.customer?.name) || (isLockedForEditing && blockForm.type !== 'group')}
                                 className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
-                                    ${((blockForm.type === 'private' || blockForm.type === 'group') && !blockForm.customer?.name) || isLockedForEditing
+                                    ${((blockForm.type === 'private' || (blockForm.type === 'group' && !blockForm.id)) && !blockForm.customer?.name) || (isLockedForEditing && blockForm.type !== 'group')
                                         ? 'bg-slate-400 cursor-not-allowed' 
                                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                             >
-                                {blockForm.id ? '儲存變更' : '確認新增'}
+                                {blockForm.id ? (blockForm.type === 'group' ? '加入選定學員' : '儲存變更') : '確認新增'}
                             </button>
                         </div>
                     </form>
                 )}
+                </div>
             </div>
          </div>
       )}
