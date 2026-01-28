@@ -1,5 +1,4 @@
 
-
 export interface User {
   id: string;
   name: string;
@@ -37,7 +36,6 @@ export interface Appointment {
   coachName?: string;
   service?: Service | null;
   customer?: Customer | null;
-  attendees?: { customerId: string, name: string, status: 'joined' | 'cancelled' }[];
   reason?: string;
   status: 'confirmed' | 'cancelled' | 'completed' | 'checked_in'; // Added checked_in status
   createdAt: string;
@@ -80,7 +78,6 @@ export interface BlockFormState {
   endTime?: string; // For batch blocking
   reason: string;
   customer: Customer | null;
-  attendees?: { customerId: string, name: string, status: 'joined' | 'cancelled' }[];
   repeatWeeks?: number;
 }
 

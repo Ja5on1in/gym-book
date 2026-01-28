@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX, RefreshCw, Users } from 'lucide-react';
+import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX, RefreshCw } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
 import { ALL_TIME_SLOTS } from '../constants';
 import { addDays, formatDateKey, isCoachDayOff, isPastTime, getStartOfWeek } from '../utils';
@@ -182,10 +182,9 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
                             const isCheckedIn = app.status === 'checked_in';
-                            const isGroup = app.type === 'group';
-                            const isBlock = app.type === 'block';
+                            const isGroupOrBlock = app.type === 'group' || app.type === 'block';
 
-                            const displayText = isGroup || isBlock 
+                            const displayText = isGroupOrBlock 
                               ? (app.reason || '團體課程')
                               : (app.customer?.name || app.reason || '私人課');
 
@@ -227,11 +226,6 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                                     </div>
                                   </div>
                                   <div className="truncate font-medium opacity-90">{displayText}</div>
-                                  {app.type === 'group' && (
-                                    <div className="flex items-center gap-1 text-[8px] md:text-[10px] font-bold text-slate-500 dark:text-slate-400 mt-0.5">
-                                      <Users size={10}/> ({app.attendees?.length || 0}/8 人)
-                                    </div>
-                                  )}
                                   {app.type === 'private' && app.service?.name && (
                                     <div className="text-[8px] md:text-[10px] opacity-70 truncate mt-0.5">{app.service.name}</div>
                                   )}
