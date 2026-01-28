@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard, TrendingUp, Dumbbell, ChevronDown, Activity } from 'lucide-react';
 import { Appointment, Coach, UserInventory, WorkoutPlan } from '../types';
@@ -145,9 +146,12 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
 
   const myApps = appointments
       .filter(a => {
-        if (!liffProfile) return false;
+        if (!liffProfile || !myInventory) return false;
+        // Private class check (existing logic)
         if (a.lineUserId === liffProfile.userId) return true;
-        if (myInventory && myInventory.phone && a.customer?.phone === myInventory.phone && a.customer?.name === myInventory.name) return true;
+        if (myInventory.phone && a.customer?.phone === myInventory.phone && a.customer?.name === myInventory.name) return true;
+        // New: Group class check
+        if (a.type === 'group' && a.attendees?.some(att => att.customerId === myInventory.id && att.status === 'joined')) return true;
         return false;
       })
       .sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime());
@@ -213,9 +217,9 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
               const isUpcoming = appointmentDateTime > now;
               const isCancellableTime = hoursUntil >= 24;
 
-              const canCancel = isConfirmed && isUpcoming && isCancellableTime;
-              const cannotCancelLocked = isConfirmed && isUpcoming && !isCancellableTime;
-              const canCheckIn = isConfirmed;
+              const canCancel = isConfirmed && isUpcoming && (isCancellableTime || app.type === 'group');
+              const cannotCancelLocked = isConfirmed && isUpcoming && !isCancellableTime && app.type !== 'group';
+              const canCheckIn = isConfirmed && app.type !== 'group';
 
               return (
                 <div key={app.id} className={`glass-card p-5 rounded-2xl border-l-4 ${isCancelled ? 'border-l-red-400 opacity-70' : isCompleted ? 'border-l-gray-400' : isCheckedIn ? 'border-l-orange-500' : 'border-l-green-500'}`}>
@@ -225,7 +229,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                           <span className="text-lg font-bold dark:text-white">{app.date}</span>
                           <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-sm font-medium dark:text-slate-200">{app.time}</span>
                       </div>
-                      <div className="text-indigo-600 dark:text-indigo-400 font-bold">{app.service?.name || '課程'}</div>
+                      <div className="text-indigo-600 dark:text-indigo-400 font-bold">{app.service?.name || app.reason || '課程'}</div>
                     </div>
                     <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1
                         ${isCancelled ? 'bg-red-100 text-red-600' : isCompleted ? 'bg-gray-200 text-gray-600' : isCheckedIn ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
