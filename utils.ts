@@ -1,6 +1,4 @@
 
-
-
 import { Coach, Appointment, SlotStatus } from './types';
 
 export const getDaysInMonth = (year: number, month: number) => new Date(year, month + 1, 0).getDate();
@@ -100,8 +98,6 @@ export const getSlotStatus = (
   // Get dynamic work hours for this specific day
   const { start, end } = getCoachWorkHours(date, coach);
 
-  // Robust Time Comparison
-  // Convert "HH:mm" to minutes for accurate comparison
   const parseMinutes = (t: string) => {
       const [h, m] = t.split(':').map(Number);
       return h * 60 + (m || 0);
@@ -111,10 +107,10 @@ export const getSlotStatus = (
   const startMins = parseMinutes(start);
   const endMins = parseMinutes(end);
 
-  // If slot time is before start or >= end time (closing time), it's unavailable
   if (slotMins < startMins || slotMins >= endMins) return { status: 'unavailable' };
   
-  const rec = appointments.find(a => 
+  // Find all non-cancelled appointments for this slot
+  const slotApps = appointments.filter(a => 
     a.date === date && 
     a.time === time && 
     a.coachId === coach.id && 
@@ -122,7 +118,23 @@ export const getSlotStatus = (
     (ignoreId ? a.id !== ignoreId : true)
   );
 
-  if (rec) return { status: 'booked', type: rec.type, reason: rec.reason, record: rec };
+  if (slotApps.length === 0) return { status: 'available' };
+
+  // If there's a block or a private appointment, the slot is fully booked
+  const blockOrPrivate = slotApps.find(a => a.type === 'block' || a.type === 'private' || (a.type as string) === 'client');
+  if (blockOrPrivate) {
+    return { status: 'booked', type: blockOrPrivate.type, reason: blockOrPrivate.reason, record: blockOrPrivate };
+  }
+
+  // If there are group appointments
+  const groupApps = slotApps.filter(a => a.type === 'group');
+  if (groupApps.length > 0) {
+    if (groupApps.length >= 8) {
+        return { status: 'booked', type: 'group', reason: groupApps[0].reason, record: groupApps[0] };
+    }
+    // Still space in the group class (Max 8 people)
+    return { status: 'available', type: 'group', reason: groupApps[0].reason, record: groupApps[0] };
+  }
   
   return { status: 'available' };
 };

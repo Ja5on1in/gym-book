@@ -18,8 +18,7 @@ import {
   CreditCard,
   CheckCircle2,
   Edit3,
-  ChevronLeft,
-  Users
+  ChevronLeft
 } from 'lucide-react';
 
 import { 
@@ -95,7 +94,7 @@ export default function App() {
   const [filteredMembers, setFilteredMembers] = useState<UserInventory[]>([]);
 
   const [blockForm, setBlockForm] = useState<BlockFormState>({
-    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, participants: [], repeatWeeks: 1
+    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, repeatWeeks: 1
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
   
@@ -555,20 +554,16 @@ export default function App() {
   const handleSaveBlock = async (e: React.FormEvent, force: boolean = false) => {
     if(e) e.preventDefault();
     if (!currentUser) return;
-    const coach = coaches.find(c => c.id === (['manager', 'receptionist'].includes(currentUser.role) ? blockForm.coachId : currentUser.id));
+    const coachId = (['manager', 'receptionist'].includes(currentUser.role) ? blockForm.coachId : currentUser.id);
+    const coach = coaches.find(c => c.id === coachId);
     if (!coach) return;
     
     const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
     const isPrivate = finalType === 'private';
     const isGroup = finalType === 'group';
     
-    if (isPrivate && !blockForm.customer?.name) {
+    if ((isPrivate || isGroup) && !blockForm.customer?.name) {
         showNotification('請先搜尋並選擇學員', 'error');
-        return;
-    }
-
-    if (isGroup && (!blockForm.participants || blockForm.participants.length === 0) && !blockForm.reason) {
-        showNotification('請輸入課程名稱或至少新增一位學員', 'error');
         return;
     }
     
@@ -581,6 +576,11 @@ export default function App() {
         }
     }
 
+    let targetInventory: UserInventory | undefined;
+    if ((isPrivate || isGroup) && blockForm.customer?.name) {
+        targetInventory = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
+    }
+    
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Appointment[] = [];
     const [y, m, d] = blockForm.date.split('-').map(Number);
@@ -594,40 +594,33 @@ export default function App() {
         for (const slot of targetSlots) {
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
              
-             // If Group class, we can have multiple records in the same slot
-             if (status.status === 'available' || isGroup) {
-                 if (isGroup && blockForm.participants && blockForm.participants.length > 0) {
-                     // Create separate appointments for each participant
-                     blockForm.participants.forEach(p => {
-                         const id = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                         batchOps.push({ 
-                             id, type: 'group', date: dKey, time: slot,
-                             coachId: coach.id, coachName: coach.name, reason: blockForm.reason, status: 'confirmed', 
-                             customer: { ...p },
-                             createdAt: new Date().toISOString(),
-                             lineUserId: inventories.find(inv => inv.name === p.name && (inv.phone === p.phone || !inv.phone))?.lineUserId || ""
-                         });
-                     });
-                 } else {
-                     // Standard block or private or empty group
-                     const id = (!isBatchMode && i === 0 && blockForm.id) ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                     batchOps.push({ 
-                         id, type: finalType as any, date: dKey, time: slot,
-                         coachId: coach.id, coachName: coach.name, reason: blockForm.reason, status: 'confirmed', 
-                         customer: (isPrivate && blockForm.customer) ? { ...blockForm.customer } : null,
-                         createdAt: new Date().toISOString()
-                     });
-                 }
+             // Constraint check: Group class allows up to 8 participants
+             const currentApps = appointments.filter(a => a.date === dKey && a.time === slot && a.coachId === coach.id && a.status !== 'cancelled');
+             const isTrulyEmpty = currentApps.length === 0;
+             const isExistingGroup = currentApps.length > 0 && currentApps.every(a => a.type === 'group');
+             
+             const canSave = isGroup 
+                ? (isTrulyEmpty || (isExistingGroup && currentApps.length < 8))
+                : (status.status === 'available' && isTrulyEmpty);
+
+             if (canSave) {
+                 const id = (!isBatchMode && i === 0 && blockForm.id) ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+                 batchOps.push({ 
+                     id, type: finalType as any, date: dKey, time: slot,
+                     coachId: coach.id, coachName: coach.name, reason: blockForm.reason, status: 'confirmed', 
+                     customer: (blockForm.customer) ? { ...blockForm.customer } : null,
+                     createdAt: new Date().toISOString(), lineUserId: targetInventory?.lineUserId || ""
+                 });
              }
         }
     }
 
-    if (batchOps.length === 0) { showNotification('選定時段已被占用或無效', 'error'); return; }
+    if (batchOps.length === 0) { showNotification('時段已滿、已被占用或類型衝突 (團課上限8人)', 'error'); return; }
     
     try {
         await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
-        showNotification(`成功建立 ${batchOps.length} 筆紀錄`, 'success');
+        showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
         setIsBlockModalOpen(false);
     } catch (e: any) {
         console.error(e);
@@ -640,7 +633,7 @@ export default function App() {
      const target = appointments.find(a => a.id === blockForm.id);
      if (!target) return;
      
-     if (target.type === 'private' || (target.type as string) === 'client' || target.type === 'group') { 
+     if (target.type === 'private' || (target.type as string) === 'client') { 
          setConfirmModal({
              isOpen: true, title: '取消原因', message: '請輸入取消預約的原因', isDanger: true, showInput: true,
              onConfirm: async (reason) => {
@@ -679,7 +672,7 @@ export default function App() {
         setBlockForm({ 
             id: null, type: 'block', coachId: firstAvailableCoach.id, 
             date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, 
-            reason: '1v1教練課', customer: null, participants: [], repeatWeeks: 1 
+            reason: '1v1教練課', customer: null, repeatWeeks: 1 
         });
         setMemberSearchTerm('');
         setDeleteConfirm(false); 
@@ -696,7 +689,7 @@ export default function App() {
         setBlockForm({ 
             id: null, type: 'block', coachId: targetCoachId, 
             date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, 
-            reason: '1v1教練課', customer: null, participants: [], repeatWeeks: 1 
+            reason: '1v1教練課', customer: null, repeatWeeks: 1 
         });
         setMemberSearchTerm('');
         setDeleteConfirm(false); 
@@ -715,7 +708,7 @@ export default function App() {
           id: null, type: 'block', coachId: targetCoachId, 
           date: dateStr, 
           time: '09:00', endTime: '12:00',
-          reason: '內部訓練', customer: null, participants: [], repeatWeeks: 1 
+          reason: '內部訓練', customer: null, repeatWeeks: 1 
       });
       setMemberSearchTerm('');
       setDeleteConfirm(false); 
@@ -728,7 +721,7 @@ export default function App() {
       if (currentUser.role === 'coach' && app.coachId !== currentUser.id) { showNotification('權限不足', 'info'); return; }
       
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
-      setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null, participants: [] });
+      setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
       setMemberSearchTerm('');
       setDeleteConfirm(false); 
       setIsBatchMode(false);
@@ -765,8 +758,8 @@ export default function App() {
       setIsProcessing(true);
       try {
           const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+          const isGroupLesson = app.type === 'group';
           
-          // Bugfix: Improved lookup logic
           let inventoryToUpdate: UserInventory | undefined;
           if (app.lineUserId) {
               inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
@@ -774,14 +767,14 @@ export default function App() {
           if (!inventoryToUpdate && app.customer?.phone) {
               inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
           }
-          if (!inventoryToUpdate && app.customer?.name) { // Fallback
-              inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
-          }
   
-          if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) <= 0) {
-              if (!window.confirm(`學員 ${inventoryToUpdate.name} 點數不足 (剩餘 0)，仍要將課程標示為完課嗎？(此操作不會扣點)`)) {
-                  setIsProcessing(false);
-                  return;
+          if ((isPrivateLesson || isGroupLesson) && inventoryToUpdate) {
+              const credits = isPrivateLesson ? inventoryToUpdate.credits.private : inventoryToUpdate.credits.group;
+              if ((credits || 0) <= 0) {
+                  if (!window.confirm(`學員 ${inventoryToUpdate.name} 點數不足 (剩餘 0)，仍要將課程標示為完課嗎？(此操作不會扣點)`)) {
+                      setIsProcessing(false);
+                      return;
+                  }
               }
           }
   
@@ -790,13 +783,18 @@ export default function App() {
           batch.update(appRef, { status: 'completed' });
   
           let pointDeducted = false;
-          let newPrivateCredits = -1;
+          let newCredits = -1;
   
           if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) > 0) {
               const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
               batch.update(invRef, { 'credits.private': increment(-1) });
               pointDeducted = true;
-              newPrivateCredits = (inventoryToUpdate.credits.private || 0) - 1;
+              newCredits = (inventoryToUpdate.credits.private || 0) - 1;
+          } else if (isGroupLesson && inventoryToUpdate && (inventoryToUpdate.credits.group || 0) > 0) {
+              const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
+              batch.update(invRef, { 'credits.group': increment(-1) });
+              pointDeducted = true;
+              newCredits = (inventoryToUpdate.credits.group || 0) - 1;
           }
   
           await batch.commit();
@@ -808,10 +806,10 @@ export default function App() {
           if (pointDeducted && inventoryToUpdate) {
               setInventories(prev => prev.map(inv => 
                   inv.id === inventoryToUpdate!.id 
-                  ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
+                  ? { ...inv, credits: { ...inv.credits, [isPrivateLesson ? 'private' : 'group']: newCredits } } 
                   : inv
               ));
-              logDetail += `，並扣除 1 點。剩餘: ${newPrivateCredits}`;
+              logDetail += `，並扣除 1 點${isPrivateLesson ? '私人課' : '團體課'}。剩餘: ${newCredits}`;
           } else {
               logDetail += ` (未扣點)。`;
           }
@@ -839,8 +837,8 @@ export default function App() {
     setIsProcessing(true);
     try {
         const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
+        const isGroupLesson = app.type === 'group';
         
-        // Bugfix: Improved lookup logic
         let inventoryToUpdate: UserInventory | undefined;
         if (app.lineUserId) {
             inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
@@ -848,22 +846,24 @@ export default function App() {
         if (!inventoryToUpdate && app.customer?.phone) {
             inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
         }
-        if (!inventoryToUpdate && app.customer?.name) { // Fallback
-            inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
-        }
         
         const batch = writeBatch(db);
         const appRef = doc(db, 'appointments', app.id);
         batch.update(appRef, { status: 'confirmed' });
 
         let pointRefunded = false;
-        let newPrivateCredits = -1;
+        let newCredits = -1;
 
         if (isPrivateLesson && inventoryToUpdate) {
             const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
             batch.update(invRef, { 'credits.private': increment(1) });
             pointRefunded = true;
-            newPrivateCredits = (inventoryToUpdate.credits.private || 0) + 1;
+            newCredits = (inventoryToUpdate.credits.private || 0) + 1;
+        } else if (isGroupLesson && inventoryToUpdate) {
+            const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
+            batch.update(invRef, { 'credits.group': increment(1) });
+            pointRefunded = true;
+            newCredits = (inventoryToUpdate.credits.group || 0) + 1;
         }
 
         await batch.commit();
@@ -874,12 +874,12 @@ export default function App() {
         if (pointRefunded && inventoryToUpdate) {
             setInventories(prev => prev.map(inv => 
                 inv.id === inventoryToUpdate!.id 
-                ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
+                ? { ...inv, credits: { ...inv.credits, [isPrivateLesson ? 'private' : 'group']: newCredits } } 
                 : inv
             ));
-            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點私人課。剩餘: ${newPrivateCredits}`;
+            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點${isPrivateLesson ? '私人課' : '團體課'}。剩餘: ${newCredits}`;
         } else {
-            logDetail += ' (非私人課或找不到學員庫存，未返還點數)';
+            logDetail += ' (找不到學員庫存，未返還點數)';
         }
         
         addLog('庫存調整', logDetail);
@@ -1331,8 +1331,7 @@ export default function App() {
                                <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.type} onChange={e => {
                                    const newType = e.target.value as any;
-                                   setBlockForm({...blockForm, type: newType, reason: (newType === 'group' || newType === 'private') ? '' : blockForm.reason, participants: [], customer: null});
-                                   if(newType !== 'private' && newType !== 'group') setMemberSearchTerm('');
+                                   setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
                                }} disabled={isLockedForEditing}>
                                    <option value="block">內部事務</option>
                                    <option value="private">私人課程</option>
@@ -1383,88 +1382,21 @@ export default function App() {
                                 </div>
                             </fieldset>
                         )}
-
                         {blockForm.type === 'group' && (
-                             <div className="space-y-4">
-                                 <div>
-                                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Edit3 size={12}/> 課程名稱</label>
-                                     <input 
-                                         type="text" 
-                                         className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" 
-                                         placeholder="例如：TRX 懸吊、瑜珈..." 
-                                         value={blockForm.reason} 
-                                         onChange={e => setBlockForm({...blockForm, reason: e.target.value})}
-                                         disabled={isLockedForEditing}
-                                     />
-                                 </div>
-                                 
-                                 {/* Multi-participant UI for Group Class */}
-                                 <fieldset disabled={isLockedForEditing} className="p-4 bg-orange-50 dark:bg-orange-900/10 rounded-2xl border border-orange-100 dark:border-orange-900/30 space-y-3">
-                                     <div className="flex justify-between items-center mb-1">
-                                         <label className="text-xs font-bold text-orange-600 uppercase flex items-center gap-1"><Users size={14}/> 參與學員 (最多 8 位)</label>
-                                         <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${blockForm.participants && blockForm.participants.length >= 8 ? 'bg-red-100 text-red-600' : 'bg-orange-100 text-orange-600'}`}>
-                                             {blockForm.participants?.length || 0} / 8
-                                         </span>
-                                     </div>
-
-                                     {/* Participant List Tags */}
-                                     <div className="flex flex-wrap gap-2 mb-2">
-                                         {blockForm.participants?.map((p, idx) => (
-                                             <div key={idx} className="flex items-center gap-1.5 bg-white dark:bg-slate-800 px-2.5 py-1.5 rounded-xl border border-orange-200 dark:border-orange-800 shadow-sm animate-fadeIn">
-                                                 <div className="w-5 h-5 rounded-full bg-orange-100 dark:bg-orange-900/50 flex items-center justify-center text-[10px] font-bold text-orange-600">{p.name[0]}</div>
-                                                 <span className="text-xs font-bold text-slate-700 dark:text-slate-200">{p.name}</span>
-                                                 <button type="button" onClick={() => setBlockForm({...blockForm, participants: blockForm.participants?.filter((_, i) => i !== idx)})} className="text-slate-400 hover:text-red-500 transition-colors ml-1">
-                                                     <X size={14}/>
-                                                 </button>
-                                             </div>
-                                         ))}
-                                     </div>
-
-                                     {(!blockForm.participants || blockForm.participants.length < 8) && (
-                                         <div className="relative">
-                                             <div className="relative">
-                                                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"/>
-                                                <input 
-                                                    type="text" 
-                                                    className="w-full glass-input rounded-xl p-2.5 pl-9 text-sm dark:text-white focus:ring-2 focus:ring-orange-500/50 outline-none"
-                                                    placeholder="搜尋學員姓名/電話..."
-                                                    value={memberSearchTerm}
-                                                    onChange={(e) => setMemberSearchTerm(e.target.value)}
-                                                />
-                                             </div>
-                                             {memberSearchTerm && (
-                                                <div className="absolute z-20 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-40 overflow-y-auto custom-scrollbar animate-fadeIn">
-                                                    {filteredMembers.length > 0 ? (
-                                                        filteredMembers.map(m => (
-                                                            <div 
-                                                                key={m.id} 
-                                                                onClick={() => {
-                                                                    const alreadyIn = blockForm.participants?.some(p => p.phone === m.phone && p.name === m.name);
-                                                                    if (alreadyIn) { showNotification('此學員已在清單中', 'info'); return; }
-                                                                    setBlockForm({
-                                                                        ...blockForm,
-                                                                        participants: [...(blockForm.participants || []), { name: m.name, phone: m.phone || '', email: m.email || '' }]
-                                                                    });
-                                                                    setMemberSearchTerm('');
-                                                                }}
-                                                                className="p-2.5 hover:bg-orange-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                                            >
-                                                                <div className="font-bold text-sm text-slate-800 dark:text-white">{m.name}</div>
-                                                                <div className="text-[10px] text-slate-500">{m.phone || '無電話'}</div>
-                                                            </div>
-                                                        ))
-                                                    ) : (
-                                                        <div className="p-3 text-center text-xs text-slate-400">找不到相符學員</div>
-                                                    )}
-                                                </div>
-                                             )}
-                                         </div>
-                                     )}
-                                 </fieldset>
+                             <div>
+                                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Edit3 size={12}/> 課程名稱</label>
+                                 <input 
+                                     type="text" 
+                                     required 
+                                     className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" 
+                                     placeholder="例如：TRX 懸吊、瑜珈..." 
+                                     value={blockForm.reason} 
+                                     onChange={e => setBlockForm({...blockForm, reason: e.target.value})}
+                                     disabled={isLockedForEditing}
+                                 />
                              </div>
                         )}
-
-                        {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
+                        {(blockForm.type === 'private' || blockForm.type === 'group' || (blockForm.type as string) === 'client') && (
                             <fieldset disabled={isLockedForEditing} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                                 <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
                                 {blockForm.customer?.name ? (
@@ -1477,7 +1409,8 @@ export default function App() {
                                             {(() => {
                                                 const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
                                                 if (linkedInv) {
-                                                    return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {linkedInv.credits.private} 堂</div>
+                                                    const credits = blockForm.type === 'group' ? (linkedInv.credits.group || 0) : (linkedInv.credits.private || 0);
+                                                    return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {credits} 堂</div>
                                                 }
                                                 return null;
                                             })()}
@@ -1524,7 +1457,9 @@ export default function App() {
                                                             <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
                                                             <div className="flex justify-between text-xs text-slate-500 mt-0.5">
                                                                 <span>{m.phone || '無電話'}</span>
-                                                                <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
+                                                                <span className="font-bold text-indigo-500">
+                                                                    餘: {blockForm.type === 'group' ? (m.credits.group || 0) : (m.credits.private || 0)}
+                                                                </span>
                                                             </div>
                                                         </div>
                                                     ))
@@ -1550,7 +1485,7 @@ export default function App() {
                         )}
 
                         <div className="pt-2 flex gap-3">
-                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
+                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || currentAppointmentForModal.type === 'group' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
                                 <button
                                     type="button"
                                     onClick={() => {
@@ -1566,13 +1501,9 @@ export default function App() {
                             )}
                             <button 
                                 type="submit" 
-                                disabled={
-                                    (blockForm.type === 'private' && !blockForm.customer?.name) || 
-                                    (blockForm.type === 'group' && (!blockForm.participants || blockForm.participants.length === 0) && !blockForm.reason) ||
-                                    isLockedForEditing
-                                }
+                                disabled={((blockForm.type === 'private' || blockForm.type === 'group') && !blockForm.customer?.name) || isLockedForEditing}
                                 className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
-                                    ${((blockForm.type === 'private' && !blockForm.customer?.name) || (blockForm.type === 'group' && (!blockForm.participants || blockForm.participants.length === 0) && !blockForm.reason) || isLockedForEditing)
+                                    ${((blockForm.type === 'private' || blockForm.type === 'group') && !blockForm.customer?.name) || isLockedForEditing
                                         ? 'bg-slate-400 cursor-not-allowed' 
                                         : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                             >

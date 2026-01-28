@@ -78,7 +78,6 @@ export interface BlockFormState {
   endTime?: string; // For batch blocking
   reason: string;
   customer: Customer | null;
-  participants?: Customer[]; // New: Multiple participants for Group classes
   repeatWeeks?: number;
 }
 
