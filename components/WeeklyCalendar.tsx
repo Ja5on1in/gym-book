@@ -182,11 +182,16 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
                             const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
                             const isCompleted = app.status === 'completed';
                             const isCheckedIn = app.status === 'checked_in';
-                            const isGroupOrBlock = app.type === 'group' || app.type === 'block';
-
-                            const displayText = isGroupOrBlock 
-                              ? (app.reason || '團體課程')
-                              : (app.customer?.name || app.reason || '私人課');
+                            
+                            let displayText;
+                            if (app.type === 'group') {
+                                const currentAttendees = app.attendees?.filter(a => a.status === 'joined').length || 0;
+                                displayText = `${app.reason || '團體課'} (${currentAttendees}/8)`;
+                            } else if (app.type === 'block') {
+                                displayText = app.reason || '內部事務';
+                            } else {
+                                displayText = app.customer?.name || app.reason || '私人課';
+                            }
 
                             return (
                               <div key={app.id} 

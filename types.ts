@@ -1,4 +1,5 @@
 
+
 export interface User {
   id: string;
   name: string;
@@ -42,6 +43,8 @@ export interface Appointment {
   cancelReason?: string;
   lineUserId?: string; // LINE LIFF Integration
   lineName?: string;   // LINE LIFF Integration
+  attendees?: { customerId: string; name: string; status: 'joined' | 'cancelled' }[]; // New field for group class attendees
+  maxAttendees?: number; // New field for group class capacity
 }
 
 export interface Coach extends User {
@@ -79,6 +82,8 @@ export interface BlockFormState {
   reason: string;
   customer: Customer | null;
   repeatWeeks?: number;
+  attendees?: { customerId: string; name: string; phone?: string; status: 'joined' | 'cancelled' }[]; // State for group class modal
+  maxAttendees?: number;
 }
 
 // New: Inventory System

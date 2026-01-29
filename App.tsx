@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
@@ -18,7 +19,8 @@ import {
   CreditCard,
   CheckCircle2,
   Edit3,
-  ChevronLeft
+  ChevronLeft,
+  Users
 } from 'lucide-react';
 
 import { 
@@ -92,9 +94,11 @@ export default function App() {
   
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [filteredMembers, setFilteredMembers] = useState<UserInventory[]>([]);
+  const [groupMemberSearch, setGroupMemberSearch] = useState('');
+  const [groupMemberResults, setGroupMemberResults] = useState<UserInventory[]>([]);
 
   const [blockForm, setBlockForm] = useState<BlockFormState>({
-    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, repeatWeeks: 1
+    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
   
@@ -272,6 +276,21 @@ export default function App() {
       ).slice(0, 6);
       setFilteredMembers(results);
   }, [memberSearchTerm, inventories]);
+  
+    useEffect(() => {
+        if (!groupMemberSearch) {
+            setGroupMemberResults([]);
+            return;
+        }
+        const lowerTerm = groupMemberSearch.toLowerCase();
+        const currentAttendeeIds = new Set(blockForm.attendees?.map(a => a.customerId));
+        const results = inventories.filter(inv => 
+            !currentAttendeeIds.has(inv.id) &&
+            (inv.name.toLowerCase().includes(lowerTerm) || 
+            (inv.phone && inv.phone.includes(lowerTerm)))
+        ).slice(0, 5);
+        setGroupMemberResults(results);
+    }, [groupMemberSearch, inventories, blockForm.attendees]);
 
   const showNotification = (msg: string, type: 'success' | 'error' | 'info' = 'success') => {
     setNotification({ msg, type });
@@ -502,50 +521,62 @@ export default function App() {
     }
   };
 
-  const handleCustomerCancel = async (app: Appointment, reason: string) => {
-      if (isProcessing) return;
-      setIsProcessing(true);
-      try {
-          const originalStatus = app.status;
-          const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
-          await saveToFirestore('appointments', app.id, updated);
-          addLog('客戶取消', `取消 ${app.customer?.name} (${originalStatus}) - ${reason}`);
-  
-          // Bugfix: Only refund credit if the class was already completed (and point deducted)
-          if ((app.type === 'private' || (app.type as string) === 'client') && originalStatus === 'completed') {
-              // Bugfix: Improved lookup logic
-              let inventory: UserInventory | undefined;
-              if (app.lineUserId) {
-                  inventory = inventories.find(i => i.lineUserId === app.lineUserId);
-              }
-              if (!inventory && app.customer?.phone) {
-                  inventory = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
-              }
-              if (!inventory && app.customer?.name) { // Fallback
-                  inventory = inventories.find(i => i.name === app.customer.name);
-              }
-  
-              if (inventory) {
-                  const invRef = doc(db, 'user_inventory', inventory.id);
-                  const newPrivateCredits = (inventory.credits.private || 0) + 1;
-                  await updateDoc(invRef, { 'credits.private': increment(1) });
-                  
-                  setInventories(prev => prev.map(inv => inv.id === inventory!.id ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } : inv));
-                  addLog('庫存調整', `因取消已完課預約，返還 ${inventory.name} 1 點私人課。剩餘: ${newPrivateCredits}`);
-              }
-          }
-  
-          const coach = coaches.find(c => c.id === app.coachId);
-          sendToGoogleScript({ action: 'cancel_booking', id: app.id, reason, lineUserId: app.lineUserId || "", coachName: app.coachName, title: coach?.title || '教練', date: app.date, time: app.time }).catch(e => console.warn("Cancel webhook failed", e));
-          
-          showNotification('已取消預約', 'info');
-      } catch (e) {
-          console.error("Cancellation Error", e);
-          showNotification('取消失敗', 'error');
-      } finally {
-          setIsProcessing(false);
-      }
-  };
+  const handleCustomerCancel = async (app: Appointment, reason: string, customerId?: string) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
+    try {
+        if (app.type === 'group' && customerId) {
+            const currentAttendees = app.attendees?.filter(a => a.status === 'joined') || [];
+            if (currentAttendees.length <= 1) {
+                // Last person, cancel the whole class
+                const updated = { ...app, status: 'cancelled' as const, cancelReason: `最後一位學員 ${currentAttendees[0]?.name || ''} 取消` };
+                await saveToFirestore('appointments', app.id, updated);
+                addLog('團課取消', `課程 ${app.reason} 因最後一位學員取消而關閉`);
+            } else {
+                // Not the last person, just remove them
+                const updatedAttendees = app.attendees?.map(a => a.customerId === customerId ? { ...a, status: 'cancelled' as const } : a);
+                await saveToFirestore('appointments', app.id, { attendees: updatedAttendees });
+                const student = app.attendees?.find(a=>a.customerId === customerId);
+                addLog('團課學員取消', `學員 ${student?.name || customerId} 取消課程 ${app.reason}`);
+            }
+        } else {
+            // Private class cancellation logic (original)
+            const originalStatus = app.status;
+            const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
+            await saveToFirestore('appointments', app.id, updated);
+            addLog('客戶取消', `取消 ${app.customer?.name} (${originalStatus}) - ${reason}`);
+    
+            if ((app.type === 'private' || (app.type as string) === 'client') && originalStatus === 'completed') {
+                let inventory: UserInventory | undefined;
+                if (app.lineUserId) {
+                    inventory = inventories.find(i => i.lineUserId === app.lineUserId);
+                }
+                if (!inventory && app.customer?.phone) {
+                    inventory = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
+                }
+                if (!inventory && app.customer?.name) {
+                    inventory = inventories.find(i => i.name === app.customer.name);
+                }
+    
+                if (inventory && db) {
+                    const invRef = doc(db, 'user_inventory', inventory.id);
+                    await updateDoc(invRef, { 'credits.private': increment(1) });
+                    addLog('庫存調整', `因取消已完課預約，返還 ${inventory.name} 1 點私人課。`);
+                }
+            }
+        }
+
+        const coach = coaches.find(c => c.id === app.coachId);
+        sendToGoogleScript({ action: 'cancel_booking', id: app.id, reason, lineUserId: app.lineUserId || "", coachName: app.coachName, title: coach?.title || '教練', date: app.date, time: app.time }).catch(e => console.warn("Cancel webhook failed", e));
+        
+        showNotification('已取消預約', 'info');
+    } catch (e) {
+        console.error("Cancellation Error", e);
+        showNotification('取消失敗', 'error');
+    } finally {
+        setIsProcessing(false);
+    }
+};
 
   const resetBooking = () => {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
@@ -559,10 +590,13 @@ export default function App() {
     
     const finalType = ((blockForm.type as string) === 'client' || blockForm.type === 'private') ? 'private' : blockForm.type;
     const isPrivate = finalType === 'private';
+    const isGroup = finalType === 'group';
     
     if (isPrivate && !blockForm.customer?.name) {
-        showNotification('請先搜尋並選擇學員', 'error');
-        return;
+        showNotification('請先搜尋並選擇學員', 'error'); return;
+    }
+    if (isGroup && (!blockForm.attendees || blockForm.attendees.length === 0)) {
+        showNotification('請至少新增一位學員至團課', 'error'); return;
     }
     
     let targetSlots = [blockForm.time];
@@ -584,7 +618,7 @@ export default function App() {
     }
     
     const repeat = blockForm.repeatWeeks || 1;
-    const batchOps: Appointment[] = [];
+    const batchOps: Partial<Appointment>[] = [];
     const [y, m, d] = blockForm.date.split('-').map(Number);
     const startDate = new Date(y, m - 1, d); 
 
@@ -597,12 +631,20 @@ export default function App() {
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
              if (status.status === 'available') {
                  const id = (!isBatchMode && i === 0 && blockForm.id) ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                 batchOps.push({ 
-                     id, type: finalType as any, date: dKey, time: slot,
-                     coachId: coach.id, coachName: coach.name, reason: blockForm.reason, status: 'confirmed', 
-                     customer: (isPrivate && blockForm.customer) ? { ...blockForm.customer } : null,
-                     createdAt: new Date().toISOString(), lineUserId: targetInventory?.lineUserId || ""
-                 });
+                 const appointmentData: Partial<Appointment> = {
+                    id, type: finalType as any, date: dKey, time: slot,
+                    coachId: coach.id, coachName: coach.name, reason: blockForm.reason, status: 'confirmed', 
+                    createdAt: new Date().toISOString(),
+                 };
+                 if (isPrivate) {
+                     appointmentData.customer = blockForm.customer ? { ...blockForm.customer } : null;
+                     appointmentData.lineUserId = targetInventory?.lineUserId || "";
+                 }
+                 if (isGroup) {
+                     appointmentData.attendees = blockForm.attendees;
+                     appointmentData.maxAttendees = 8;
+                 }
+                 batchOps.push(appointmentData);
              }
         }
     }
@@ -610,11 +652,7 @@ export default function App() {
     if (batchOps.length === 0) { showNotification('選定時段已被占用或無效', 'error'); return; }
     
     try {
-        await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id, op)));
-        
-        // Note: Point deduction is moved to completion logic.
-        // const privateLessonsCount = isPrivate ? batchOps.length : 0;
-        // if (privateLessonsCount > 0 && targetInventory) { ... }
+        await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id!, op)));
 
         addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
@@ -658,41 +696,32 @@ export default function App() {
     if (!currentUser) return;
 
     if (['manager', 'receptionist'].includes(currentUser.role)) {
-        // For managers, find the first available coach for that day to pre-fill the modal
         const firstAvailableCoach = coaches.find(c => !isCoachDayOff(date, c));
-        
         if (!firstAvailableCoach) {
-            showNotification('該日無教練上班，無法新增預約', 'error');
-            return;
+            showNotification('該日無教練上班，無法新增預約', 'error'); return;
         }
-
         setBlockForm({ 
             id: null, type: 'block', coachId: firstAvailableCoach.id, 
             date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, 
-            reason: '1v1教練課', customer: null, repeatWeeks: 1 
+            reason: '1v1教練課', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8
         });
-        setMemberSearchTerm('');
-        setDeleteConfirm(false); 
-        setIsBatchMode(false);
-        setIsBlockModalOpen(true);
-
-    } else { // Coach logic remains the same
+    } else {
         const targetCoachId = currentUser.id;
         const coach = coaches.find(c => c.id === targetCoachId);
         if (coach && isCoachDayOff(date, coach)) { 
-            showNotification('排休日無法新增', 'error'); 
-            return; 
+            showNotification('排休日無法新增', 'error'); return; 
         }
         setBlockForm({ 
             id: null, type: 'block', coachId: targetCoachId, 
             date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, 
-            reason: '1v1教練課', customer: null, repeatWeeks: 1 
+            reason: '1v1教練課', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8
         });
-        setMemberSearchTerm('');
-        setDeleteConfirm(false); 
-        setIsBatchMode(false);
-        setIsBlockModalOpen(true);
     }
+    setMemberSearchTerm('');
+    setGroupMemberSearch('');
+    setDeleteConfirm(false); 
+    setIsBatchMode(false);
+    setIsBlockModalOpen(true);
   };
 
   const handleOpenBatchBlock = () => {
@@ -705,9 +734,10 @@ export default function App() {
           id: null, type: 'block', coachId: targetCoachId, 
           date: dateStr, 
           time: '09:00', endTime: '12:00',
-          reason: '內部訓練', customer: null, repeatWeeks: 1 
+          reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8 
       });
       setMemberSearchTerm('');
+      setGroupMemberSearch('');
       setDeleteConfirm(false); 
       setIsBatchMode(true);
       setIsBlockModalOpen(true);
@@ -718,8 +748,9 @@ export default function App() {
       if (currentUser.role === 'coach' && app.coachId !== currentUser.id) { showNotification('權限不足', 'info'); return; }
       
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
-      setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null });
+      setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null, attendees: app.attendees || [] });
       setMemberSearchTerm('');
+      setGroupMemberSearch('');
       setDeleteConfirm(false); 
       setIsBatchMode(false);
       setIsBlockModalOpen(true);
@@ -740,81 +771,65 @@ export default function App() {
   };
 
   const handleCoachConfirmCompletion = async (app: Appointment, force = false) => {
-      if (isProcessing) return;
-      if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
-          showNotification('權限不足', 'error'); return;
-      }
-      
-      if (!force && app.status !== 'checked_in' && app.status !== 'confirmed') {
-          showNotification('只能確認已簽到或已預約的課程', 'error'); return;
-      }
-  
-      const proceed = force ? true : window.confirm('確定要核實此課程並扣除學員點數嗎？');
-      if (!proceed) return;
-  
-      setIsProcessing(true);
-      try {
-          const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
-          
-          // Bugfix: Improved lookup logic
-          let inventoryToUpdate: UserInventory | undefined;
-          if (app.lineUserId) {
-              inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
-          }
-          if (!inventoryToUpdate && app.customer?.phone) {
-              inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
-          }
-          if (!inventoryToUpdate && app.customer?.name) { // Fallback
-              inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
-          }
-  
-          if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) <= 0) {
-              if (!window.confirm(`學員 ${inventoryToUpdate.name} 點數不足 (剩餘 0)，仍要將課程標示為完課嗎？(此操作不會扣點)`)) {
-                  setIsProcessing(false);
-                  return;
-              }
-          }
-  
-          const batch = writeBatch(db);
-          const appRef = doc(db, 'appointments', app.id);
-          batch.update(appRef, { status: 'completed' });
-  
-          let pointDeducted = false;
-          let newPrivateCredits = -1;
-  
-          if (isPrivateLesson && inventoryToUpdate && (inventoryToUpdate.credits.private || 0) > 0) {
-              const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
-              batch.update(invRef, { 'credits.private': increment(-1) });
-              pointDeducted = true;
-              newPrivateCredits = (inventoryToUpdate.credits.private || 0) - 1;
-          }
-  
-          await batch.commit();
-  
-          setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'completed' } : a));
-          
-          const userNameForLog = currentUser.name || currentUser.email || '未知員工';
-          let logDetail = `教練 ${userNameForLog} 確認 ${app.customer?.name} 完課`;
-          if (pointDeducted && inventoryToUpdate) {
-              setInventories(prev => prev.map(inv => 
-                  inv.id === inventoryToUpdate!.id 
-                  ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
-                  : inv
-              ));
-              logDetail += `，並扣除 1 點。剩餘: ${newPrivateCredits}`;
-          } else {
-              logDetail += ` (未扣點)。`;
-          }
-          
-          addLog('完課確認', logDetail);
-          showNotification(`完課確認成功！`, 'success');
-  
-      } catch (e) {
-          console.error(e);
-          showNotification('更新失敗', 'error');
-      } finally {
-          setIsProcessing(false);
-      }
+    if (isProcessing) return;
+    if (!currentUser || (!['manager', 'receptionist'].includes(currentUser.role) && currentUser.id !== app.coachId)) {
+        showNotification('權限不足', 'error'); return;
+    }
+
+    if (!force && app.type !== 'group' && app.status !== 'checked_in' && app.status !== 'confirmed') {
+        showNotification('只能確認已簽到或已預約的課程', 'error'); return;
+    }
+
+    const proceed = force ? true : window.confirm('確定要核實此課程並扣除學員點數嗎？');
+    if (!proceed) return;
+
+    setIsProcessing(true);
+    try {
+        if (db) {
+            const batch = writeBatch(db);
+            const appRef = doc(db, 'appointments', app.id);
+            batch.update(appRef, { status: 'completed' });
+            let logDetail = ``;
+
+            if (app.type === 'group') {
+                const attendeesToCharge = app.attendees?.filter(a => a.status === 'joined') || [];
+                const attendeeNames: string[] = [];
+                for (const attendee of attendeesToCharge) {
+                    const invRef = doc(db, 'user_inventory', attendee.customerId);
+                    const invDoc = await getDoc(invRef);
+                    if (invDoc.exists() && invDoc.data().credits.group > 0) {
+                        batch.update(invRef, { 'credits.group': increment(-1) });
+                        attendeeNames.push(attendee.name);
+                    }
+                }
+                logDetail = `管理員 ${currentUser.name} 確認團課 ${app.reason} 完課，為 ${attendeeNames.length} 位學員扣點: ${attendeeNames.join(', ')}`;
+            
+            } else { // Private lesson
+                let inventoryToUpdate: UserInventory | undefined;
+                if (app.lineUserId) inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
+                if (!inventoryToUpdate && app.customer?.phone) inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
+                if (!inventoryToUpdate && app.customer?.name) inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
+
+                logDetail = `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課`;
+                if (inventoryToUpdate && inventoryToUpdate.credits.private > 0) {
+                    const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
+                    batch.update(invRef, { 'credits.private': increment(-1) });
+                    logDetail += `，並扣除 1 點。`;
+                } else {
+                    logDetail += ` (點數不足或找不到庫存，未扣點)。`;
+                }
+            }
+            
+            await batch.commit();
+            addLog('完課確認', logDetail);
+            showNotification(`完課確認成功！`, 'success');
+        }
+    } catch (e) {
+        console.error(e);
+        showNotification('更新失敗', 'error');
+    } finally {
+        setIsProcessing(false);
+    }
   };
   
   const handleRevertCompletion = async (app: Appointment) => {
@@ -828,52 +843,40 @@ export default function App() {
 
     setIsProcessing(true);
     try {
-        const isPrivateLesson = app.type === 'private' || (app.type as string) === 'client';
-        
-        // Bugfix: Improved lookup logic
-        let inventoryToUpdate: UserInventory | undefined;
-        if (app.lineUserId) {
-            inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
-        }
-        if (!inventoryToUpdate && app.customer?.phone) {
-            inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
-        }
-        if (!inventoryToUpdate && app.customer?.name) { // Fallback
-            inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
-        }
-        
-        const batch = writeBatch(db);
-        const appRef = doc(db, 'appointments', app.id);
-        batch.update(appRef, { status: 'confirmed' });
+        if (db) {
+            const batch = writeBatch(db);
+            const appRef = doc(db, 'appointments', app.id);
+            batch.update(appRef, { status: 'confirmed' });
+            let logDetail = ``;
 
-        let pointRefunded = false;
-        let newPrivateCredits = -1;
+            if (app.type === 'group') {
+                const attendeesToRefund = app.attendees?.filter(a => a.status === 'joined') || [];
+                const attendeeNames: string[] = [];
+                for (const attendee of attendeesToRefund) {
+                    const invRef = doc(db, 'user_inventory', attendee.customerId);
+                    batch.update(invRef, { 'credits.group': increment(1) });
+                    attendeeNames.push(attendee.name);
+                }
+                logDetail = `管理員 ${currentUser.name} 撤銷團課 ${app.reason}，返還 ${attendeeNames.length} 位學員點數: ${attendeeNames.join(', ')}`;
 
-        if (isPrivateLesson && inventoryToUpdate) {
-            const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
-            batch.update(invRef, { 'credits.private': increment(1) });
-            pointRefunded = true;
-            newPrivateCredits = (inventoryToUpdate.credits.private || 0) + 1;
+            } else { // Private lesson
+                let inventoryToUpdate: UserInventory | undefined;
+                if (app.lineUserId) inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
+                if (!inventoryToUpdate && app.customer?.phone) inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
+                if (!inventoryToUpdate && app.customer?.name) inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
+                
+                logDetail = `管理員 ${currentUser.name} 撤銷完課`;
+                if (inventoryToUpdate) {
+                    const invRef = doc(db, 'user_inventory', inventoryToUpdate.id);
+                    batch.update(invRef, { 'credits.private': increment(1) });
+                    logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點私人課。`;
+                }
+            }
+
+            await batch.commit();
+            addLog('庫存調整', logDetail);
+            showNotification('已撤銷完課並返還點數', 'success');
         }
-
-        await batch.commit();
-
-        setAppointments(prev => prev.map(a => a.id === app.id ? { ...a, status: 'confirmed' } : a));
-        const userNameForLog = currentUser.name || currentUser.email || '未知員工';
-        let logDetail = `管理員 ${userNameForLog} 撤銷完課`;
-        if (pointRefunded && inventoryToUpdate) {
-            setInventories(prev => prev.map(inv => 
-                inv.id === inventoryToUpdate!.id 
-                ? { ...inv, credits: { ...inv.credits, private: newPrivateCredits } } 
-                : inv
-            ));
-            logDetail += `，返還學員 ${inventoryToUpdate.name} 1 點私人課。剩餘: ${newPrivateCredits}`;
-        } else {
-            logDetail += ' (非私人課或找不到學員庫存，未返還點數)';
-        }
-        
-        addLog('庫存調整', logDetail);
-        showNotification('已撤銷完課並返還點數', 'success');
 
     } catch(e) {
         console.error("Revert completion error:", e);
@@ -884,7 +887,7 @@ export default function App() {
   };
 
   const handleToggleComplete = async (app: Appointment) => {
-    if (app.status === 'checked_in' || app.status === 'confirmed') {
+    if (app.status === 'checked_in' || (app.status === 'confirmed' && (currentUser?.role === 'manager' || app.type === 'group'))) {
         handleCoachConfirmCompletion(app);
     } else if (app.status === 'completed' && currentUser?.role === 'manager') {
         handleRevertCompletion(app);
@@ -1281,8 +1284,8 @@ export default function App() {
       {/* Block/Event Modal */}
       {isBlockModalOpen && (
          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
-            <div className="glass-panel w-full max-w-md rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40" onClick={e => e.stopPropagation()}>
-                <div className="bg-white/50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center">
+            <div className="glass-panel w-full max-w-2xl rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/40 max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="bg-white/50 dark:bg-slate-900/50 p-5 border-b border-slate-100 dark:border-slate-700 flex justify-between items-center shrink-0">
                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
                         {blockForm.id ? <Settings size={20}/> : <CalendarIcon size={20}/>}
                         {blockForm.id ? '管理行程' : (isBatchMode ? '批次封鎖時段' : '新增行程')}
@@ -1309,196 +1312,217 @@ export default function App() {
                         </div>
                     </div>
                 ) : (
-                    <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
-                        {isLockedForEditing && (
-                            <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-xs text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800 flex items-center gap-2">
-                                <AlertTriangle size={16}/>
-                                <span>此預約已簽到或完課，無法修改時間。</span>
-                            </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-4">
-                           <div>
-                               <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
-                               <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.type} onChange={e => {
-                                   const newType = e.target.value as any;
-                                   setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
-                                   if(newType !== 'private') setMemberSearchTerm('');
-                               }} disabled={isLockedForEditing}>
-                                   <option value="block">內部事務</option>
-                                   <option value="private">私人課程</option>
-                                   <option value="group">團體課程</option>
-                               </select>
-                           </div>
-                           {['manager', 'receptionist'].includes(currentUser?.role) && (
+                    <div className="flex-1 overflow-y-auto custom-scrollbar">
+                        <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
+                            {isLockedForEditing && (
+                                <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-xs text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800 flex items-center gap-2">
+                                    <AlertTriangle size={16}/>
+                                    <span>此預約已簽到或完課，無法修改時間。</span>
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-4">
                                <div>
-                                   <label className="text-xs font-bold text-slate-500 uppercase">指定教練</label>
-                                   <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})} disabled={isLockedForEditing}>
-                                       {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                   <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
+                                   <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.type} onChange={e => {
+                                       const newType = e.target.value as any;
+                                       setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
+                                       if(newType !== 'private') setMemberSearchTerm('');
+                                   }} disabled={isLockedForEditing}>
+                                       <option value="block">內部事務</option>
+                                       <option value="private">私人課程</option>
+                                       <option value="group">團體課程</option>
                                    </select>
                                </div>
-                           )}
-                        </div>
-                        <div>
-                             <label className="text-xs font-bold text-slate-500 uppercase">日期</label>
-                             <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} disabled={isLockedForEditing} />
-                        </div>
-                        <div className="grid grid-cols-2 gap-4 items-end">
-                             <div className="w-full">
-                                 <label className="text-xs font-bold text-slate-500 uppercase">開始時間</label>
-                                 <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})} disabled={isLockedForEditing}>
-                                     {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
-                                 </select>
-                             </div>
-                             {isBatchMode && (
+                               {['manager', 'receptionist'].includes(currentUser?.role) && (
+                                   <div>
+                                       <label className="text-xs font-bold text-slate-500 uppercase">指定教練</label>
+                                       <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})} disabled={isLockedForEditing}>
+                                           {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                                       </select>
+                                   </div>
+                               )}
+                            </div>
+                            <div>
+                                 <label className="text-xs font-bold text-slate-500 uppercase">日期</label>
+                                 <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} disabled={isLockedForEditing} />
+                            </div>
+                            <div className="grid grid-cols-2 gap-4 items-end">
                                  <div className="w-full">
-                                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">結束時間 (不含)</label>
-                                     <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})} disabled={isLockedForEditing}>
+                                     <label className="text-xs font-bold text-slate-500 uppercase">開始時間</label>
+                                     <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})} disabled={isLockedForEditing}>
                                          {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                                      </select>
                                  </div>
-                             )}
-                        </div>
-                        
-                        {/* Type specific fields (Block Reason, Group Name, Private User Search) */}
-                        {blockForm.type === 'block' && (
-                            <fieldset disabled={isLockedForEditing}>
-                                <label className="text-xs font-bold text-slate-500 uppercase">內部事項標籤</label>
-                                <div className="flex flex-wrap gap-2 mt-2">
-                                    {BLOCK_REASONS.map(r => (
-                                        <button type="button" key={r} onClick={() => setBlockForm({...blockForm, reason: r})}
-                                            className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${blockForm.reason === r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>
-                                            {r}
-                                        </button>
-                                    ))}
-                                </div>
-                            </fieldset>
-                        )}
-                        {blockForm.type === 'group' && (
-                             <div>
-                                 <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1"><Edit3 size={12}/> 課程名稱</label>
-                                 <input 
-                                     type="text" 
-                                     required 
-                                     className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" 
-                                     placeholder="例如：TRX 懸吊、瑜珈..." 
-                                     value={blockForm.reason} 
-                                     onChange={e => setBlockForm({...blockForm, reason: e.target.value})}
-                                     disabled={isLockedForEditing}
-                                 />
-                             </div>
-                        )}
-                        {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
-                            <fieldset disabled={isLockedForEditing} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
-                                <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
-                                {blockForm.customer?.name ? (
-                                    <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
-                                        <div>
-                                            <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                                                {blockForm.customer.name}
-                                                {blockForm.customer.phone && <span className="text-xs text-slate-500 font-normal">({blockForm.customer.phone})</span>}
-                                            </div>
-                                            {(() => {
-                                                const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
-                                                if (linkedInv) {
-                                                    return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {linkedInv.credits.private} 堂</div>
-                                                }
-                                                return null;
-                                            })()}
-                                        </div>
-                                        <button 
-                                            type="button" 
-                                            onClick={() => setBlockForm({...blockForm, customer: null})}
-                                            className="p-2 bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
-                                            title="重新選擇"
-                                        >
-                                            <X size={16}/>
-                                        </button>
+                                 {isBatchMode && (
+                                     <div className="w-full">
+                                         <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">結束時間 (不含)</label>
+                                         <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})} disabled={isLockedForEditing}>
+                                             {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                         </select>
+                                     </div>
+                                 )}
+                            </div>
+                            
+                            {blockForm.type === 'block' && (
+                                <fieldset disabled={isLockedForEditing}>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">內部事項標籤</label>
+                                    <div className="flex flex-wrap gap-2 mt-2">
+                                        {BLOCK_REASONS.map(r => (
+                                            <button type="button" key={r} onClick={() => setBlockForm({...blockForm, reason: r})}
+                                                className={`px-3 py-1.5 rounded-lg text-sm border transition-all ${blockForm.reason === r ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700'}`}>
+                                                {r}
+                                            </button>
+                                        ))}
                                     </div>
-                                ) : (
+                                </fieldset>
+                            )}
+                            {blockForm.type === 'group' && (
+                                <div className="p-4 bg-sky-50 dark:bg-sky-900/20 rounded-xl space-y-3 border border-sky-100 dark:border-sky-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+                                    <div>
+                                        <label className="text-xs font-bold text-sky-500 uppercase flex items-center gap-1"><Edit3 size={12}/> 課程名稱</label>
+                                        <input type="text" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="例如：TRX 懸吊、瑜珈..." value={blockForm.reason} onChange={e => setBlockForm({...blockForm, reason: e.target.value})} disabled={isLockedForEditing} />
+                                    </div>
                                     <div className="relative">
-                                        <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
-                                        <input 
-                                            type="text" 
-                                            className="w-full glass-input rounded-xl p-3 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
-                                            placeholder="輸入關鍵字..."
-                                            value={memberSearchTerm}
-                                            onChange={(e) => setMemberSearchTerm(e.target.value)}
-                                            autoFocus
-                                        />
-                                        {memberSearchTerm && !blockForm.customer && (
-                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
-                                                {filteredMembers.length > 0 ? (
-                                                    filteredMembers.map(m => (
-                                                        <div 
-                                                            key={m.id} 
-                                                            onClick={() => {
-                                                                setBlockForm({
-                                                                    ...blockForm,
-                                                                    customer: { 
-                                                                        name: m.name, 
-                                                                        phone: m.phone || '', 
-                                                                        email: m.email || '' 
-                                                                    }
-                                                                });
-                                                                setMemberSearchTerm('');
-                                                            }}
-                                                            className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0"
-                                                        >
-                                                            <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
-                                                            <div className="flex justify-between text-xs text-slate-500 mt-0.5">
-                                                                <span>{m.phone || '無電話'}</span>
-                                                                <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
-                                                            </div>
-                                                        </div>
-                                                    ))
-                                                ) : (
-                                                    <div className="p-4 text-center text-xs text-slate-400">找不到相符學員</div>
-                                                )}
+                                        <label className="text-xs font-bold text-sky-500 uppercase flex items-center gap-1 mb-1"><Users size={12}/> 學員名單 ({blockForm.attendees?.length || 0}/8)</label>
+                                        <div className="flex flex-wrap gap-2 mb-2">
+                                            {blockForm.attendees?.map(attendee => (
+                                                <div key={attendee.customerId} className="flex items-center gap-1 bg-white dark:bg-slate-700 px-2 py-1 rounded-full text-xs font-bold text-slate-600 dark:text-slate-200">
+                                                    {attendee.name}
+                                                    <button type="button" onClick={() => setBlockForm(prev => ({...prev, attendees: prev.attendees?.filter(a => a.customerId !== attendee.customerId)}))} className="hover:text-red-500"><X size={12}/></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                        <input type="text" placeholder="搜尋學員加入..." value={groupMemberSearch} onChange={e => setGroupMemberSearch(e.target.value)} className="w-full glass-input rounded-xl p-3 dark:text-white" disabled={(blockForm.attendees?.length || 0) >= 8} />
+                                        {groupMemberSearch && groupMemberResults.length > 0 && (
+                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-40 overflow-y-auto custom-scrollbar">
+                                                {groupMemberResults.map(m => (
+                                                    <div key={m.id} onClick={() => {
+                                                        const newAttendee = { customerId: m.id, name: m.name, phone: m.phone || '', status: 'joined' as const };
+                                                        setBlockForm(prev => ({ ...prev, attendees: [...(prev.attendees || []), newAttendee] }));
+                                                        setGroupMemberSearch('');
+                                                    }} className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer">
+                                                        <span className="font-bold text-slate-800 dark:text-white">{m.name}</span>
+                                                        <span className="text-xs text-slate-500 ml-2">{m.phone}</span>
+                                                    </div>
+                                                ))}
                                             </div>
                                         )}
                                     </div>
-                                )}
-                            </fieldset>
-                        )}
-                        {!blockForm.id && (
-                            <div>
-                                <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
-                                <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})} disabled={isLockedForEditing}>
-                                    <option value={1}>單次事件</option>
-                                    <option value={4}>重複 4 週</option>
-                                    <option value={8}>重複 8 週</option>
-                                    <option value={12}>重複 12 週</option>
-                                </select>
-                            </div>
-                        )}
-
-                        <div className="pt-2 flex gap-3">
-                            {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
-                                <button
-                                    type="button"
-                                    onClick={() => {
-                                        if (window.confirm('確定要強制結課並扣除點數嗎？') && currentAppointmentForModal) {
-                                            handleCoachConfirmCompletion(currentAppointmentForModal, true);
-                                            setIsBlockModalOpen(false);
-                                        }
-                                    }}
-                                    className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/30 transition-colors hover:bg-emerald-600"
-                                >
-                                    強制結課
-                                </button>
+                                </div>
                             )}
-                            <button 
-                                type="submit" 
-                                disabled={(blockForm.type === 'private' && !blockForm.customer?.name) || isLockedForEditing}
-                                className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
-                                    ${(blockForm.type === 'private' && !blockForm.customer?.name) || isLockedForEditing
-                                        ? 'bg-slate-400 cursor-not-allowed' 
-                                        : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
-                            >
-                                {blockForm.id ? '儲存變更' : '確認新增'}
-                            </button>
-                        </div>
-                    </form>
+                            {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
+                                <fieldset disabled={isLockedForEditing} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
+                                    <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
+                                    {blockForm.customer?.name ? (
+                                        <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
+                                            <div>
+                                                <div className="font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                                                    {blockForm.customer.name}
+                                                    {blockForm.customer.phone && <span className="text-xs text-slate-500 font-normal">({blockForm.customer.phone})</span>}
+                                                </div>
+                                                {(() => {
+                                                    const linkedInv = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
+                                                    if (linkedInv) {
+                                                        return <div className="text-xs text-indigo-500 font-bold mt-1 flex items-center gap-1"><CreditCard size={10}/> 剩餘課時: {linkedInv.credits.private} 堂</div>
+                                                    }
+                                                    return null;
+                                                })()}
+                                            </div>
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setBlockForm({...blockForm, customer: null})}
+                                                className="p-2 bg-slate-100 hover:bg-red-50 hover:text-red-500 rounded-lg transition-colors"
+                                                title="重新選擇"
+                                            >
+                                                <X size={16}/>
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <div className="relative">
+                                            <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
+                                            <input 
+                                                type="text" 
+                                                className="w-full glass-input rounded-xl p-3 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                                                placeholder="輸入關鍵字..."
+                                                value={memberSearchTerm}
+                                                onChange={(e) => setMemberSearchTerm(e.target.value)}
+                                                autoFocus
+                                            />
+                                            {memberSearchTerm && !blockForm.customer && (
+                                                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-48 overflow-y-auto custom-scrollbar animate-fadeIn">
+                                                    {filteredMembers.length > 0 ? (
+                                                        filteredMembers.map(m => (
+                                                            <div 
+                                                                key={m.id} 
+                                                                onClick={() => {
+                                                                    setBlockForm({
+                                                                        ...blockForm,
+                                                                        customer: { 
+                                                                            name: m.name, 
+                                                                            phone: m.phone || '', 
+                                                                            email: m.email || '' 
+                                                                        }
+                                                                    });
+                                                                    setMemberSearchTerm('');
+                                                                }}
+                                                                className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0"
+                                                            >
+                                                                <div className="font-bold text-slate-800 dark:text-white">{m.name}</div>
+                                                                <div className="flex justify-between text-xs text-slate-500 mt-0.5">
+                                                                    <span>{m.phone || '無電話'}</span>
+                                                                    <span className="font-bold text-indigo-500">餘: {m.credits.private}</span>
+                                                                </div>
+                                                            </div>
+                                                        ))
+                                                    ) : (
+                                                        <div className="p-4 text-center text-xs text-slate-400">找不到相符學員</div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+                                </fieldset>
+                            )}
+                            {!blockForm.id && (
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
+                                    <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})} disabled={isLockedForEditing}>
+                                        <option value={1}>單次事件</option>
+                                        <option value={4}>重複 4 週</option>
+                                        <option value={8}>重複 8 週</option>
+                                        <option value={12}>重複 12 週</option>
+                                    </select>
+                                </div>
+                            )}
+
+                            <div className="pt-2 flex gap-3">
+                                {currentUser?.role === 'manager' && blockForm.id && currentAppointmentForModal && (currentAppointmentForModal.type === 'private' || (currentAppointmentForModal.type as any) === 'client') && currentAppointmentForModal.status !== 'completed' && (
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            if (window.confirm('確定要強制結課並扣除點數嗎？') && currentAppointmentForModal) {
+                                                handleCoachConfirmCompletion(currentAppointmentForModal, true);
+                                                setIsBlockModalOpen(false);
+                                            }
+                                        }}
+                                        className="flex-1 py-3 bg-emerald-500 text-white rounded-xl font-bold shadow-lg shadow-emerald-500/30 transition-colors hover:bg-emerald-600"
+                                    >
+                                        強制結課
+                                    </button>
+                                )}
+                                <button 
+                                    type="submit" 
+                                    disabled={(blockForm.type === 'private' && !blockForm.customer?.name) || (blockForm.type === 'group' && (!blockForm.attendees || blockForm.attendees.length === 0)) || isLockedForEditing}
+                                    className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
+                                        ${(blockForm.type === 'private' && !blockForm.customer?.name) || (blockForm.type === 'group' && (!blockForm.attendees || blockForm.attendees.length === 0)) || isLockedForEditing
+                                            ? 'bg-slate-400 cursor-not-allowed' 
+                                            : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
+                                >
+                                    {blockForm.id ? '儲存變更' : '確認新增'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
                 )}
             </div>
          </div>
