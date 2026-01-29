@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard, TrendingUp, Dumbbell, ChevronDown, Activity } from 'lucide-react';
 import { Appointment, Coach, UserInventory, WorkoutPlan } from '../types';
@@ -245,12 +244,13 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                     {canCheckIn && (
                        <button onClick={() => setCheckInConfirmApp(app)} className="flex-1 mb-2 py-3 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short"><CheckCircle size={20}/> 立即簽到</button>
                     )}
-                    {canCancel && (
+                    {app.type !== 'group' && canCancel && (
                         <button onClick={() => setSelectedApp(app)} className={`flex-1 mb-2 py-3 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-lg font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${!canCheckIn ? 'w-full' : ''}`}>取消預約</button>
                     )}
                   </div>
                   
-                  {cannotCancelLocked && <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">24小時內無法取消</div>}
+                  {app.type !== 'group' && cannotCancelLocked && <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">24小時內無法取消</div>}
+                  {app.type === 'group' && isConfirmed && isUpcoming && <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">團課請洽管理員取消</div>}
                   {isCompleted && <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">已完成</div>}
                   {isCheckedIn && <div className="w-full py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl text-sm font-bold text-center border border-orange-100 dark:border-orange-800">已簽到，請教練確認完課</div>}
                   {isCancelled && <div className="text-xs text-red-400">取消原因：{app.cancelReason}</div>}
