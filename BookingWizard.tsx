@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
@@ -78,7 +79,6 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
         }
     }
   }, [liffProfile, inventories, setFormData]);
-
 
   const handleLineSubmit = async (e: React.FormEvent) => {
       e.preventDefault();
@@ -456,6 +456,8 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
            <h2 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">預約成功！</h2>
            <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto">我們已經收到您的預約資訊，期待在健身房見到您。</p>
            
+           <p className="text-red-500 text-sm font-medium -mt-4 mb-8">⚠️ 提醒您：課程開始前 24 小時內無法線上取消。</p>
+
            <div className="glass-card p-8 rounded-3xl max-w-sm mx-auto mb-8 border border-green-200 dark:border-green-900/50 shadow-md">
                <div className="text-sm text-slate-500 dark:text-slate-400 mb-1 font-medium uppercase tracking-wider">預約詳情</div>
                <div className="font-bold text-xl dark:text-white mb-2">{selectedService?.name}</div>
