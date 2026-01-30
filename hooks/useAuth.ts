@@ -109,7 +109,7 @@ export const useAuth = ({ addLog, showNotification, inventories, onLiffReady }: 
     setCurrentUser(null);
   };
   
-  const handleLiffLogin = () => {
+  const login = () => {
       if (liff && !liff.isLoggedIn()) {
           liff.login();
       }
@@ -121,6 +121,6 @@ export const useAuth = ({ addLog, showNotification, inventories, onLiffReady }: 
     liffProfile,
     handleEmailLogin,
     handleLogout,
-    handleLiffLogin
+    login
   };
 };

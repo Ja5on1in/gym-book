@@ -1,4 +1,4 @@
-// FIX: Import React to make the React namespace available for types like React.FormEvent.
+
 import React, { useState } from 'react';
 import { User, Appointment, Coach, UserInventory, BlockFormState, Service } from '../types';
 import { saveToFirestore, deleteFromFirestore, batchUpdateFirestore } from '../services/firebase';

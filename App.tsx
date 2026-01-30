@@ -138,7 +138,7 @@ export default function App() {
     liffProfile, 
     handleEmailLogin, 
     handleLogout: appLogout, 
-    handleLiffLogin 
+    login: liffLogin,
   } = useAuth({ addLog, showNotification, inventories, onLiffReady: setView });
   
   const {
@@ -422,7 +422,7 @@ export default function App() {
   // --- RENDER ---
   const renderContent = () => {
     if (view === 'my-bookings') return <MyBookings liffProfile={liffProfile} appointments={appointments} coaches={coaches} onCancel={handleCustomerCancel} onCheckIn={handleUserCheckIn} inventories={inventories} workoutPlans={workoutPlans} />;
-    if (view === 'booking') return <BookingWizard step={bookingStep} setStep={setBookingStep} selectedService={selectedService} setSelectedService={setSelectedService} selectedCoach={selectedCoach} setSelectedCoach={setSelectedCoach} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} formData={formData} setFormData={setFormData} coaches={coaches} appointments={appointments} onSubmit={bookingSubmitWrapper} reset={resetBooking} currentDate={currentDate} handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} inventories={inventories} onRegisterUser={checkAndCreateUser} liffProfile={liffProfile} onLogin={handleLiffLogin} />;
+    if (view === 'booking') return <BookingWizard step={bookingStep} setStep={setBookingStep} selectedService={selectedService} setSelectedService={setSelectedService} selectedCoach={selectedCoach} setSelectedCoach={setSelectedCoach} selectedDate={selectedDate} setSelectedDate={setSelectedDate} selectedSlot={selectedSlot} setSelectedSlot={setSelectedSlot} formData={formData} setFormData={setFormData} coaches={coaches} appointments={appointments} onSubmit={bookingSubmitWrapper} reset={resetBooking} currentDate={currentDate} handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))} handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))} inventories={inventories} onRegisterUser={checkAndCreateUser} liffProfile={liffProfile} onLogin={liffLogin} />;
     
     if (!currentUser) {
       return (
@@ -556,12 +556,12 @@ export default function App() {
 
       {/* Modals */}
       {isBlockModalOpen && (
-         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
+         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
             {/* Modal Content */}
          </div>
       )}
       {confirmModal.isOpen && (
-         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+         <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             {/* Modal Content */}
          </div>
       )}

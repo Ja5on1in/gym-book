@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX, RefreshCw } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
@@ -42,7 +43,7 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
       
       {/* Loading Overlay */}
       {isLoading && (
-        <div className="absolute inset-0 z-[60] bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl">
+        <div className="absolute inset-0 z-49 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl">
             <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400 mb-2" size={48} />
             <p className="text-slate-600 dark:text-slate-300 font-bold">資料載入中...</p>
         </div>
