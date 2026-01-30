@@ -19,7 +19,8 @@ import {
   CheckCircle2,
   Edit3,
   ChevronLeft,
-  Users
+  Users,
+  Plus
 } from 'lucide-react';
 
 import { 
@@ -324,7 +325,20 @@ export default function App() {
   };
 
   const checkAndCreateUser = async (profile: { userId: string, displayName: string }) => {
-    // This logic is now handled by useAuth hook. The prop is passed for BookingWizard compatibility.
+     // Re-implementation for BookingWizard direct usage if needed, though useAuth handles login
+     const existingUser = inventories.find(inv => inv.lineUserId === profile.userId);
+     if (!existingUser) {
+        const newUser: UserInventory = {
+            id: profile.userId,
+            lineUserId: profile.userId,
+            name: profile.displayName,
+            phone: '',
+            email: '',
+            credits: { private: 0, group: 0 },
+            lastUpdated: new Date().toISOString()
+        };
+        await saveToFirestore('user_inventory', newUser.id, newUser);
+     }
   };
 
   // --- Admin Data Handlers (Kept in App.tsx) ---
@@ -554,15 +568,201 @@ export default function App() {
         </div>
       )}
 
-      {/* Modals */}
+      {/* Modals - Fixed Z-index issue and implemented content */}
       {isBlockModalOpen && (
-         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-900/40 backdrop-blur-sm p-4" onClick={() => setIsBlockModalOpen(false)}>
-            {/* Modal Content */}
+         <div className="fixed inset-0 z-[9999] flex items-center justify-center">
+             <div className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm" onClick={() => setIsBlockModalOpen(false)}></div>
+             <div className="bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden animate-slideUp border border-white/20 dark:border-slate-700/30 relative z-[10000] m-4 flex flex-col max-h-[90vh]">
+                 <div className="p-5 border-b border-slate-100/50 dark:border-slate-700/50 flex justify-between items-center shrink-0">
+                     <h3 className="font-bold text-xl dark:text-white flex items-center gap-2">
+                         {blockForm.id ? <Edit3 size={20} className="text-indigo-500"/> : <Plus size={20} className="text-indigo-500"/>}
+                         {blockForm.id ? '編輯預約/事項' : (isBatchMode ? '批次鎖定時段' : '新增預約/事項')}
+                     </h3>
+                     <button onClick={() => setIsBlockModalOpen(false)}><X className="text-slate-500"/></button>
+                 </div>
+                 
+                 <form onSubmit={saveBlockWrapper} className="p-6 overflow-y-auto custom-scrollbar flex flex-col gap-4">
+                    {/* Mode Selector */}
+                    {!isBatchMode && (
+                        <div className="flex bg-slate-100 dark:bg-slate-800 p-1 rounded-xl">
+                            <button type="button" onClick={() => setBlockForm({...blockForm, type: 'private'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${blockForm.type === 'private' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>私人課</button>
+                            <button type="button" onClick={() => setBlockForm({...blockForm, type: 'group'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${blockForm.type === 'group' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>團體課</button>
+                            <button type="button" onClick={() => setBlockForm({...blockForm, type: 'block'})} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${blockForm.type === 'block' ? 'bg-white dark:bg-slate-700 shadow text-indigo-600' : 'text-slate-500'}`}>保留/排休</button>
+                        </div>
+                    )}
+                    
+                    {/* Common Fields */}
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase">日期</label>
+                            <input type="date" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                        </div>
+                        <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase">教練</label>
+                             <select value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
+                                {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                         <div>
+                            <label className="text-xs font-bold text-slate-500 uppercase">開始時間</label>
+                            <select value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
+                                {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                        </div>
+                        {isBatchMode && (
+                             <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">結束時間</label>
+                                <select value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
+                                    {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+                                </select>
+                            </div>
+                        )}
+                    </div>
+                    
+                    {/* Private Booking Fields */}
+                    {blockForm.type === 'private' && (
+                        <div className="relative">
+                            <label className="text-xs font-bold text-slate-500 uppercase">學員搜尋</label>
+                            <Search size={16} className="absolute left-3 top-9 text-gray-400"/>
+                            <input 
+                                type="text" 
+                                placeholder="輸入姓名或電話搜尋..." 
+                                value={memberSearchTerm}
+                                onChange={e => setMemberSearchTerm(e.target.value)}
+                                className="w-full glass-input pl-10 pr-4 py-3 rounded-xl mt-1 dark:text-white"
+                            />
+                            {blockForm.customer && (
+                                <div className="mt-2 p-3 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl border border-indigo-100 dark:border-indigo-800 flex justify-between items-center">
+                                    <div>
+                                        <div className="font-bold text-indigo-700 dark:text-indigo-300">{blockForm.customer.name}</div>
+                                        <div className="text-xs text-indigo-500">{blockForm.customer.phone}</div>
+                                    </div>
+                                    <button type="button" onClick={() => setBlockForm({...blockForm, customer: null})} className="text-indigo-400 hover:text-indigo-600"><X size={16}/></button>
+                                </div>
+                            )}
+                            {filteredMembers.length > 0 && !blockForm.customer && (
+                                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-gray-700 max-h-40 overflow-y-auto">
+                                    {filteredMembers.map(m => (
+                                        <div key={m.id} onClick={() => { setBlockForm({...blockForm, customer: { name: m.name, phone: m.phone || '', email: m.email || '' }}); setMemberSearchTerm(''); }} className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer border-b border-slate-100 dark:border-slate-700 last:border-0">
+                                            <div className="font-bold dark:text-white">{m.name}</div>
+                                            <div className="text-xs text-slate-500">{m.phone}</div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                             <input type="hidden" required={blockForm.type === 'private'} value={blockForm.customer?.name || ''} />
+                        </div>
+                    )}
+                    
+                    {/* Group Class Fields */}
+                    {blockForm.type === 'group' && (
+                        <div className="space-y-4">
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">課程名稱</label>
+                                <input type="text" required value={blockForm.reason} onChange={e => setBlockForm({...blockForm, reason: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="例如：TRX 團課"/>
+                            </div>
+                            <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">人數上限</label>
+                                <input type="number" value={blockForm.maxAttendees} onChange={e => setBlockForm({...blockForm, maxAttendees: Number(e.target.value)})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                            </div>
+                            <div className="relative">
+                                <label className="text-xs font-bold text-slate-500 uppercase">加入學員</label>
+                                <input 
+                                    type="text" 
+                                    placeholder="搜尋學員..." 
+                                    value={groupMemberSearch}
+                                    onChange={e => setGroupMemberSearch(e.target.value)}
+                                    className="w-full glass-input p-3 rounded-xl mt-1 dark:text-white"
+                                />
+                                {groupMemberResults.length > 0 && (
+                                    <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-gray-700 max-h-40 overflow-y-auto">
+                                        {groupMemberResults.map(m => (
+                                            <div key={m.id} onClick={() => { 
+                                                const newAttendees = [...(blockForm.attendees || []), { customerId: m.id, name: m.name, status: 'joined' as const }];
+                                                setBlockForm({...blockForm, attendees: newAttendees});
+                                                setGroupMemberSearch('');
+                                            }} className="p-3 hover:bg-indigo-50 dark:hover:bg-slate-700 cursor-pointer">
+                                                <div className="font-bold dark:text-white">{m.name}</div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                            <div className="flex flex-wrap gap-2">
+                                {blockForm.attendees?.map((att, i) => (
+                                    <div key={i} className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1">
+                                        {att.name}
+                                        <button type="button" onClick={() => {
+                                            const newAttendees = blockForm.attendees?.filter((_, idx) => idx !== i);
+                                            setBlockForm({...blockForm, attendees: newAttendees});
+                                        }}><X size={14}/></button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                    
+                    {/* Block/Batch Fields */}
+                    {(blockForm.type === 'block' || isBatchMode) && (
+                        <>
+                             <div>
+                                <label className="text-xs font-bold text-slate-500 uppercase">事由</label>
+                                <select value={blockForm.reason} onChange={e => setBlockForm({...blockForm, reason: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
+                                    {BLOCK_REASONS.map(r => <option key={r} value={r}>{r}</option>)}
+                                </select>
+                            </div>
+                             {isBatchMode && (
+                                <div>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">重複週數</label>
+                                    <input type="number" min="1" max="12" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"/>
+                                </div>
+                            )}
+                        </>
+                    )}
+
+                    <div className="flex gap-3 mt-4 pt-4 border-t border-slate-100 dark:border-slate-700">
+                        {blockForm.id && (
+                            <button type="button" onClick={deleteBlockWrapper} className="flex-1 py-3 bg-red-50 text-red-500 rounded-xl font-bold hover:bg-red-100 transition-colors">刪除</button>
+                        )}
+                        <button type="submit" disabled={isProcessing} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold hover:bg-indigo-700 transition-colors shadow-lg disabled:opacity-70">
+                            {isProcessing ? '處理中...' : '確認儲存'}
+                        </button>
+                    </div>
+                 </form>
+             </div>
          </div>
       )}
       {confirmModal.isOpen && (
-         <div className="fixed inset-0 z-[101] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            {/* Modal Content */}
+         <div className="fixed inset-0 z-[10001] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className="bg-white dark:bg-slate-900 rounded-3xl p-6 w-full max-w-sm shadow-2xl animate-slideUp border border-white/20">
+                  <h3 className={`font-bold text-xl mb-2 ${confirmModal.isDanger ? 'text-red-500' : 'dark:text-white'}`}>{confirmModal.title}</h3>
+                  <p className="text-slate-500 dark:text-slate-400 mb-4">{confirmModal.message}</p>
+                  
+                  {confirmModal.showInput && (
+                      <div className="mb-4">
+                          <label className="text-xs font-bold text-slate-400 uppercase mb-1 block">{confirmModal.inputLabel}</label>
+                          <input 
+                            type={confirmModal.inputType || 'text'} 
+                            autoFocus
+                            className="w-full glass-input p-3 rounded-xl dark:text-white"
+                            value={cancelReason}
+                            onChange={e => setCancelReason(e.target.value)}
+                          />
+                      </div>
+                  )}
+
+                  <div className="flex gap-3">
+                      <button onClick={() => { setConfirmModal({...confirmModal, isOpen: false}); setCancelReason(''); }} className="flex-1 py-2 bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 rounded-xl font-bold">取消</button>
+                      <button onClick={() => { 
+                          if (confirmModal.onConfirm) confirmModal.onConfirm(cancelReason); 
+                          setConfirmModal({...confirmModal, isOpen: false}); 
+                          setCancelReason('');
+                      }} className={`flex-1 py-2 text-white rounded-xl font-bold shadow-lg ${confirmModal.isDanger ? 'bg-red-500 hover:bg-red-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}>確認</button>
+                  </div>
+              </div>
          </div>
       )}
       

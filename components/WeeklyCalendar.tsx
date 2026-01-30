@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { ChevronLeft, ChevronRight, CheckCircle, Loader2, Plus, AlertCircle, Filter, Calendar as CalendarIcon, UserX, RefreshCw } from 'lucide-react';
 import { Coach, User, Appointment } from '../types';
@@ -39,11 +38,11 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
   };
 
   return (
-    <div className="glass-panel rounded-3xl overflow-hidden shadow-sm animate-fadeIn relative flex flex-col h-[750px] border border-white/50">
+    <div className="glass-panel rounded-3xl overflow-hidden shadow-sm animate-fadeIn relative flex flex-col h-[750px] border border-white/50 z-0">
       
       {/* Loading Overlay */}
       {isLoading && (
-        <div className="absolute inset-0 z-49 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl">
+        <div className="absolute inset-0 z-50 bg-white/60 dark:bg-slate-900/60 backdrop-blur-sm flex flex-col items-center justify-center rounded-3xl">
             <Loader2 className="animate-spin text-indigo-600 dark:text-indigo-400 mb-2" size={48} />
             <p className="text-slate-600 dark:text-slate-300 font-bold">資料載入中...</p>
         </div>
@@ -106,8 +105,8 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
       <div className="flex-1 overflow-auto custom-scrollbar bg-white/30 dark:bg-slate-900/30 relative">
         <div className="min-w-[700px] md:min-w-[900px]">
           {/* Header Row (Sticky Top) */}
-          <div className="grid grid-cols-8 border-b border-slate-200/50 dark:border-slate-700/50 bg-white/95 dark:bg-slate-900/95 sticky top-0 z-40 shadow-sm backdrop-blur-sm">
-            <div className="p-2 md:p-4 text-center text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest border-r border-slate-100 dark:border-slate-700/50 sticky left-0 z-50 bg-white dark:bg-slate-900 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)] flex items-center justify-center">時間</div>
+          <div className="grid grid-cols-8 border-b border-slate-200/50 dark:border-slate-700/50 bg-white/95 dark:bg-slate-900/95 sticky top-0 z-30 shadow-sm backdrop-blur-sm">
+            <div className="p-2 md:p-4 text-center text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest border-r border-slate-100 dark:border-slate-700/50 sticky left-0 z-40 bg-white dark:bg-slate-900 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)] flex items-center justify-center">時間</div>
             {weekDays.map((d, i) => {
                const dateKey = formatDateKey(d.getFullYear(), d.getMonth(), d.getDate());
                const offCoaches = coaches.filter(c => isCoachDayOff(dateKey, c));
@@ -132,135 +131,86 @@ const WeeklyCalendar: React.FC<WeeklyCalendarProps> = ({
           
           {/* Time Slots */}
           {ALL_TIME_SLOTS.map(time => (
-            <div key={time} className="grid grid-cols-8 border-b border-slate-100/50 dark:border-slate-700/50 min-h-[80px] md:min-h-[90px]">
-              {/* Time Label (Sticky Left) */}
-              <div className="p-1 md:p-2 text-center text-[10px] md:text-xs font-medium text-slate-400 border-r border-slate-100/50 dark:border-slate-700/50 flex items-center justify-center bg-white dark:bg-slate-900 sticky left-0 z-30 shadow-[4px_0_10px_-4px_rgba(0,0,0,0.1)]">{time}</div>
-              {weekDays.map((day) => {
-                const dateKey = formatDateKey(day.getFullYear(), day.getMonth(), day.getDate());
-                const isPast = isPastTime(dateKey, time);
-                
-                let isCellDisabled = false;
-                
-                if (selectedCoachId !== 'all') {
-                    const selectedCoach = coaches.find(c => c.id === selectedCoachId);
-                    isCellDisabled = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
-                } else {
-                    const workingCoaches = coaches.filter(c => !isCoachDayOff(dateKey, c));
-                    isCellDisabled = workingCoaches.length === 0;
-                }
-                
-                const slotApps = appointments.filter(a => 
-                    a.date === dateKey && 
-                    a.time === time && 
-                    a.status !== 'cancelled' &&
-                    (selectedCoachId === 'all' || a.coachId === selectedCoachId)
-                );
+            <div key={time} className="grid grid-cols-8 border-b border-slate-100/50 dark:border-slate-700/50 min-h-[60px]">
+                {/* Time Label */}
+                <div className="p-2 text-xs font-bold text-slate-400 border-r border-slate-100 dark:border-slate-700/50 sticky left-0 z-10 bg-white/95 dark:bg-slate-900/95 flex items-center justify-center">
+                    {time}
+                </div>
 
-                const visibleApps = slotApps.filter(a => {
-                    if (selectedType === 'all') return true;
-                    const normalizedType = (a.type as string) === 'client' ? 'private' : a.type;
-                    return normalizedType === selectedType;
-                });
-
-                return (
-                  <div 
-                    key={`${dateKey}-${time}`} 
-                    className={`border-r border-slate-100/50 dark:border-slate-700/50 p-1 md:p-1.5 relative group transition-all duration-200
-                      ${isCellDisabled ? 'bg-stripes-gray opacity-40 cursor-not-allowed' : 
-                        (isPast && !isManager) ? 'opacity-60 cursor-not-allowed bg-slate-50 dark:bg-slate-900/50' :
-                        'hover:bg-white/40 dark:hover:bg-slate-800/40 cursor-pointer'}
-                    `}
-                    onClick={() => {
-                        if (((!isCellDisabled && !isPast) || isManager) && !isLoading) {
-                            onSlotClick(dateKey, time);
+                {weekDays.map((d, i) => {
+                    const dateKey = formatDateKey(d.getFullYear(), d.getMonth(), d.getDate());
+                    const isPast = isPastTime(dateKey, time);
+                    
+                    const cellApps = appointments.filter(a => 
+                        a.date === dateKey && 
+                        a.time === time && 
+                        a.status !== 'cancelled' &&
+                        (selectedCoachId === 'all' || a.coachId === selectedCoachId) &&
+                        (selectedType === 'all' || a.type === selectedType)
+                    );
+                    
+                    // Coach Availability Check for cell background
+                    let isUnavailable = false;
+                    if (selectedCoachId !== 'all') {
+                        const coach = coaches.find(c => c.id === selectedCoachId);
+                        if (coach && isCoachDayOff(dateKey, coach)) {
+                            isUnavailable = true;
                         }
-                    }}
-                  >
-                     <div className="flex flex-col gap-1 md:gap-1.5 h-full">
-                        {visibleApps.slice(0, expandedCell === `${dateKey}-${time}` ? undefined : 2).map(app => {
-                            const coach = coaches.find(c => c.id === app.coachId);
-                            const colorClass = coach?.color || 'bg-slate-100 text-slate-800 border-slate-200';
-                            const isMine = currentUser.role === 'manager' || app.coachId === currentUser.id;
-                            const isCompleted = app.status === 'completed';
-                            const isCheckedIn = app.status === 'checked_in';
-                            
-                            let displayText;
-                            if (app.type === 'group') {
-                                const currentAttendees = app.attendees?.filter(a => a.status === 'joined').length || 0;
-                                displayText = `${app.reason || '團體課'} (${currentAttendees}/8)`;
-                            } else if (app.type === 'block') {
-                                displayText = app.reason || '內部事務';
-                            } else {
-                                displayText = app.customer?.name || app.reason || '私人課';
-                            }
+                    }
 
-                            return (
-                              <div key={app.id} 
-                                   onClick={(e) => { e.stopPropagation(); if(isMine && !isLoading) onAppointmentClick(app); }}
-                                   className={`
-                                      text-[9px] md:text-[11px] p-1 md:p-2 rounded-lg md:rounded-xl shadow-sm border border-black/5 hover:scale-[1.02] transition-transform
-                                      ${colorClass} 
-                                      ${isCompleted ? 'opacity-60 grayscale' : ''} 
-                                      ${!isMine ? 'opacity-80' : ''}
-                                      ${isCheckedIn ? 'ring-2 ring-orange-400 ring-offset-1 dark:ring-offset-slate-900 animate-pulse' : ''}
-                                   `}
-                              >
-                                  <div className="flex justify-between items-center mb-0.5">
-                                    <div className="flex items-center gap-1.5 truncate">
-                                        <span className="font-bold truncate max-w-[50px] md:max-w-none">{coach?.name.slice(0,3) || app.coachName}</span>
-                                        {app.type === 'group' && <span className="text-[9px] bg-sky-100 text-sky-800 dark:bg-sky-900 dark:text-sky-200 px-1.5 py-0.5 rounded-full font-semibold">團體課</span>}
-                                    </div>
-                                    <div className="flex items-center gap-1">
-                                      {(isMine || isManager) && isCheckedIn && (
-                                          <button 
-                                              onClick={(e) => { e.stopPropagation(); onToggleComplete(app); }}
-                                              className="bg-orange-500 text-white rounded-full p-0.5 shadow-sm hover:scale-110 transition-transform" 
-                                              title={currentUser.role === 'manager' ? "管理員強迫核實" : "確認完課"}
-                                          >
-                                              <AlertCircle size={10} className="md:w-3 md:h-3"/>
-                                          </button>
-                                      )}
-                                      {isManager && isCompleted && (
-                                        <button 
-                                          onClick={(e) => { e.stopPropagation(); if(!isLoading) onToggleComplete(app); }}
-                                          className="bg-yellow-100 hover:bg-yellow-200 rounded-full p-0.5 text-yellow-700 transition-colors shadow-sm" title="撤銷完課 (返還點數)"
-                                        >
-                                          <RefreshCw size={10} className="md:w-3 md:h-3"/>
-                                        </button>
-                                      )}
-                                      {(isMine || isManager) && isCompleted && <CheckCircle size={10} className="text-green-800 md:w-3 md:h-3"/>}
-                                    </div>
-                                  </div>
-                                  <div className="truncate font-medium opacity-90">{displayText}</div>
-                                  {app.type === 'private' && app.service?.name && (
-                                    <div className="text-[8px] md:text-[10px] opacity-70 truncate mt-0.5">{app.service.name}</div>
-                                  )}
-                                  {isCheckedIn && <div className="text-[8px] md:text-[9px] font-bold text-orange-600 mt-0.5">等待確認</div>}
-                              </div>
-                            );
-                        })}
-                        {visibleApps.length > 2 && expandedCell !== `${dateKey}-${time}` && (
-                          <div onClick={(e) => { e.stopPropagation(); setExpandedCell(`${dateKey}-${time}`); }} className="text-[9px] md:text-[10px] text-center text-indigo-500 font-bold bg-indigo-50 dark:bg-indigo-900/30 rounded-lg cursor-pointer hover:bg-indigo-100 py-1 transition-colors">
-                            +{visibleApps.length - 2}
-                          </div>
-                        )}
-                        {expandedCell === `${dateKey}-${time}` && visibleApps.length > 2 && (
-                          <div onClick={(e) => { e.stopPropagation(); setExpandedCell(null); }} className="text-[9px] md:text-[10px] text-center text-slate-400 cursor-pointer py-1 hover:text-slate-600">
-                            收起
-                          </div>
-                        )}
-                        
-                        {!isCellDisabled && visibleApps.length === 0 && (!isPast || isManager) && (
-                            <div className="hidden group-hover:flex w-full h-full items-center justify-center">
-                                <div className="w-5 h-5 md:w-6 md:h-6 rounded-full bg-indigo-50 dark:bg-slate-700 text-indigo-500 flex items-center justify-center">
-                                    <Plus size={12} strokeWidth={3} className="md:w-3.5 md:h-3.5"/>
+                    return (
+                        <div 
+                            key={`${dateKey}-${time}`} 
+                            onClick={() => !isPast && !isUnavailable && onSlotClick(dateKey, time)}
+                            className={`
+                                relative border-r border-slate-100 dark:border-slate-700/50 p-1 transition-all group
+                                ${isPast ? 'bg-slate-50/50 dark:bg-slate-800/50' : ''}
+                                ${isUnavailable ? 'bg-stripes-gray opacity-50 cursor-not-allowed' : ''}
+                                ${!isPast && !isUnavailable ? 'hover:bg-indigo-50/30 dark:hover:bg-indigo-900/10 cursor-pointer' : ''}
+                            `}
+                        >
+                            {!isPast && !isUnavailable && cellApps.length === 0 && (
+                                <div className="hidden group-hover:flex absolute inset-0 items-center justify-center text-indigo-200 dark:text-indigo-800">
+                                    <Plus size={20}/>
                                 </div>
-                            </div>
-                        )}
-                     </div>
-                  </div>
-                );
-              })}
+                            )}
+
+                            {cellApps.map(app => {
+                                const coach = coaches.find(c => c.id === app.coachId);
+                                const isCompleted = app.status === 'completed';
+                                const isCheckedIn = app.status === 'checked_in';
+
+                                return (
+                                    <div 
+                                        key={app.id}
+                                        onClick={(e) => { e.stopPropagation(); onAppointmentClick(app); }}
+                                        className={`
+                                            text-[10px] p-1.5 rounded-lg mb-1 shadow-sm border truncate cursor-pointer hover:scale-[1.02] transition-all relative
+                                            ${app.type === 'block' 
+                                                ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700' 
+                                                : app.type === 'group'
+                                                    ? 'bg-orange-100 text-orange-700 border-orange-200 dark:bg-orange-900/40 dark:text-orange-200 dark:border-orange-800'
+                                                    : 'bg-indigo-100 text-indigo-700 border-indigo-200 dark:bg-indigo-900/40 dark:text-indigo-200 dark:border-indigo-800'
+                                            }
+                                            ${isCompleted ? 'opacity-60 grayscale' : ''}
+                                            ${isCheckedIn ? 'ring-2 ring-orange-400 ring-offset-1 dark:ring-offset-slate-900 animate-pulse' : ''}
+                                        `}
+                                        title={`${app.time} - ${coach?.name} - ${app.customer?.name || app.reason}`}
+                                    >
+                                        <div className="font-bold flex items-center justify-between">
+                                            <span className="truncate">{app.customer?.name || app.reason || '預約'}</span>
+                                            {selectedCoachId === 'all' && (
+                                                <div className={`w-1.5 h-1.5 rounded-full ${coach?.color.split(' ')[0] || 'bg-slate-400'}`}></div>
+                                            )}
+                                        </div>
+                                        {selectedCoachId === 'all' && <div className="text-[9px] opacity-80 truncate">{coach?.name}</div>}
+                                        {isCheckedIn && <div className="absolute top-0 right-0 w-2 h-2 bg-orange-500 rounded-full animate-ping"></div>}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    );
+                })}
             </div>
           ))}
         </div>
