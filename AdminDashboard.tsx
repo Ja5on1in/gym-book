@@ -71,6 +71,8 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string, lineUserId?: string}>({ private: 0, group: 0, name: '', phone: '' });
   const [isNewInventoryModalOpen, setIsNewInventoryModalOpen] = useState(false);
   const [newInventoryForm, setNewInventoryForm] = useState<Partial<UserInventory>>({ name: '', phone: '', email: '', credits: { private: 0, group: 0 } });
+  const [inventoryPage, setInventoryPage] = useState(1);
+  const ITEMS_PER_PAGE = 15;
 
   // Advanced Export State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -102,6 +104,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     setExportStart(startStr);
     setExportEnd(endStr);
   }, []);
+
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [searchQuery]);
 
   const handleAdvancedExport = () => {
     let filtered = appointments.filter(a => a.status === 'completed');
@@ -264,6 +270,12 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     i.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
     (i.phone && i.phone.includes(searchQuery)) || 
     (i.lineUserId && i.lineUserId.includes(searchQuery))
+  );
+
+  const totalInventoryPages = Math.ceil(filteredInventories.length / ITEMS_PER_PAGE);
+  const paginatedInventories = filteredInventories.slice(
+      (inventoryPage - 1) * ITEMS_PER_PAGE,
+      inventoryPage * ITEMS_PER_PAGE
   );
 
   const handleModalDayConfig = (dayIndex: number, enabled: boolean, start?: string, end?: string) => {
@@ -504,11 +516,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                 <div className="px-4 py-2">
                     <div className={`bg-slate-100 dark:bg-slate-700/50 rounded-xl my-6 flex items-center gap-3 transition-all ${isSidebarCollapsed ? 'p-2 justify-center' : 'p-3'}`}>
                         <div className="w-10 h-10 rounded-full bg-indigo-500 text-white flex items-center justify-center font-bold text-lg shrink-0">
-                            {currentUser.name[0]}
+                            {currentUser.name ? currentUser.name[0] : (currentUser.email ? currentUser.email[0].toUpperCase() : 'U')}
                         </div>
                         {!isSidebarCollapsed && (
                             <div className="overflow-hidden transition-opacity duration-200">
-                                <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name}</div>
+                                <div className="font-bold text-sm text-slate-800 dark:text-white truncate">{currentUser.name || currentUser.email || '未命名'}</div>
                                 <div className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">{currentUser.role}</div>
                             </div>
                         )}
@@ -625,7 +637,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {filteredInventories.map(inv => {
+                          {paginatedInventories.map(inv => {
                               const canEdit = ['manager', 'receptionist'].includes(currentUser.role);
                               return (
                                   <div key={inv.id} onClick={() => canEdit && handleOpenInventoryModal(inv)} className={`glass-card p-6 rounded-2xl border border-slate-100 dark:border-slate-700 transition-all hover:shadow-lg hover:scale-[1.02] group relative ${canEdit ? 'cursor-pointer' : ''}`}>
@@ -653,6 +665,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               )
                           })}
                       </div>
+
+                       {totalInventoryPages > 1 && (
+                            <div className="flex justify-center items-center gap-2 mt-6">
+                                <button 
+                                    onClick={() => setInventoryPage(p => Math.max(1, p - 1))}
+                                    disabled={inventoryPage === 1}
+                                    className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                                >
+                                    <ChevronLeft size={16}/>
+                                </button>
+                                <span className="text-sm font-bold text-slate-500">
+                                    第 {inventoryPage} / {totalInventoryPages} 頁
+                                </span>
+                                 <button 
+                                    onClick={() => setInventoryPage(p => Math.min(totalInventoryPages, p + 1))}
+                                    disabled={inventoryPage === totalInventoryPages}
+                                    className="px-4 py-2 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-sm font-bold hover:bg-slate-50 disabled:opacity-50 transition-colors"
+                                >
+                                    <ChevronRight size={16}/>
+                                </button>
+                            </div>
+                        )}
                   </div>
                )}
 
@@ -860,13 +894,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         <label className="text-xs font-bold text-slate-500 uppercase">職位/稱謂</label>
                                         <input type="text" value={editingCoach.title || ''} onChange={e => setEditingCoach({...editingCoach, title: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="例如: 教練, 物理治療師"/>
                                     </div>
-                                    <div>
+                                    <div className="relative">
                                         <label className="text-xs font-bold text-slate-500 uppercase">角色權限</label>
-                                        <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
+                                        <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white appearance-none pr-10">
                                             <option value="coach">教練 (Coach)</option>
                                             <option value="manager">主管 (Manager)</option>
                                             <option value="receptionist">櫃檯 (Receptionist)</option>
                                         </select>
+                                        <ChevronDown size={20} className="absolute right-3 bottom-3 text-slate-400 pointer-events-none"/>
                                     </div>
                                     <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase">代表色</label>
@@ -910,13 +945,19 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                 </div>
                                                 {isWorkDay && (
                                                     <div className="mt-2 flex items-center gap-1 text-sm">
-                                                        <select value={hours.start} onChange={e => handleModalDayConfig(i, true, e.target.value, hours.end)} className="glass-input rounded-md p-1 w-full text-center">
-                                                            {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
-                                                        </select>
+                                                        <div className="relative flex-1">
+                                                            <select value={hours.start} onChange={e => handleModalDayConfig(i, true, e.target.value, hours.end)} className="w-full glass-input rounded-md p-1.5 text-center appearance-none pr-7">
+                                                                {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
+                                                            </select>
+                                                            <ChevronDown size={14} className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"/>
+                                                        </div>
                                                         <span>-</span>
-                                                         <select value={hours.end} onChange={e => handleModalDayConfig(i, true, hours.start, e.target.value)} className="glass-input rounded-md p-1 w-full text-center">
-                                                            {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
-                                                        </select>
+                                                         <div className="relative flex-1">
+                                                            <select value={hours.end} onChange={e => handleModalDayConfig(i, true, hours.start, e.target.value)} className="w-full glass-input rounded-md p-1.5 text-center appearance-none pr-7">
+                                                                {ALL_TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
+                                                            </select>
+                                                            <ChevronDown size={14} className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400"/>
+                                                        </div>
                                                     </div>
                                                 )}
                                             </div>
@@ -986,18 +1027,28 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <div className="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
                                    <h4 className="text-xs font-bold text-slate-500 uppercase mb-2">點數變動紀錄</h4>
                                    <div className="space-y-2 max-h-32 overflow-y-auto custom-scrollbar pr-2">
-                                       {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)))
-                                           .slice(0, 10)
-                                           .map(log => (
+                                       {(() => {
+                                           if (!editingInventory) return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
+
+                                           const relevantLogs = logs
+                                               .filter(log =>
+                                                   (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id)) &&
+                                                   (log.action === '庫存調整' || (log.action === '完課確認' && log.details.includes('扣除')))
+                                               )
+                                               .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+                                               .slice(0, 10);
+
+                                           if (relevantLogs.length === 0) {
+                                               return <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>;
+                                           }
+
+                                           return relevantLogs.map(log => (
                                                <div key={log.id} className="text-xs p-2 bg-slate-50 dark:bg-slate-800/50 rounded-lg border border-slate-100 dark:border-slate-700">
                                                    <p className="font-medium text-slate-600 dark:text-slate-300">{log.details}</p>
                                                    <p className="text-slate-400">{new Date(log.time).toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' })}</p>
                                                </div>
-                                           ))
-                                       }
-                                        {logs.filter(log => log.action === '庫存調整' && (log.details.includes(editingInventory.name) || log.details.includes(editingInventory.id))).length === 0 && (
-                                            <p className="text-xs text-center text-slate-400 py-4">無相關紀錄</p>
-                                        )}
+                                           ));
+                                       })()}
                                    </div>
                                </div>
                                
@@ -1070,7 +1121,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                        <label className="text-xs font-bold text-slate-500 uppercase">搜尋特定學員</label>
                                        <input type="text" placeholder="搜尋學員姓名/電話" value={exportUserSearch} onChange={e => { setExportUserSearch(e.target.value); setExportUser(null); }} className="w-full glass-input p-3 rounded-xl mt-1"/>
                                        {exportUserSearch && filteredExportUsers.length > 0 && (
-                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-lg border dark:border-gray-700">
+                                            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 rounded-xl shadow-lg border dark:border-gray-700">
                                                 {filteredExportUsers.map(u => (
                                                     <div key={u.id} onClick={() => { setExportUser(u); setExportUserSearch(u.name); }} className="p-2 hover:bg-indigo-50 cursor-pointer">{u.name} ({u.phone})</div>
                                                 ))}
@@ -1099,6 +1150,4 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
        </main>
     </div>
   );
-};
-
-export default AdminDashboard;
+}
