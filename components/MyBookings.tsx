@@ -82,75 +82,11 @@ const ProgressChart: React.FC<{ data: { date: string, weight: number }[] }> = ({
   );
 };
 
-const AppointmentCard: React.FC<{
-  app: Appointment;
-  coaches: Coach[];
-  myInventory: UserInventory | null;
-  onCheckIn: (app: Appointment) => void;
-  onSelectCancel: (app: Appointment) => void;
-}> = ({ app, coaches, myInventory, onCheckIn, onSelectCancel }) => {
-  const coach = coaches.find(c => c.id === app.coachId);
-  const isCancelled = app.status === 'cancelled';
-  const isCompleted = app.status === 'completed';
-  const isCheckedIn = app.status === 'checked_in';
-  const isConfirmed = app.status === 'confirmed';
-  
-  const appointmentDateTime = new Date(`${app.date}T${app.time}`);
-  const now = new Date();
-  const hoursUntil = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
-
-  const isUpcoming = appointmentDateTime > now;
-  const isCancellableTime = hoursUntil >= 24;
-
-  const canCancel = isConfirmed && isUpcoming && isCancellableTime;
-  const cannotCancelLocked = isConfirmed && isUpcoming && !isCancellableTime;
-  const canCheckIn = isConfirmed && app.type !== 'group';
-  
-  return (
-    <div className={`glass-card p-5 rounded-2xl border-l-4 ${isCancelled ? 'border-l-red-400 opacity-70' : isCompleted ? 'border-l-gray-400' : isCheckedIn ? 'border-l-orange-500' : 'border-l-green-500'}`}>
-      <div className="flex justify-between items-start mb-3">
-        <div>
-          <div className="flex items-center gap-2 mb-1">
-              <span className="text-lg font-bold dark:text-white">{app.date}</span>
-              <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-sm font-medium dark:text-slate-200">{app.time}</span>
-          </div>
-          <div className="text-indigo-600 dark:text-indigo-400 font-bold">{app.type === 'group' ? app.reason : (app.service?.name || '課程')}</div>
-        </div>
-        <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1
-            ${isCancelled ? 'bg-red-100 text-red-600' : isCompleted ? 'bg-gray-200 text-gray-600' : isCheckedIn ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
-            {isCancelled ? '已取消' : isCompleted ? '已完課' : isCheckedIn ? <><Timer size={12}/> 等待確認</> : '預約成功'}
-        </div>
-      </div>
-
-      <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
-          <UserIcon size={14}/> 教練：{coach?.name || app.coachName}
-      </div>
-
-      <div className="flex gap-2">
-        {canCheckIn && (
-           <button onClick={() => onCheckIn(app)} className="flex-1 mb-2 py-3 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short"><CheckCircle size={20}/> 立即簽到</button>
-        )}
-        {app.type !== 'group' && canCancel && (
-            <button onClick={() => onSelectCancel(app)} className={`flex-1 mb-2 py-3 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-lg font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${!canCheckIn ? 'w-full' : ''}`}>取消預約</button>
-        )}
-      </div>
-      
-      {app.type !== 'group' && cannotCancelLocked && <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">24小時內無法取消</div>}
-      {app.type === 'group' && isConfirmed && isUpcoming && <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">團課請洽管理員取消</div>}
-      {isCompleted && <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">已完成</div>}
-      {isCheckedIn && <div className="w-full py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl text-sm font-bold text-center border border-orange-100 dark:border-orange-800">已簽到，請教練確認完課</div>}
-      {isCancelled && <div className="text-xs text-red-400">取消原因：{app.cancelReason}</div>}
-    </div>
-  );
-};
-
-
 const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn, inventories, workoutPlans }) => {
   const [activeTab, setActiveTab] = useState<'bookings' | 'progress'>('bookings');
   const [selectedExercise, setSelectedExercise] = useState<string>('');
-  const [cancelModalApp, setCancelModalApp] = useState<Appointment | null>(null);
+  const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
   const [checkInConfirmApp, setCheckInConfirmApp] = useState<Appointment | null>(null);
-  const [showOlderBookings, setShowOlderBookings] = useState(false);
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -174,7 +110,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     if (exerciseOptions.length > 0 && !selectedExercise) {
       setSelectedExercise(exerciseOptions[0]);
     }
-  }, [exerciseOptions, selectedExercise]);
+  }, [exerciseOptions]);
 
   const progressData = useMemo(() => {
     if (!selectedExercise) return [];
@@ -210,18 +146,14 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
   const myApps = appointments
       .filter(a => {
         if (!liffProfile || !myInventory) return false;
+        // Is it a private class for me?
         if (a.lineUserId === liffProfile.userId) return true;
         if (myInventory && myInventory.phone && a.customer?.phone === myInventory.phone && a.customer?.name === myInventory.name) return true;
+        // Is it a group class I'm part of?
         if (a.type === 'group' && a.attendees?.some(att => att.customerId === myInventory.id && att.status === 'joined')) return true;
         return false;
       })
       .sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime());
-
-  const now = new Date();
-  const firstDayOfCurrentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-
-  const currentMonthApps = myApps.filter(app => new Date(app.date) >= firstDayOfCurrentMonth);
-  const olderApps = myApps.filter(app => new Date(app.date) < firstDayOfCurrentMonth);
 
   return (
     <div className="max-w-2xl mx-auto animate-slideUp pb-24 px-4">
@@ -261,7 +193,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
 
       {activeTab === 'bookings' ? (
         <div className="space-y-4">
-          {currentMonthApps.length === 0 && olderApps.length === 0 ? (
+          {myApps.length === 0 ? (
             <div className="glass-panel p-10 rounded-3xl text-center border border-white/40">
                 <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-900/20 rounded-full flex items-center justify-center mx-auto mb-4 text-indigo-400">
                     <Calendar size={32}/>
@@ -270,24 +202,61 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                 <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">快去預約您的第一堂課程吧！</p>
             </div>
           ) : (
-            <>
-              {currentMonthApps.map(app => (
-                <AppointmentCard key={app.id} app={app} coaches={coaches} myInventory={myInventory} onCheckIn={setCheckInConfirmApp} onSelectCancel={setCancelModalApp} />
-              ))}
+            myApps.map(app => {
+              const coach = coaches.find(c => c.id === app.coachId);
+              const isCancelled = app.status === 'cancelled';
+              const isCompleted = app.status === 'completed';
+              const isCheckedIn = app.status === 'checked_in';
+              const isConfirmed = app.status === 'confirmed';
               
-              {olderApps.length > 0 && !showOlderBookings && (
-                <button
-                  onClick={() => setShowOlderBookings(true)}
-                  className="w-full text-center py-3 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-2xl text-sm font-bold text-slate-500 dark:text-slate-400 transition-colors"
-                >
-                  顯示更早的預約紀錄
-                </button>
-              )}
+              const appointmentDateTime = new Date(`${app.date}T${app.time}`);
+              const now = new Date();
+              const hoursUntil = (appointmentDateTime.getTime() - now.getTime()) / (1000 * 60 * 60);
 
-              {showOlderBookings && olderApps.map(app => (
-                <AppointmentCard key={app.id} app={app} coaches={coaches} myInventory={myInventory} onCheckIn={setCheckInConfirmApp} onSelectCancel={setCancelModalApp} />
-              ))}
-            </>
+              const isUpcoming = appointmentDateTime > now;
+              const isCancellableTime = hoursUntil >= 24;
+
+              const canCancel = isConfirmed && isUpcoming && isCancellableTime;
+              const cannotCancelLocked = isConfirmed && isUpcoming && !isCancellableTime;
+              const canCheckIn = isConfirmed && app.type !== 'group';
+
+              return (
+                <div key={app.id} className={`glass-card p-5 rounded-2xl border-l-4 ${isCancelled ? 'border-l-red-400 opacity-70' : isCompleted ? 'border-l-gray-400' : isCheckedIn ? 'border-l-orange-500' : 'border-l-green-500'}`}>
+                  <div className="flex justify-between items-start mb-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                          <span className="text-lg font-bold dark:text-white">{app.date}</span>
+                          <span className="bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded text-sm font-medium dark:text-slate-200">{app.time}</span>
+                      </div>
+                      <div className="text-indigo-600 dark:text-indigo-400 font-bold">{app.type === 'group' ? app.reason : (app.service?.name || '課程')}</div>
+                    </div>
+                    <div className={`px-3 py-1 rounded-full text-xs font-bold flex items-center gap-1
+                        ${isCancelled ? 'bg-red-100 text-red-600' : isCompleted ? 'bg-gray-200 text-gray-600' : isCheckedIn ? 'bg-orange-100 text-orange-600' : 'bg-green-100 text-green-600'}`}>
+                        {isCancelled ? '已取消' : isCompleted ? '已完課' : isCheckedIn ? <><Timer size={12}/> 等待確認</> : '預約成功'}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 mb-4 border-t border-gray-100 dark:border-gray-700 pt-3">
+                      <UserIcon size={14}/> 教練：{coach?.name || app.coachName}
+                  </div>
+
+                  <div className="flex gap-2">
+                    {canCheckIn && (
+                       <button onClick={() => setCheckInConfirmApp(app)} className="flex-1 mb-2 py-3 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl text-lg font-bold shadow-lg shadow-green-500/30 flex items-center justify-center gap-2 animate-bounce-short"><CheckCircle size={20}/> 立即簽到</button>
+                    )}
+                    {app.type !== 'group' && canCancel && (
+                        <button onClick={() => setSelectedApp(app)} className={`flex-1 mb-2 py-3 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-900/50 text-red-500 rounded-xl text-lg font-bold hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors ${!canCheckIn ? 'w-full' : ''}`}>取消預約</button>
+                    )}
+                  </div>
+                  
+                  {app.type !== 'group' && cannotCancelLocked && <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">24小時內無法取消</div>}
+                  {app.type === 'group' && isConfirmed && isUpcoming && <div className="w-full py-2 bg-slate-100 dark:bg-slate-800 text-slate-400 rounded-xl text-sm font-bold text-center border border-slate-200 dark:border-slate-700">團課請洽管理員取消</div>}
+                  {isCompleted && <div className="w-full py-2 bg-gray-100 dark:bg-gray-800 text-gray-500 rounded-xl text-sm font-bold text-center">已完成</div>}
+                  {isCheckedIn && <div className="w-full py-2 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-xl text-sm font-bold text-center border border-orange-100 dark:border-orange-800">已簽到，請教練確認完課</div>}
+                  {isCancelled && <div className="text-xs text-red-400">取消原因：{app.cancelReason}</div>}
+                </div>
+              );
+            })
           )}
         </div>
       ) : (
@@ -341,16 +310,16 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
         </div>
       )}
 
-      {/* Modals */}
-      {cancelModalApp && (
+      {/* Modals remain same */}
+      {selectedApp && (
          <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
              <div className="glass-panel w-full max-w-sm rounded-3xl p-6 animate-slideUp border border-white/20">
                  <div className="w-12 h-12 bg-red-100 text-red-500 rounded-full flex items-center justify-center mx-auto mb-4"><AlertTriangle size={24}/></div>
                  <h3 className="font-bold text-lg mb-2 text-center dark:text-white">取消預約確認</h3>
-                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {cancelModalApp.date} {cancelModalApp.time} 的課程嗎？</p>
+                 <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？</p>
                  <div className="flex gap-3">
-                     <button onClick={() => { setCancelModalApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
-                     <button onClick={() => { onCancel(cancelModalApp, '用戶自行取消', myInventory?.id); setCancelModalApp(null); }} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">確認取消</button>
+                     <button onClick={() => { setSelectedApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
+                     <button onClick={() => { onCancel(selectedApp, '用戶自行取消', myInventory?.id); setSelectedApp(null); }} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">確認取消</button>
                  </div>
              </div>
         </div>
