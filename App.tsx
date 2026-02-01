@@ -789,21 +789,28 @@ export default function App() {
             service = SERVICES.find(s => s.name === blockForm.reason) || SERVICES[0];
         }
 
-        const data: Appointment = {
+        const data: any = {
             id: id,
             type: blockForm.type,
             date: blockForm.date,
             time: blockForm.time,
             coachId: blockForm.coachId,
             coachName: coaches.find(c => c.id === blockForm.coachId)?.name || '未知',
-            reason: blockForm.type !== 'private' ? blockForm.reason : undefined,
             service: blockForm.type === 'private' ? service : null,
             customer: blockForm.customer,
             status: 'confirmed',
             createdAt: new Date().toISOString(),
-            attendees: blockForm.type === 'group' ? (blockForm.attendees || []) : undefined,
-            maxAttendees: blockForm.type === 'group' ? (blockForm.maxAttendees || 8) : undefined
         };
+        
+        if (blockForm.type !== 'private') {
+          data.reason = blockForm.reason;
+        }
+
+        if (blockForm.type === 'group') {
+            data.attendees = blockForm.attendees || [];
+            data.maxAttendees = blockForm.maxAttendees || 8;
+        }
+        
         await saveToFirestore('appointments', id, data);
         
         addLog('後台排程', `新增/更新了 ${blockForm.coachId} 的 ${blockForm.type} 時段`);
