@@ -1047,6 +1047,11 @@ export default function App() {
                       <CalendarIcon className="text-indigo-500"/> 活力學苑預約系統
                     </h1>
                     <div className="flex items-center gap-2">
+                        {liffProfile && (
+                            <button onClick={() => setView('my-bookings')} title="我的預約" className="p-2 bg-white/60 dark:bg-slate-800/60 rounded-full shadow-sm hover:bg-white transition-colors border border-transparent hover:border-slate-200">
+                                <UserIcon className="text-slate-600 dark:text-slate-300"/>
+                            </button>
+                        )}
                         {currentUser && (
                             <button onClick={() => setView('admin')} className="p-2 bg-white/60 dark:bg-slate-800/60 rounded-full shadow-sm hover:bg-white transition-colors border border-transparent hover:border-slate-200">
                                 <Settings className="text-slate-600 dark:text-slate-300"/>
@@ -1085,15 +1090,30 @@ export default function App() {
             )}
 
             {view === 'my-bookings' && (
-              <MyBookings 
-                liffProfile={liffProfile}
-                appointments={appointments}
-                coaches={coaches}
-                onCancel={handleCustomerCancel}
-                onCheckIn={handleCheckIn}
-                inventories={inventories}
-                workoutPlans={workoutPlans}
-              />
+              <>
+                <div className="flex justify-between items-center mb-6">
+                    <h1 className="text-2xl md:text-3xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
+                      <UserIcon className="text-indigo-500"/> 我的預約與檔案
+                    </h1>
+                    <div className="flex items-center gap-2">
+                        <button onClick={() => setView('booking')} title="返回預約" className="p-2 bg-white/60 dark:bg-slate-800/60 rounded-full shadow-sm hover:bg-white transition-colors border border-transparent hover:border-slate-200">
+                            <CalendarIcon className="text-slate-600 dark:text-slate-300"/>
+                        </button>
+                        <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 bg-white/60 dark:bg-slate-800/60 rounded-full shadow-sm hover:bg-white transition-colors border border-transparent hover:border-slate-200">
+                            {isDarkMode ? <Sun className="text-yellow-400"/> : <Moon className="text-indigo-500"/>}
+                        </button>
+                    </div>
+                </div>
+                <MyBookings 
+                  liffProfile={liffProfile}
+                  appointments={appointments}
+                  coaches={coaches}
+                  onCancel={handleCustomerCancel}
+                  onCheckIn={handleCheckIn}
+                  inventories={inventories}
+                  workoutPlans={workoutPlans}
+                />
+              </>
             )}
         </div>
       </div>
