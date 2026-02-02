@@ -943,7 +943,7 @@ export default function App() {
         addLog('員工管理', `更新/新增員工：${coachData.name}`);
         showNotification("員工資料已儲存", "success");
     } catch (error: any) {
-        showNotification(`儲存失敗: ${error.message}`, "error");
+        showNotification(`儲存失败: ${error.message}`, "error");
     }
   };
 
@@ -1155,6 +1155,9 @@ export default function App() {
   const currentAppointmentForModal = blockForm.id ? appointments.find(a => a.id === blockForm.id) : null;
   const isLockedForEditing = !!currentAppointmentForModal && ['checked_in', 'completed'].includes(currentAppointmentForModal.status);
 
+  const unifiedInputClass = "w-full glass-input rounded-xl p-3 mt-1 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all";
+  const disabledInputClass = unifiedInputClass + " disabled:opacity-50 disabled:cursor-not-allowed";
+
   return (
     <div className="min-h-screen text-slate-800 dark:text-slate-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
       {/* Dynamic Background */}
@@ -1323,7 +1326,7 @@ export default function App() {
                             <div className="grid grid-cols-2 gap-4">
                                <div>
                                    <label className="text-xs font-bold text-slate-500 uppercase">類型</label>
-                                   <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.type} onChange={e => {
+                                   <select className={disabledInputClass} value={blockForm.type} onChange={e => {
                                        const newType = e.target.value as any;
                                        setBlockForm({...blockForm, type: newType, reason: newType === 'group' ? '' : blockForm.reason});
                                        if(newType !== 'private') setMemberSearchTerm('');
@@ -1336,7 +1339,7 @@ export default function App() {
                                {['manager', 'receptionist'].includes(currentUser?.role) && (
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase">指定教練</label>
-                                       <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})} disabled={isLockedForEditing}>
+                                       <select className={disabledInputClass} value={blockForm.coachId} onChange={e => setBlockForm({...blockForm, coachId: e.target.value})} disabled={isLockedForEditing}>
                                            {coaches.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                                        </select>
                                    </div>
@@ -1344,19 +1347,19 @@ export default function App() {
                             </div>
                             <div>
                                  <label className="text-xs font-bold text-slate-500 uppercase">日期</label>
-                                 <input type="date" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} disabled={isLockedForEditing} />
+                                 <input type="date" required className={disabledInputClass} value={blockForm.date} onChange={e => setBlockForm({...blockForm, date: e.target.value})} disabled={isLockedForEditing} />
                             </div>
                             <div className="grid grid-cols-2 gap-4 items-end">
                                  <div className="w-full">
                                      <label className="text-xs font-bold text-slate-500 uppercase">開始時間</label>
-                                     <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})} disabled={isLockedForEditing}>
+                                     <select className={disabledInputClass} value={blockForm.time} onChange={e => setBlockForm({...blockForm, time: e.target.value})} disabled={isLockedForEditing}>
                                          {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                                      </select>
                                  </div>
                                  {isBatchMode && (
                                      <div className="w-full">
                                          <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-1">結束時間 (不含)</label>
-                                         <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})} disabled={isLockedForEditing}>
+                                         <select className={disabledInputClass} value={blockForm.endTime} onChange={e => setBlockForm({...blockForm, endTime: e.target.value})} disabled={isLockedForEditing}>
                                              {ALL_TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
                                          </select>
                                      </div>
@@ -1380,7 +1383,7 @@ export default function App() {
                                 <div className="p-4 bg-sky-50 dark:bg-sky-900/20 rounded-xl space-y-3 border border-sky-100 dark:border-sky-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                                     <div>
                                         <label className="text-xs font-bold text-sky-500 uppercase flex items-center gap-1"><Edit3 size={12}/> 課程名稱</label>
-                                        <input type="text" required className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white" placeholder="例如：TRX 懸吊、瑜珈..." value={blockForm.reason} onChange={e => setBlockForm({...blockForm, reason: e.target.value})} disabled={isLockedForEditing} />
+                                        <input type="text" required className={unifiedInputClass} placeholder="例如：TRX 懸吊、瑜珈..." value={blockForm.reason} onChange={e => setBlockForm({...blockForm, reason: e.target.value})} disabled={isLockedForEditing} />
                                     </div>
                                     <div className="relative">
                                         <label className="text-xs font-bold text-sky-500 uppercase flex items-center gap-1 mb-1"><Users size={12}/> 學員名單 ({blockForm.attendees?.length || 0}/8)</label>
@@ -1392,7 +1395,7 @@ export default function App() {
                                                 </div>
                                             ))}
                                         </div>
-                                        <input type="text" placeholder="搜尋學員加入..." value={groupMemberSearch} onChange={e => setGroupMemberSearch(e.target.value)} className="w-full glass-input rounded-xl p-3 dark:text-white" disabled={(blockForm.attendees?.length || 0) >= 8} />
+                                        <input type="text" placeholder="搜尋學員加入..." value={groupMemberSearch} onChange={e => setGroupMemberSearch(e.target.value)} className={unifiedInputClass} disabled={(blockForm.attendees?.length || 0) >= 8} />
                                         {groupMemberSearch && groupMemberResults.length > 0 && (
                                             <div className="absolute z-10 w-full mt-1 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-slate-100 dark:border-slate-700 max-h-40 overflow-y-auto custom-scrollbar">
                                                 {groupMemberResults.map(m => (
@@ -1442,7 +1445,7 @@ export default function App() {
                                             <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1"><Search size={10}/> 搜尋學員 (姓名/電話)</label>
                                             <input 
                                                 type="text" 
-                                                className="w-full glass-input rounded-xl p-3 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none"
+                                                className={unifiedInputClass}
                                                 placeholder="輸入關鍵字..."
                                                 value={memberSearchTerm}
                                                 onChange={(e) => setMemberSearchTerm(e.target.value)}
@@ -1486,7 +1489,7 @@ export default function App() {
                             {!blockForm.id && (
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase flex items-center gap-2"><Repeat size={14}/> 重複週數 (可選)</label>
-                                    <select className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed" value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})} disabled={isLockedForEditing}>
+                                    <select className={disabledInputClass} value={blockForm.repeatWeeks} onChange={e => setBlockForm({...blockForm, repeatWeeks: Number(e.target.value)})} disabled={isLockedForEditing}>
                                         <option value={1}>單次事件</option>
                                         <option value={4}>重複 4 週</option>
                                         <option value={8}>重複 8 週</option>
