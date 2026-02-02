@@ -18,7 +18,8 @@ import {
   AlertCircle,
   LogIn,
   Info,
-  Lock
+  Lock,
+  AlertTriangle
 } from 'lucide-react';
 import { Coach, Service, Customer, UserInventory } from '../types';
 import { SERVICES, ALL_TIME_SLOTS } from '../constants';
@@ -412,6 +413,10 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                     <Info size={16} className="mt-0.5 shrink-0"/>
                     <span className="leading-relaxed">注意：預約完成後不會立即扣點。請在上課當天透過「我的預約」進行簽到，經教練核實後才會扣除點數。</span>
                 </div>
+                <div className="mt-4 text-xs text-orange-600 dark:text-orange-400 flex items-start gap-2 bg-orange-50/60 dark:bg-orange-900/30 p-4 rounded-xl border border-orange-100 dark:border-orange-900/30">
+                    <AlertTriangle size={16} className="mt-0.5 shrink-0"/>
+                    <span className="leading-relaxed">重要提醒：為保障所有學員權益，課程開始前 24 小時內將無法線上取消預約。</span>
+                </div>
              </div>
 
              <div className="space-y-1">
@@ -456,8 +461,6 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
            <h2 className="text-3xl font-bold text-slate-800 dark:text-white mb-2">預約成功！</h2>
            <p className="text-slate-500 dark:text-slate-400 mb-8 max-w-xs mx-auto">我們已經收到您的預約資訊，期待在健身房見到您。</p>
            
-           <p className="text-red-500 text-sm font-medium -mt-4 mb-8">⚠️ 提醒您：課程開始前 24 小時內無法線上取消。</p>
-
            <div className="glass-card p-8 rounded-3xl max-w-sm mx-auto mb-8 border border-green-200 dark:border-green-900/50 shadow-md">
                <div className="text-sm text-slate-500 dark:text-slate-400 mb-1 font-medium uppercase tracking-wider">預約詳情</div>
                <div className="font-bold text-xl dark:text-white mb-2">{selectedService?.name}</div>
