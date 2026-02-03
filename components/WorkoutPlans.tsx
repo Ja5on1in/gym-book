@@ -175,7 +175,8 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
     const defaultSets = Array(3).fill(null).map((_, i) => ({
         id: `${Date.now()}_set_${i}`,
         reps: 12,
-        weight: 10
+        weight: 10,
+        seconds: 0,
     }));
 
     const newExerciseLog: ExerciseLog = { 
@@ -194,10 +195,10 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
   const handleAddSet = (exerciseId: string) => {
     const updatedExercises = (currentPlan.exercises || []).map(ex => {
       if (ex.id === exerciseId) {
-        const lastSet = ex.sets[ex.sets.length - 1] || { reps: 10, weight: 10 };
+        const lastSet = ex.sets[ex.sets.length - 1] || { reps: 10, weight: 10, seconds: 0 };
         return { 
             ...ex, 
-            sets: [...ex.sets, { id: `${Date.now()}-set${ex.sets.length + 1}`, reps: lastSet.reps, weight: lastSet.weight }] 
+            sets: [...ex.sets, { id: `${Date.now()}-set${ex.sets.length + 1}`, reps: lastSet.reps, weight: lastSet.weight, seconds: lastSet.seconds }] 
         };
       }
       return ex;
@@ -215,7 +216,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
     handleUpdatePlan('exercises', updatedExercises);
   };
 
-  const handleUpdateSet = (exerciseId: string, setId: string, field: 'reps' | 'weight', value: string) => {
+  const handleUpdateSet = (exerciseId: string, setId: string, field: 'reps' | 'weight' | 'seconds', value: string) => {
     const numericValue = Number(value);
     const updatedExercises = (currentPlan.exercises || []).map(ex => {
       if (ex.id === exerciseId) {
@@ -270,62 +271,60 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
       </div>
 
       {selectedUser ? (
-        <div className="flex flex-col lg:flex-row gap-6 lg:h-[calc(100vh-320px)]">
-          {/* Left Column: Health Profile */}
-          <div className="lg:w-1/3 flex flex-col">
-              <div className="glass-card p-5 rounded-2xl border border-indigo-100 dark:border-indigo-900/30 flex-1 flex flex-col overflow-hidden">
-                  <div className="flex justify-between items-center mb-4 shrink-0">
+        <div className="flex flex-col gap-6">
+          {/* Top Section: Health Profile */}
+          <div>
+              <div className="glass-card p-5 rounded-2xl border border-indigo-100 dark:border-indigo-900/30">
+                  <div className="flex justify-between items-center mb-4">
                       <h4 className="font-bold text-lg dark:text-white flex items-center gap-2">
                           <Activity size={20} className="text-pink-500"/> 健康檔案
                       </h4>
                       {isProfileDirty && (
-                          <button onClick={handleSaveProfile} className="text-xs bg-indigo-600 text-white px-3 py-1 rounded-lg shadow hover:bg-indigo-700 flex items-center gap-1 transition-all">
-                              <Save size={12}/> 儲存
+                          <button onClick={handleSaveProfile} className="text-sm bg-indigo-600 text-white px-4 py-2 rounded-xl shadow-lg shadow-indigo-500/30 hover:bg-indigo-700 flex items-center gap-2 transition-all animate-pulse">
+                              <Save size={16}/> 儲存變更
                           </button>
                       )}
                   </div>
                   
-                  <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
-                    {canSeeSensitive ? (
-                        <div className="space-y-4">
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><Dumbbell size={12}/> 訓練目標</label>
-                                <textarea 
-                                    className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                                    placeholder="增肌、減脂、提升力量..."
-                                    value={profileBuffer.goals}
-                                    onChange={e => { setProfileBuffer({...profileBuffer, goals: e.target.value}); setIsProfileDirty(true); }}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-red-500 uppercase flex items-center gap-1 mb-1"><AlertTriangle size={12}/> 傷病史與禁忌</label>
-                                <textarea 
-                                    className="w-full bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-red-500/30 outline-none"
-                                    placeholder="例如：右肩韌帶舊傷、下背痛..."
-                                    value={profileBuffer.injuries}
-                                    onChange={e => { setProfileBuffer({...profileBuffer, injuries: e.target.value}); setIsProfileDirty(true); }}
-                                />
-                            </div>
-                            <div>
-                                <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><FileText size={12}/> 身體狀況備註</label>
-                                <textarea 
-                                    className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-20 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                                    placeholder="例如：最近睡眠不足、工作壓力大..."
-                                    value={profileBuffer.physicalNotes}
-                                    onChange={e => { setProfileBuffer({...profileBuffer, physicalNotes: e.target.value}); setIsProfileDirty(true); }}
-                                />
-                            </div>
-                        </div>
-                    ) : (
-                      <div className="text-center py-8 text-gray-400 text-sm">權限不足，無法查看詳細資料</div>
-                  )}
-                  </div>
+                  {canSeeSensitive ? (
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div>
+                              <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><Dumbbell size={12}/> 訓練目標</label>
+                              <textarea 
+                                  className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-24 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                                  placeholder="增肌、減脂、提升力量..."
+                                  value={profileBuffer.goals}
+                                  onChange={e => { setProfileBuffer({...profileBuffer, goals: e.target.value}); setIsProfileDirty(true); }}
+                              />
+                          </div>
+                          <div>
+                              <label className="text-xs font-bold text-red-500 uppercase flex items-center gap-1 mb-1"><AlertTriangle size={12}/> 傷病史與禁忌</label>
+                              <textarea 
+                                  className="w-full bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-900/30 rounded-xl p-3 text-sm dark:text-white h-24 resize-none focus:ring-2 focus:ring-red-500/30 outline-none"
+                                  placeholder="例如：右肩韌帶舊傷、下背痛..."
+                                  value={profileBuffer.injuries}
+                                  onChange={e => { setProfileBuffer({...profileBuffer, injuries: e.target.value}); setIsProfileDirty(true); }}
+                              />
+                          </div>
+                          <div>
+                              <label className="text-xs font-bold text-gray-500 uppercase flex items-center gap-1 mb-1"><FileText size={12}/> 身體狀況備註</label>
+                              <textarea 
+                                  className="w-full glass-input rounded-xl p-3 text-sm dark:text-white h-24 resize-none focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                                  placeholder="例如：最近睡眠不足、工作壓力大..."
+                                  value={profileBuffer.physicalNotes}
+                                  onChange={e => { setProfileBuffer({...profileBuffer, physicalNotes: e.target.value}); setIsProfileDirty(true); }}
+                              />
+                          </div>
+                      </div>
+                  ) : (
+                    <div className="text-center py-8 text-gray-400 text-sm">權限不足，無法查看詳細資料</div>
+                )}
               </div>
           </div>
 
-          {/* Right Column: Workout List */}
-          <div className="lg:w-2/3 flex flex-col">
-              <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-4 rounded-2xl mb-4 shrink-0">
+          {/* Bottom Section: Workout List */}
+          <div className="flex flex-col">
+              <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800/50 p-4 rounded-2xl mb-4">
                   <div>
                       <h4 className="font-bold text-lg dark:text-white">{selectedUser.name} <span className="text-sm font-normal text-gray-500">的課表紀錄</span></h4>
                   </div>
@@ -334,7 +333,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                   </button>
               </div>
               
-              <div className="space-y-3 flex-1 overflow-y-auto custom-scrollbar pr-2">
+              <div className="space-y-3 flex-1">
                  {userPlans.length === 0 ? (
                      <div className="text-center py-20 text-gray-400 border-2 border-dashed border-gray-200 dark:border-gray-700 rounded-2xl">
                          <Dumbbell size={48} className="mx-auto mb-2 opacity-50"/>
@@ -493,7 +492,7 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                                                         />
                                                         <span className="text-[10px] text-gray-400">KG</span>
                                                     </div>
-                                                    <div className="flex items-center gap-1 w-full">
+                                                    <div className="flex items-center gap-1 w-full mb-1">
                                                         <input 
                                                             type="number" 
                                                             value={set.reps} 
@@ -502,6 +501,16 @@ const WorkoutPlans: React.FC<WorkoutPlansProps> = ({ currentUser, inventories, w
                                                             placeholder="Reps"
                                                         />
                                                         <span className="text-[10px] text-gray-400">Reps</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1 w-full">
+                                                        <input 
+                                                            type="number" 
+                                                            value={set.seconds || ''} 
+                                                            onChange={e => handleUpdateSet(exLog.id, set.id, 'seconds', e.target.value)} 
+                                                            className="w-full text-center bg-white dark:bg-gray-700 rounded-md p-1 font-bold text-sm dark:text-white border border-gray-200 dark:border-gray-600 focus:border-indigo-500 outline-none"
+                                                            placeholder="Secs"
+                                                        />
+                                                        <span className="text-[10px] text-gray-400">Secs</span>
                                                     </div>
                                                     <button onClick={() => handleRemoveSet(exLog.id, set.id)} className="absolute -top-1.5 -right-1.5 w-4 h-4 bg-red-100 text-red-500 rounded-full flex items-center justify-center hover:bg-red-500 hover:text-white transition-colors"><X size={10}/></button>
                                                 </div>
