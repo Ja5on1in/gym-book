@@ -627,7 +627,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {filteredInventories.map(inv => {
-                              const canEdit = ['manager', 'receptionist'].includes(currentUser.role);
+                              const canEdit = ['manager', 'receptionist', 'coach'].includes(currentUser.role);
                               return (
                                   <div key={inv.id} onClick={() => canEdit && handleOpenInventoryModal(inv)} className={`glass-card p-6 rounded-2xl border border-slate-100 dark:border-slate-700 transition-all hover:shadow-lg hover:scale-[1.02] group relative ${canEdit ? 'cursor-pointer' : ''}`}>
                                       {inv.lineUserId && <div className="absolute top-4 right-4 w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white dark:ring-slate-800" title="已綁定LINE"></div>}
@@ -866,7 +866,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         <select value={editingCoach.role || 'coach'} onChange={e => setEditingCoach({...editingCoach, role: e.target.value as any})} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white">
                                             <option value="coach">教練 (Coach)</option>
                                             <option value="manager">主管 (Manager)</option>
-                                            <option value="receptionist">櫃檯 (Receptionist)</option>
+                                            <option value="receptionist">行政人員 (Receptionist)</option>
                                         </select>
                                     </div>
                                     <div>
@@ -961,11 +961,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                <div className="space-y-4 mb-4">
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase">姓名</label>
-                                       <input type="text" disabled={currentUser.role === 'coach'} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.name} onChange={e => setInventoryForm({...inventoryForm, name: e.target.value})}/>
+                                       <input type="text" className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.name} onChange={e => setInventoryForm({...inventoryForm, name: e.target.value})}/>
                                    </div>
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase">電話</label>
-                                       <input type="tel" disabled={currentUser.role === 'coach'} className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.phone} onChange={e => setInventoryForm({...inventoryForm, phone: e.target.value})}/>
+                                       <input type="tel" className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.phone} onChange={e => setInventoryForm({...inventoryForm, phone: e.target.value})}/>
                                    </div>
                                </div>
 
@@ -1018,7 +1018,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                         <Trash2 size={18}/> 刪除
                                       </button>
                                     )}
-                                   <button onClick={handleSaveInventoryChanges} disabled={currentUser.role === 'coach'} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:bg-slate-400 disabled:shadow-none disabled:cursor-not-allowed">
+                                   <button onClick={handleSaveInventoryChanges} className="flex-[2] py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2 disabled:bg-slate-400 disabled:shadow-none disabled:cursor-not-allowed">
                                        <Save size={18}/> 儲存
                                    </button>
                                </div>
