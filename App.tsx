@@ -45,7 +45,7 @@ import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } f
 import { writeBatch, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
 
-import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
+import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL, SERVICES } from './constants';
 import { User, Appointment, Coach, Log, Service, Customer, BlockFormState, UserInventory, WorkoutPlan } from './types';
 import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff, addDays } from './utils';
 
@@ -669,6 +669,19 @@ export default function App() {
                     coachId: coach.id, coachName: coach.name, reason: blockForm.reason, status: 'confirmed', 
                     createdAt: new Date().toISOString(),
                  };
+
+                 const privateService = finalType === 'private' ? SERVICES.find(s => s.name === blockForm.reason) : null;
+                 if (privateService) {
+                     appointmentData.service = privateService;
+                 } else if (blockForm.reason) {
+                     appointmentData.service = {
+                         id: blockForm.reason.toLowerCase().replace(/\s+/g, '-'),
+                         name: blockForm.reason,
+                         duration: '60 分鐘',
+                         color: 'bg-slate-100 text-slate-800'
+                     };
+                 }
+                 
                  if (isPrivate) {
                      appointmentData.customer = blockForm.customer ? { ...blockForm.customer } : null;
                      appointmentData.lineUserId = targetInventory?.lineUserId || "";
