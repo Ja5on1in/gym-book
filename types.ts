@@ -84,6 +84,7 @@ export interface BlockFormState {
   repeatWeeks?: number;
   attendees?: { customerId: string; name: string; phone?: string; status: 'joined' | 'cancelled' }[]; // State for group class modal
   maxAttendees?: number;
+  serviceId?: string | null; // New field for service selection
 }
 
 // New: Inventory System
