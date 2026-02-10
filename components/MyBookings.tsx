@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard, TrendingUp, Dumbbell, ChevronDown, Activity } from 'lucide-react';
 import { Appointment, Coach, UserInventory, WorkoutPlan } from '../types';
@@ -11,6 +12,7 @@ interface MyBookingsProps {
   onCheckIn: (app: Appointment) => void;
   inventories: UserInventory[];
   workoutPlans: WorkoutPlan[];
+  liffError: string | null;
 }
 
 const ProgressChart: React.FC<{ data: { date: string, weight: number }[] }> = ({ data }) => {
@@ -82,7 +84,7 @@ const ProgressChart: React.FC<{ data: { date: string, weight: number }[] }> = ({
   );
 };
 
-const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn, inventories, workoutPlans }) => {
+const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn, inventories, workoutPlans, liffError }) => {
   const [activeTab, setActiveTab] = useState<'bookings' | 'progress'>('bookings');
   const [selectedExercise, setSelectedExercise] = useState<string>('');
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
@@ -130,6 +132,24 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     const improvement = last - first;
     return { max, last, improvement, count: progressData.length };
   }, [progressData]);
+
+  if (liffError) {
+    return (
+        <div className="max-w-md mx-auto mt-12 animate-slideUp px-4">
+             <div className="glass-panel p-10 rounded-3xl text-center shadow-xl border border-red-500/40">
+                 <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600 dark:text-red-400">
+                     <AlertTriangle size={36}/>
+                 </div>
+                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">LINE 功能無法使用</h2>
+                 <p className="text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">無法初始化 LINE Front-end Framework (LIFF)。請嘗試重新整理頁面，或確認您是在 LINE App 中開啟此頁面。</p>
+                 <div className="text-xs text-left bg-slate-100 dark:bg-slate-800 p-3 rounded-lg text-slate-500 dark:text-slate-400">
+                    <p className="font-bold">錯誤訊息:</p>
+                    <p className="break-all font-mono">{liffError}</p>
+                 </div>
+             </div>
+        </div>
+    );
+  }
 
   if (!liffProfile) {
     return (

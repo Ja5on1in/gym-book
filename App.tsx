@@ -38,7 +38,8 @@ import {
     db,
     getUserProfile,
     createAuthUser,
-    batchUpdateFirestore
+    batchUpdateFirestore,
+    batchWriteWithDeletes
 } from './services/firebase';
 import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
 import { writeBatch, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
@@ -87,10 +88,13 @@ export default function App() {
   const [formData, setFormData] = useState<Customer>({ name: '', phone: '', email: '' });
 
   const [liffProfile, setLiffProfile] = useState<{ userId: string; displayName: string } | null>(null);
+  const [liffError, setLiffError] = useState<string | null>(null);
+  const [isLiffInitialized, setIsLiffInitialized] = useState(false);
 
   const [isBlockModalOpen, setIsBlockModalOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [isBatchMode, setIsBatchMode] = useState(false);
+  const [modalError, setModalError] = useState<string | null>(null);
   
   const [memberSearchTerm, setMemberSearchTerm] = useState('');
   const [filteredMembers, setFilteredMembers] = useState<UserInventory[]>([]);
@@ -114,6 +118,14 @@ export default function App() {
     icon?: React.ReactNode
   }>({ isOpen: false, title: '', message: '', onConfirm: null, isDanger: false, showInput: false });
   
+  const [conflictModal, setConflictModal] = useState<{
+    isOpen: boolean;
+    conflicts: { date: string; time: string; record: Appointment }[];
+    onSkip: () => void;
+    onOverwrite: () => void;
+    title?: string;
+  }>({ isOpen: false, conflicts: [], onSkip: () => {}, onOverwrite: () => {} });
+
   const [cancelReason, setCancelReason] = useState('');
 
   // --- EFFECTS ---
@@ -157,13 +169,16 @@ export default function App() {
         const liff = (window as any).liff;
         if (liff) {
             try {
+                showNotification("正在初始化 LINE...", "info");
                 await liff.init({ liffId: LIFF_ID });
+                setIsLiffInitialized(true);
                 
                 const params = new URLSearchParams(window.location.search);
                 if (params.get('mode') === 'my-bookings') {
                     setView('my-bookings');
                     if (!liff.isLoggedIn()) {
-                        liff.login(); 
+                        liff.login();
+                        return; // Stop execution to wait for redirect
                     }
                 }
 
@@ -172,9 +187,16 @@ export default function App() {
                     setLiffProfile(profile);
                     await checkAndCreateUser(profile);
                 }
-            } catch (err) {
+            } catch (err: any) {
                 console.error('LIFF Init failed', err);
+                const errorMessage = err.toString ? err.toString() : JSON.stringify(err);
+                setLiffError(errorMessage);
+                showNotification(`LIFF 初始化失敗: ${errorMessage}`, "error");
             }
+        } else {
+            const errorMessage = "LIFF SDK 未載入，請檢查網路連線或稍後再試。";
+            setLiffError(errorMessage);
+            showNotification(errorMessage, "error");
         }
     };
     start();
@@ -346,8 +368,12 @@ export default function App() {
 
   const handleLiffLogin = () => {
       const liff = (window as any).liff;
-      if (liff && !liff.isLoggedIn()) {
-          liff.login({ redirectUri: window.location.href });
+      if (liff && isLiffInitialized) {
+          if (!liff.isLoggedIn()) {
+            liff.login({ redirectUri: window.location.href });
+          }
+      } else {
+          showNotification(`LINE 功能尚未準備好，請稍後再試。 ${liffError || ''}`, 'error');
       }
   };
 
@@ -582,9 +608,11 @@ export default function App() {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
   };
 
-  const handleSaveBlock = async (e: React.FormEvent, force: boolean = false) => {
+  const handleSaveBlock = async (e: React.FormEvent | null, force: boolean = false, overwriteIds: string[] = []) => {
     if(e) e.preventDefault();
+    setModalError(null);
     if (!currentUser) return;
+
     const coach = coaches.find(c => c.id === (['manager', 'receptionist'].includes(currentUser.role) ? blockForm.coachId : currentUser.id));
     if (!coach) return;
     
@@ -593,10 +621,12 @@ export default function App() {
     const isGroup = finalType === 'group';
     
     if (isPrivate && !blockForm.customer?.name) {
-        showNotification('請先搜尋並選擇學員', 'error'); return;
+        setModalError('請先搜尋並選擇學員');
+        return;
     }
     if (isGroup && (!blockForm.attendees || blockForm.attendees.length === 0)) {
-        showNotification('請至少新增一位學員至團課', 'error'); return;
+        setModalError('請至少新增一位學員至團課');
+        return;
     }
     
     let targetSlots = [blockForm.time];
@@ -612,13 +642,14 @@ export default function App() {
     if (isPrivate && blockForm.customer?.name) {
         targetInventory = inventories.find(i => i.name === blockForm.customer?.name && (blockForm.customer?.phone ? i.phone === blockForm.customer.phone : true));
         const creditsNeeded = (blockForm.repeatWeeks || 1) * targetSlots.length;
-        if (targetInventory && targetInventory.credits.private < creditsNeeded) {
+        if (targetInventory && targetInventory.credits.private < creditsNeeded && !force) {
              if(!window.confirm(`學員 ${targetInventory.name} 點數不足 (剩 ${targetInventory.credits.private} 點, 需 ${creditsNeeded} 點)，確定要預約嗎？`)) return;
         }
     }
     
     const repeat = blockForm.repeatWeeks || 1;
     const batchOps: Partial<Appointment>[] = [];
+    const conflicts: { date: string; time: string; record: Appointment }[] = [];
     const [y, m, d] = blockForm.date.split('-').map(Number);
     const startDate = new Date(y, m - 1, d); 
 
@@ -629,7 +660,9 @@ export default function App() {
 
         for (const slot of targetSlots) {
              const status = getSlotStatus(dKey, slot, coach, appointments, blockForm.id);
-             if (status.status === 'available') {
+             const isOverwritable = overwriteIds.length > 0 && status.record && overwriteIds.includes(status.record.id);
+
+             if (status.status === 'available' || isOverwritable) {
                  const id = (!isBatchMode && i === 0 && blockForm.id) ? blockForm.id! : `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
                  const appointmentData: Partial<Appointment> = {
                     id, type: finalType as any, date: dKey, time: slot,
@@ -645,21 +678,51 @@ export default function App() {
                      appointmentData.maxAttendees = 8;
                  }
                  batchOps.push(appointmentData);
+             } else if (status.status === 'booked' && status.record) {
+                 conflicts.push({ date: dKey, time: slot, record: status.record });
              }
         }
     }
+    
+    if (conflicts.length > 0 && !force) {
+        setConflictModal({
+            isOpen: true,
+            conflicts,
+            title: isBatchMode ? '批次預約衝突' : '預約時段衝突',
+            onSkip: () => {
+                setConflictModal(prev => ({...prev, isOpen: false}));
+                handleSaveBlock(null, true, []); // Skip all conflicts
+            },
+            onOverwrite: () => {
+                setConflictModal(prev => ({...prev, isOpen: false}));
+                handleSaveBlock(null, true, conflicts.map(c => c.record.id)); // Overwrite all conflicts
+            }
+        });
+        return;
+    }
 
-    if (batchOps.length === 0) { showNotification('選定時段已被占用或無效', 'error'); return; }
+
+    if (batchOps.length === 0) { 
+        setModalError('選定時段皆已被占用或無效');
+        return; 
+    }
     
     try {
-        await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id!, op)));
-
-        addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
+        if (overwriteIds.length > 0) {
+            const updatesForFirebase = batchOps.map(op => ({ col: 'appointments', id: op.id!, data: op }));
+            const deletesForFirebase = overwriteIds.map(id => ({ col: 'appointments', id }));
+            await batchWriteWithDeletes(updatesForFirebase, deletesForFirebase);
+            addLog('覆蓋預約', `覆蓋 ${deletesForFirebase.length} 筆預約，並新增 ${updatesForFirebase.length} 筆`);
+        } else {
+            await Promise.all(batchOps.map(op => saveToFirestore('appointments', op.id!, op)));
+            addLog(blockForm.id ? '修改事件' : '新增事件', `處理 ${batchOps.length} 筆紀錄`);
+        }
+        
         showNotification(`成功建立 ${batchOps.length} 筆預約`, 'success');
         setIsBlockModalOpen(false);
     } catch (e: any) {
         console.error(e);
-        showNotification(`儲存失敗: ${e.message}`, 'error');
+        setModalError(`儲存失敗: ${e.message}`);
     }
   };
 
@@ -717,6 +780,7 @@ export default function App() {
             reason: '1v1教練課', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8
         });
     }
+    setModalError(null);
     setMemberSearchTerm('');
     setGroupMemberSearch('');
     setDeleteConfirm(false); 
@@ -736,6 +800,7 @@ export default function App() {
           time: '09:00', endTime: '12:00',
           reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8 
       });
+      setModalError(null);
       setMemberSearchTerm('');
       setGroupMemberSearch('');
       setDeleteConfirm(false); 
@@ -749,6 +814,7 @@ export default function App() {
       
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
       setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null, attendees: app.attendees || [] });
+      setModalError(null);
       setMemberSearchTerm('');
       setGroupMemberSearch('');
       setDeleteConfirm(false); 
@@ -1041,6 +1107,7 @@ export default function App() {
                   onCheckIn={handleUserCheckIn}
                   inventories={inventories}
                   workoutPlans={workoutPlans}
+                  liffError={liffError}
               />
           );
       }
@@ -1063,6 +1130,7 @@ export default function App() {
                 onRegisterUser={checkAndCreateUser}
                 liffProfile={liffProfile}
                 onLogin={handleLiffLogin}
+                liffError={liffError}
               />
           );
       }
@@ -1203,9 +1271,9 @@ export default function App() {
 
       <main className={`${view === 'admin' ? 'pt-0' : 'pt-24'} px-0 pb-12`}>
         {notification && (
-          <div className={`fixed top-20 right-4 z-[60] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-slideUp backdrop-blur-md border 
+          <div className={`fixed top-20 right-4 z-[99999] px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-3 animate-slideUp backdrop-blur-md border 
             ${notification.type === 'success' ? 'bg-green-500/90 text-white border-green-400' : notification.type === 'error' ? 'bg-red-500/90 text-white border-red-400' : 'bg-blue-500/90 text-white border-blue-400'}`}>
-            {notification.type === 'success' ? <RefreshCw className="animate-spin" size={20}/> : <Info size={20}/>}
+            {notification.type === 'success' ? <CheckCircle2 size={20}/> : <Info size={20}/>}
             <span className="font-bold tracking-wide">{notification.msg}</span>
           </div>
         )}
@@ -1214,7 +1282,7 @@ export default function App() {
 
       </main>
 
-      {/* Confirmation Modal and others remain the same */}
+      {/* Dynamic Modals Container */}
       {view !== 'admin' && (
         <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-slate-800 flex justify-around p-3 z-50 backdrop-blur-xl">
             <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
@@ -1283,6 +1351,41 @@ export default function App() {
              </div>
         </div>
       )}
+
+      {/* NEW: Conflict Modal */}
+      {conflictModal.isOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="glass-panel w-full max-w-md rounded-3xl p-6 animate-slideUp shadow-2xl border border-white/60 dark:border-slate-700/60">
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900/30 text-orange-500 rounded-2xl flex items-center justify-center shrink-0">
+                        <AlertTriangle size={24}/>
+                    </div>
+                    <div>
+                        <h3 className="font-bold text-xl text-slate-800 dark:text-white">{conflictModal.title || '時段衝突'}</h3>
+                        <p className="text-sm text-slate-500 dark:text-slate-400">系統檢測到以下時段已有預約：</p>
+                    </div>
+                </div>
+                <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700 rounded-xl p-3 max-h-40 overflow-y-auto custom-scrollbar mb-6 space-y-2">
+                    {conflictModal.conflicts.map((c, i) => (
+                        <div key={i} className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                            <strong>{c.date} {c.time}</strong> - <span className="text-red-500">{c.record.customer?.name || c.record.reason}</span>
+                        </div>
+                    ))}
+                </div>
+                <div className="flex flex-col gap-3 w-full">
+                    <button onClick={conflictModal.onOverwrite} className="w-full py-3 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">
+                        強制覆蓋 ({conflictModal.conflicts.length})
+                    </button>
+                    <button onClick={conflictModal.onSkip} className="w-full py-3 bg-slate-600 text-white rounded-xl font-bold">
+                        跳過衝突時段
+                    </button>
+                    <button onClick={() => setConflictModal(prev => ({...prev, isOpen: false}))} className="w-full py-2 text-sm text-slate-500 dark:text-slate-400 font-bold">
+                        取消操作
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
       
       {/* Block/Event Modal */}
       {isBlockModalOpen && (
@@ -1317,6 +1420,12 @@ export default function App() {
                 ) : (
                     <div className="flex-1 overflow-y-auto custom-scrollbar">
                         <form onSubmit={(e) => handleSaveBlock(e, false)} className="p-6 space-y-4">
+                            {modalError && (
+                                <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-xl text-sm text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800 flex items-center gap-2 animate-fadeIn">
+                                    <AlertTriangle size={16}/>
+                                    <span>{modalError}</span>
+                                </div>
+                            )}
                             {isLockedForEditing && (
                                 <div className="p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-xl text-xs text-yellow-700 dark:text-yellow-300 border border-yellow-200 dark:border-yellow-800 flex items-center gap-2">
                                     <AlertTriangle size={16}/>

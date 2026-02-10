@@ -289,6 +289,42 @@ export const batchUpdateFirestore = async (updates: { col: string; id: string; d
     }
 };
 
+export const batchWriteWithDeletes = async (
+    updates: { col: string; id: string; data: any }[],
+    deletes: { col: string; id: string }[]
+) => {
+    if (!isFirebaseAvailable || !db) {
+        // Mock implementation for local storage
+        try {
+            for (const d of deletes) {
+                await deleteFromFirestore(d.col, d.id);
+            }
+            for (const update of updates) {
+                await saveToFirestore(update.col, update.id, update.data);
+            }
+        } catch (e) {
+            console.error("Mock batch write with deletes failed", e);
+            throw e;
+        }
+        return;
+    }
+    try {
+        const batch = writeBatch(db);
+        deletes.forEach(d => {
+            const docRef = doc(db, d.col, d.id);
+            batch.delete(docRef);
+        });
+        updates.forEach(update => {
+            const docRef = doc(db, update.col, update.id);
+            batch.set(docRef, update.data, { merge: true });
+        });
+        await batch.commit();
+    } catch (e) {
+        console.error("Firestore batch write with deletes failed", e);
+        throw new Error(`批次更新/刪除資料失敗: ${(e as any).message}`);
+    }
+};
+
 export const deleteFromFirestore = async (col: string, id: string) => {
     if (!isFirebaseAvailable || !db) {
         const key = `mock_db_${col}`;

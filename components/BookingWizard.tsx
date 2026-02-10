@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect } from 'react';
 import { 
   ChevronLeft, 
@@ -49,6 +50,7 @@ interface BookingWizardProps {
   onRegisterUser: (profile: {userId: string, displayName: string}) => Promise<void>;
   liffProfile: { userId: string; displayName: string } | null;
   onLogin: () => void;
+  liffError: string | null;
 }
 
 const BookingWizard: React.FC<BookingWizardProps> = ({
@@ -56,7 +58,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
   selectedCoach, setSelectedCoach, selectedDate, setSelectedDate,
   selectedSlot, setSelectedSlot, formData, setFormData,
   coaches, appointments, onSubmit, reset, currentDate, handlePrevMonth, handleNextMonth,
-  inventories, onRegisterUser, liffProfile, onLogin
+  inventories, onRegisterUser, liffProfile, onLogin, liffError
 }) => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -210,6 +212,24 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       </div>
     );
   };
+
+  if (liffError) {
+    return (
+        <div className="max-w-md mx-auto mt-12 animate-slideUp px-4">
+             <div className="glass-panel p-10 rounded-3xl text-center shadow-xl border border-red-500/40">
+                 <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600 dark:text-red-400">
+                     <AlertTriangle size={36}/>
+                 </div>
+                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">LINE 功能無法使用</h2>
+                 <p className="text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">無法初始化 LINE Front-end Framework (LIFF)。請嘗試重新整理頁面，或確認您是在 LINE App 中開啟此頁面。</p>
+                 <div className="text-xs text-left bg-slate-100 dark:bg-slate-800 p-3 rounded-lg text-slate-500 dark:text-slate-400">
+                    <p className="font-bold">錯誤訊息:</p>
+                    <p className="break-all font-mono">{liffError}</p>
+                 </div>
+             </div>
+        </div>
+    );
+  }
 
   if (!liffProfile) {
      return (
