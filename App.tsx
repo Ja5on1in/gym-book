@@ -20,8 +20,7 @@ import {
   CheckCircle2,
   Edit3,
   ChevronLeft,
-  Users,
-  Dumbbell
+  Users
 } from 'lucide-react';
 
 import { 
@@ -46,7 +45,7 @@ import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } f
 import { writeBatch, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
 
-import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL, SERVICES } from './constants';
+import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL } from './constants';
 import { User, Appointment, Coach, Log, Service, Customer, BlockFormState, UserInventory, WorkoutPlan } from './types';
 import { formatDateKey, getStartOfWeek, getSlotStatus, isCoachDayOff, addDays } from './utils';
 
@@ -103,7 +102,7 @@ export default function App() {
   const [groupMemberResults, setGroupMemberResults] = useState<UserInventory[]>([]);
 
   const [blockForm, setBlockForm] = useState<BlockFormState>({
-    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8, serviceId: null
+    id: null, type: 'block', coachId: '', date: formatDateKey(new Date().getFullYear(), new Date().getMonth(), new Date().getDate()), time: '09:00', endTime: '10:00', reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8
   });
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
   
@@ -673,10 +672,6 @@ export default function App() {
                  if (isPrivate) {
                      appointmentData.customer = blockForm.customer ? { ...blockForm.customer } : null;
                      appointmentData.lineUserId = targetInventory?.lineUserId || "";
-                     if (blockForm.serviceId) {
-                         const service = SERVICES.find(s => s.id === blockForm.serviceId);
-                         appointmentData.service = service || null;
-                     }
                  }
                  if (isGroup) {
                      appointmentData.attendees = blockForm.attendees;
@@ -771,8 +766,7 @@ export default function App() {
         setBlockForm({ 
             id: null, type: 'block', coachId: firstAvailableCoach.id, 
             date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, 
-            reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8,
-            serviceId: null
+            reason: '1v1教練課', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8
         });
     } else {
         const targetCoachId = currentUser.id;
@@ -783,8 +777,7 @@ export default function App() {
         setBlockForm({ 
             id: null, type: 'block', coachId: targetCoachId, 
             date, time, endTime: ALL_TIME_SLOTS[ALL_TIME_SLOTS.indexOf(time)+1] || time, 
-            reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8,
-            serviceId: null
+            reason: '1v1教練課', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8
         });
     }
     setModalError(null);
@@ -805,8 +798,7 @@ export default function App() {
           id: null, type: 'block', coachId: targetCoachId, 
           date: dateStr, 
           time: '09:00', endTime: '12:00',
-          reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8,
-          serviceId: null
+          reason: '內部訓練', customer: null, repeatWeeks: 1, attendees: [], maxAttendees: 8 
       });
       setModalError(null);
       setMemberSearchTerm('');
@@ -821,7 +813,7 @@ export default function App() {
       if (currentUser.role === 'coach' && app.coachId !== currentUser.id) { showNotification('權限不足', 'info'); return; }
       
       const formType = ((app.type as any) === 'client' ? 'private' : app.type) as any;
-      setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null, attendees: app.attendees || [], serviceId: app.service?.id || null });
+      setBlockForm({ id: app.id, type: formType, coachId: app.coachId, date: app.date, time: app.time, endTime: app.time, reason: app.reason || '', customer: app.customer || null, attendees: app.attendees || [] });
       setModalError(null);
       setMemberSearchTerm('');
       setGroupMemberSearch('');
@@ -1533,18 +1525,6 @@ export default function App() {
                             {(blockForm.type === 'private' || (blockForm.type as string) === 'client') && (
                                 <fieldset disabled={isLockedForEditing} className="p-4 bg-indigo-50 dark:bg-indigo-900/20 rounded-xl space-y-3 border border-indigo-100 dark:border-indigo-800 transition-all disabled:opacity-60 disabled:cursor-not-allowed">
                                     <div className="text-xs font-bold text-indigo-500 uppercase mb-2">客戶/學員資料</div>
-                                    <div>
-                                        <label className="text-xs text-slate-500 mb-1 block flex items-center gap-1"><Dumbbell size={10}/> 課程項目</label>
-                                        <select
-                                            className={unifiedInputClass}
-                                            value={blockForm.serviceId || ''}
-                                            onChange={e => setBlockForm({...blockForm, serviceId: e.target.value})}
-                                            required
-                                        >
-                                            <option value="" disabled>請選擇課程</option>
-                                            {SERVICES.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                                        </select>
-                                    </div>
                                     {blockForm.customer?.name ? (
                                         <div className="glass-card p-3 rounded-xl bg-white/80 dark:bg-slate-800/80 border border-indigo-200 dark:border-indigo-800 flex justify-between items-center animate-fadeIn">
                                             <div>
@@ -1644,9 +1624,9 @@ export default function App() {
                                 )}
                                 <button 
                                     type="submit" 
-                                    disabled={(blockForm.type === 'private' && (!blockForm.customer?.name || !blockForm.serviceId)) || (blockForm.type === 'group' && (!blockForm.attendees || blockForm.attendees.length === 0)) || isLockedForEditing}
+                                    disabled={(blockForm.type === 'private' && !blockForm.customer?.name) || (blockForm.type === 'group' && (!blockForm.attendees || blockForm.attendees.length === 0)) || isLockedForEditing}
                                     className={`flex-[2] py-3 text-white rounded-xl font-bold shadow-lg transition-colors
-                                        ${(blockForm.type === 'private' && (!blockForm.customer?.name || !blockForm.serviceId)) || (blockForm.type === 'group' && (!blockForm.attendees || blockForm.attendees.length === 0)) || isLockedForEditing
+                                        ${(blockForm.type === 'private' && !blockForm.customer?.name) || (blockForm.type === 'group' && (!blockForm.attendees || blockForm.attendees.length === 0)) || isLockedForEditing
                                             ? 'bg-slate-400 cursor-not-allowed' 
                                             : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-500/30'}`}
                                 >
