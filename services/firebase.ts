@@ -242,33 +242,6 @@ export const subscribeToLogsInRange = (
     });
 };
 
-export const subscribeToUnreadNotifications = (
-    role: 'manager' | 'coach' | 'receptionist' | 'staff',
-    callback: (data: any[]) => void,
-    errorCallback: (e: any) => void
-) => {
-    if (!isFirebaseAvailable || !db) {
-        // No local storage fallback for notifications
-        return () => {};
-    }
-
-    const q = query(
-        collection(db, 'notifications'),
-        where('targetRole', '==', role),
-        where('read', '==', false)
-    );
-
-    return onSnapshot(q, (s: any) => {
-        const docs = s.docs.map((d: any) => d.data());
-        // Sort by createdAt descending
-        docs.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        callback(docs);
-    }, (e: any) => {
-        console.warn(`Firestore notifications subscription failed`, e);
-        errorCallback(e);
-    });
-};
-
 
 export const saveToFirestore = async (col: string, id: string, data: any) => {
     if (!isFirebaseAvailable || !db) {

@@ -567,17 +567,6 @@ export default function App() {
         }
 
         const coach = coaches.find(c => c.id === app.coachId);
-
-        const notificationMessage = `${app.customer?.name || '一位客戶'} 已取消 ${app.date} ${app.time} 的課程。`;
-        await saveToFirestore('notifications', Date.now().toString(), {
-          id: Date.now().toString(),
-          type: 'cancellation',
-          message: notificationMessage,
-          createdAt: new Date().toISOString(),
-          read: false,
-          targetRole: 'manager'
-        });
-
         sendToGoogleScript({ action: 'cancel_booking', id: app.id, reason, lineUserId: app.lineUserId || "", coachName: app.coachName, title: coach?.title || '教練', date: app.date, time: app.time }).catch(e => console.warn("Cancel webhook failed", e));
         
         showNotification('已取消預約', 'info');

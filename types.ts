@@ -136,12 +136,3 @@ export interface WorkoutPlan {
   exercises: ExerciseLog[];
   createdAt: string;
 }
-
-export interface AppNotification {
-  id: string;
-  type: 'cancellation' | 'system';
-  message: string;
-  createdAt: string; // ISO string
-  read: boolean;
-  targetRole: 'manager' | 'coach';
-}
