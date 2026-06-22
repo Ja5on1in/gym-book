@@ -98,7 +98,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
               await onSubmit(e, { userId: liffProfile.userId, displayName: liffProfile.displayName });
           } catch (err) {
               console.error("LIFF Error", err);
-              await onSubmit(e); 
+              setAuthError('LINE 身分驗證失敗，請重新整理後再試一次');
           }
       } else {
            setAuthError('請先登入 LINE 以完成預約');

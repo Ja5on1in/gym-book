@@ -500,6 +500,10 @@ export default function App() {
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
         showNotification('請填寫完整資訊', 'error'); return; 
     }
+    if (!lineProfile?.userId) {
+        showNotification('請先在 LINE 內登入後再預約，這樣系統才能同步傳送通知', 'error');
+        return;
+    }
     const dateKey = formatDateKey(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
     const status = getSlotStatus(dateKey, selectedSlot, selectedCoach, appointments);
     
@@ -530,13 +534,13 @@ export default function App() {
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
             customer: { name: formData.name, phone: formData.phone || "", email: formData.email || "" }, 
             status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId || "", lineName: lineProfile?.displayName || "" 
+            lineUserId: lineProfile.userId, lineName: lineProfile.displayName 
         };
         
         await saveToFirestore('appointments', id, newApp);
         addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name}`);
         
-        sendToGoogleScript({ action: 'create_booking', ...newApp, lineUserId: lineProfile?.userId || '', coachName: selectedCoach.name, title: selectedCoach.title || '教練', type: 'private' }).catch(err => console.warn("Webhook failed silently", err));
+        sendToGoogleScript({ action: 'create_booking', ...newApp, lineUserId: lineProfile.userId, coachName: selectedCoach.name, title: selectedCoach.title || '教練', type: 'private' }).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
         showNotification('預約成功！', 'success');
