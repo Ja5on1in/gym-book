@@ -1,9 +1,200 @@
-// 1. 設定您的專案資訊
-// 前往 "檔案" > "專案屬性" > "指令碼屬性" 並新增以下三個屬性：
-//
-// FIREBASE_URL:              您的 Firebase Realtime Database URL (例如: https://gympohai.firebaseio.com)
-// FIREBASE_DB_SECRET:        您的 Firebase Realtime Database Secret (在專案設定 > 服務帳戶 > 資料庫密鑰 中找到)
-// LINE_CHANNEL_ACCESS_TOKEN: 您的 LINE Channel Access Token
+// 前往「專案設定」>「指令碼屬性」，設定：
+// LINE_CHANNEL_ACCESS_TOKEN: LINE Messaging API 的長效 Channel Access Token
+
+/**
+ * 預約網站 Web App 入口。
+ * 網站會以 FormData 的 data 欄位傳入 JSON。
+ */
+function doPost(e) {
+  try {
+    const data = parseRequestData_(e);
+
+    if (!data.action) {
+      return jsonResponse_({ ok: false, error: 'Missing action' });
+    }
+
+    if (data.action === 'create_booking') {
+      if (!data.lineUserId) {
+        return jsonResponse_({ ok: false, skipped: true, error: 'Missing LINE user ID' });
+      }
+
+      validateBookingPayload_(data);
+      sendBookingConfirmation_(data);
+      return jsonResponse_({ ok: true, action: data.action });
+    }
+
+    if (data.action === 'cancel_booking' && data.lineUserId) {
+      sendCancellationConfirmation_(data);
+      return jsonResponse_({ ok: true, action: data.action });
+    }
+
+    return jsonResponse_({ ok: true, skipped: true, action: data.action });
+  } catch (error) {
+    console.error('doPost failed:', error);
+    return jsonResponse_({ ok: false, error: String(error.message || error) });
+  }
+}
+
+function doGet() {
+  return jsonResponse_({ ok: true, service: 'gym-book-line-notification' });
+}
+
+function parseRequestData_(e) {
+  if (!e) throw new Error('Missing request');
+
+  if (e.parameter && e.parameter.data) {
+    return JSON.parse(e.parameter.data);
+  }
+
+  if (e.postData && e.postData.contents) {
+    return JSON.parse(e.postData.contents);
+  }
+
+  throw new Error('Missing request body');
+}
+
+function validateBookingPayload_(data) {
+  const required = ['date', 'time', 'coachName'];
+  required.forEach(function(field) {
+    if (!data[field]) throw new Error('Missing booking field: ' + field);
+  });
+
+  if (!data.customer || !data.customer.name) {
+    throw new Error('Missing customer name');
+  }
+}
+
+function sendBookingConfirmation_(booking) {
+  const customerName = booking.customer.name;
+  const serviceName = booking.service && booking.service.name
+    ? booking.service.name
+    : '預約課程';
+
+  const message = {
+    type: 'flex',
+    altText: '活力學苑預約成功通知',
+    contents: {
+      type: 'bubble',
+      header: {
+        type: 'box',
+        layout: 'vertical',
+        backgroundColor: '#06C755',
+        paddingAll: '20px',
+        contents: [{
+          type: 'text',
+          text: '預約成功',
+          color: '#FFFFFF',
+          weight: 'bold',
+          size: 'xl'
+        }]
+      },
+      body: {
+        type: 'box',
+        layout: 'vertical',
+        spacing: 'md',
+        paddingAll: '20px',
+        contents: [
+          {
+            type: 'text',
+            text: customerName + ' 您好，已為您完成預約。',
+            wrap: true,
+            weight: 'bold',
+            size: 'md'
+          },
+          bookingRow_('日期', booking.date),
+          bookingRow_('時間', booking.time),
+          bookingRow_('大名', customerName),
+          bookingRow_('教練', booking.coachName),
+          bookingRow_('課程', serviceName),
+          {
+            type: 'separator',
+            margin: 'lg'
+          },
+          {
+            type: 'text',
+            text: '如需取消或更改預約，請提前與活力學苑聯繫。',
+            wrap: true,
+            size: 'xs',
+            color: '#777777',
+            margin: 'lg'
+          }
+        ]
+      }
+    }
+  };
+
+  pushLineMessages_(booking.lineUserId, [message]);
+}
+
+function sendCancellationConfirmation_(booking) {
+  const text = [
+    '預約已取消',
+    '日期：' + (booking.date || '-'),
+    '時間：' + (booking.time || '-'),
+    '教練：' + (booking.coachName || '-'),
+    '原因：' + (booking.reason || '未填寫')
+  ].join('\n');
+
+  pushLineMessages_(booking.lineUserId, [{ type: 'text', text: text }]);
+}
+
+function bookingRow_(label, value) {
+  return {
+    type: 'box',
+    layout: 'baseline',
+    spacing: 'sm',
+    contents: [
+      {
+        type: 'text',
+        text: label,
+        color: '#888888',
+        size: 'sm',
+        flex: 2
+      },
+      {
+        type: 'text',
+        text: String(value || '-'),
+        color: '#333333',
+        size: 'sm',
+        flex: 5,
+        wrap: true
+      }
+    ]
+  };
+}
+
+function pushLineMessages_(lineUserId, messages) {
+  const accessToken = PropertiesService.getScriptProperties()
+    .getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+
+  if (!accessToken) {
+    throw new Error('LINE_CHANNEL_ACCESS_TOKEN is not configured');
+  }
+
+  const response = UrlFetchApp.fetch('https://api.line.me/v2/bot/message/push', {
+    method: 'post',
+    contentType: 'application/json',
+    headers: {
+      Authorization: 'Bearer ' + accessToken
+    },
+    payload: JSON.stringify({
+      to: lineUserId,
+      messages: messages
+    }),
+    muteHttpExceptions: true
+  });
+
+  const responseCode = response.getResponseCode();
+  if (responseCode < 200 || responseCode >= 300) {
+    throw new Error('LINE API error ' + responseCode + ': ' + response.getContentText());
+  }
+}
+
+function jsonResponse_(data) {
+  return ContentService
+    .createTextOutput(JSON.stringify(data))
+    .setMimeType(ContentService.MimeType.JSON);
+}
 
 /**
  * 主函式：自動發送 24 小時前預約提醒

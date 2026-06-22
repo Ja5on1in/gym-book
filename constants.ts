@@ -38,7 +38,7 @@ export const COLOR_OPTIONS = [
     { label: '紅色', value: 'bg-red-100 text-red-800 border-red-300 dark:bg-red-900 dark:text-red-200 dark:border-red-700' },
 ];
 
-export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbw6VsKvWB2Lo6G96-2EKmp2qpxgoTF9cgPaJF8SLIezKbOeWAt-0typ-3H1ZkfmZyh2/exec";
+export const GOOGLE_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbyKjqheyXXtePqF4YGzP76Fvc-2-Kvad7yGlikGMXB3ce0-mDW5P02Ngu10_TuAGebpJQ/exec";
 
 export const EXERCISE_LIST: Exercise[] = [
   // 胸部 (Chest)
