@@ -101,7 +101,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
               setAuthError('LINE 身分驗證失敗，請重新整理後再試一次');
           }
       } else {
-           setAuthError('請先登入 LINE 以完成預約');
+           await onSubmit(e);
       }
       setIsVerifying(false);
   };
@@ -213,43 +213,27 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
     );
   };
 
-  if (liffError) {
-    return (
-        <div className="max-w-md mx-auto mt-12 animate-slideUp px-4">
-             <div className="glass-panel p-10 rounded-3xl text-center shadow-xl border border-red-500/40">
-                 <div className="w-20 h-20 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-red-600 dark:text-red-400">
-                     <AlertTriangle size={36}/>
-                 </div>
-                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">LINE 功能無法使用</h2>
-                 <p className="text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">無法初始化 LINE Front-end Framework (LIFF)。請嘗試重新整理頁面，或確認您是在 LINE App 中開啟此頁面。</p>
-                 <div className="text-xs text-left bg-slate-100 dark:bg-slate-800 p-3 rounded-lg text-slate-500 dark:text-slate-400">
-                    <p className="font-bold">錯誤訊息:</p>
-                    <p className="break-all font-mono">{liffError}</p>
-                 </div>
-             </div>
-        </div>
-    );
-  }
-
-  if (!liffProfile) {
-     return (
-        <div className="max-w-md mx-auto mt-12 animate-slideUp px-4">
-             <div className="glass-panel p-10 rounded-3xl text-center shadow-xl border border-white/40">
-                 <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-green-600 dark:text-green-400">
-                     <MessageCircle size={36}/>
-                 </div>
-                 <h2 className="text-2xl font-bold text-slate-800 dark:text-white mb-3">歡迎使用 活力學苑預約系統</h2>
-                 <p className="text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">為了提供完整的預約服務與點數紀錄，請先登入您的 LINE 帳號。</p>
-                 <button onClick={onLogin} className="w-full py-4 bg-[#06C755] hover:bg-[#05b34c] text-white rounded-xl font-bold shadow-lg shadow-green-500/30 transition-all transform hover:scale-[1.02] flex items-center justify-center gap-2">
-                     <LogIn size={20}/> LINE 登入
-                 </button>
-             </div>
-        </div>
-     );
-  }
-
   return (
     <div className="max-w-3xl mx-auto pb-12">
+      {(liffError || !liffProfile) && (
+        <div className="mb-6 glass-panel p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-900/10 text-amber-800 dark:text-amber-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <div className="text-sm leading-relaxed">
+              {liffError ? (
+                <>
+                  目前 LINE 功能無法初始化，但你還是可以直接用網頁完成預約；只是這次不會同步推到你的 LINE。
+                </>
+              ) : (
+                <>
+                  你目前沒有用 LINE 登入，仍然可以直接完成網頁預約；若之後想同步收到 LINE 通知，再登入一次即可。
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="mb-8">
         <div className="flex justify-between text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2 px-2">
           <span className={step >= 1 ? 'text-indigo-600 dark:text-indigo-400' : ''}>服務</span>
@@ -265,9 +249,16 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       {step === 1 && (
         <div className="space-y-4 animate-slideUp">
           <div className="flex items-center gap-2 mb-2">
-              <h2 className="text-2xl font-bold text-slate-800 dark:text-white">嗨，{liffProfile.displayName}！</h2>
+              <h2 className="text-2xl font-bold text-slate-800 dark:text-white">嗨，{liffProfile?.displayName || '歡迎'}！</h2>
           </div>
-          <p className="text-slate-500 dark:text-slate-400 mb-4">今天想做什麼訓練呢？</p>
+          <p className="text-slate-500 dark:text-slate-400 mb-4">
+            {liffProfile ? '今天想做什麼訓練呢？' : '今天想做什麼訓練呢？你可以直接用網頁預約。'}
+          </p>
+          {!liffProfile && (
+            <button onClick={onLogin} className="mb-4 inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#06C755] hover:bg-[#05b34c] text-white font-bold shadow-lg shadow-green-500/20 transition-all">
+              <LogIn size={18} /> 登入 LINE（可選）
+            </button>
+          )}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {SERVICES.map(service => (
               <button
@@ -439,17 +430,25 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                 </div>
              </div>
 
-             <div className="space-y-1">
+            <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><User size={12}/> 姓名</label>
-                <input readOnly type="text" className="w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm bg-slate-100 dark:bg-slate-800 cursor-not-allowed" 
-                       placeholder="請先登入 LINE"
-                       value={formData.name} />
+                <input 
+                       readOnly={!!liffProfile}
+                       type="text" 
+                       className={`w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm ${liffProfile ? 'bg-slate-100 dark:bg-slate-800 cursor-not-allowed' : 'bg-white dark:bg-slate-800'}`} 
+                       placeholder={liffProfile ? '請先登入 LINE' : '請輸入姓名'}
+                       value={formData.name}
+                       onChange={e => setFormData({...formData, name: e.target.value})} />
              </div>
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><Phone size={12}/> 電話</label>
-                <input readOnly type="tel" className="w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm bg-slate-100 dark:bg-slate-800 cursor-not-allowed" 
-                       placeholder="請先登入 LINE"
-                       value={formData.phone} />
+                <input 
+                       readOnly={!!liffProfile}
+                       type="tel" 
+                       className={`w-full glass-input rounded-xl p-4 dark:text-white focus:ring-2 focus:ring-indigo-500/50 outline-none transition-all shadow-sm ${liffProfile ? 'bg-slate-100 dark:bg-slate-800 cursor-not-allowed' : 'bg-white dark:bg-slate-800'}`} 
+                       placeholder={liffProfile ? '請先登入 LINE' : '請輸入電話'}
+                       value={formData.phone}
+                       onChange={e => setFormData({...formData, phone: e.target.value})} />
              </div>
              <div className="space-y-1">
                 <label className="text-xs font-bold text-slate-500 uppercase ml-1 flex items-center gap-1"><Mail size={12}/> Email (選填)</label>
@@ -467,7 +466,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
              <button type="submit" disabled={isVerifying || !!authError} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-6 flex items-center justify-center gap-2
                  ${!!authError ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
-                {isVerifying ? '驗證中...' : !!authError ? '無法預約' : '確認預約'} <MessageCircle size={18}/>
+                {isVerifying ? '確認中...' : !!authError ? '無法預約' : (liffProfile ? '確認預約' : '確認預約')} <MessageCircle size={18}/>
              </button>
           </form>
         </div>

@@ -207,7 +207,11 @@ function pushLineMessages_(lineUserId, messages) {
 
   const responseCode = response.getResponseCode();
   if (responseCode < 200 || responseCode >= 300) {
-    throw new Error('LINE API error ' + responseCode + ': ' + response.getContentText());
+    const detail = response.getContentText();
+    if (responseCode === 401 || responseCode === 403) {
+      throw new Error('LINE_CHANNEL_ACCESS_TOKEN 無效、已過期，或尚未開啟對應的 Messaging API 權限。原始回應：' + detail);
+    }
+    throw new Error('LINE API error ' + responseCode + ': ' + detail);
   }
 }
 
