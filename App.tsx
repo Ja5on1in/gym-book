@@ -332,11 +332,23 @@ export default function App() {
   const sendToGoogleScript = async (data: any) => {
     if (!GOOGLE_SCRIPT_URL) return;
     try {
-        const fd = new FormData();
-        fd.append('data', JSON.stringify(data));
-        fd.append('timestamp', new Date().toISOString());
-        fetch(GOOGLE_SCRIPT_URL, { method: 'POST', mode: 'no-cors', body: fd })
-            .catch(e => console.warn("Webhook background error:", e));
+        const body = new URLSearchParams();
+        body.set('data', JSON.stringify(data));
+        body.set('timestamp', new Date().toISOString());
+
+        // sendBeacon 在關頁、切換頁面或行動裝置環境下更穩；失敗再退回 fetch。
+        if (navigator.sendBeacon) {
+            const blob = new Blob([body.toString()], { type: 'application/x-www-form-urlencoded;charset=UTF-8' });
+            const sent = navigator.sendBeacon(GOOGLE_SCRIPT_URL, blob);
+            if (sent) return;
+        }
+
+        await fetch(GOOGLE_SCRIPT_URL, {
+            method: 'POST',
+            mode: 'no-cors',
+            body,
+            keepalive: true
+        }).catch(e => console.warn("Webhook background error:", e));
     } catch (e) { 
         console.error("Webhook Error (Non-blocking):", e); 
     }

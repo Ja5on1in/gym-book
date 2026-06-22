@@ -3,11 +3,12 @@
 
 /**
  * 預約網站 Web App 入口。
- * 網站會以 FormData 的 data 欄位傳入 JSON。
+ * 網站會以 application/x-www-form-urlencoded 的 data 欄位傳入 JSON。
  */
 function doPost(e) {
   try {
     const data = parseRequestData_(e);
+    console.log('doPost payload:', JSON.stringify(data));
 
     if (!data.action) {
       return jsonResponse_({ ok: false, error: 'Missing action' });
@@ -47,7 +48,27 @@ function parseRequestData_(e) {
   }
 
   if (e.postData && e.postData.contents) {
-    return JSON.parse(e.postData.contents);
+    const raw = String(e.postData.contents || '').trim();
+    if (!raw) throw new Error('Empty request body');
+
+    try {
+      return JSON.parse(raw);
+    } catch (jsonError) {
+      const parsed = raw.split('&').reduce(function(acc, part) {
+        const index = part.indexOf('=');
+        if (index === -1) return acc;
+        const key = decodeURIComponent(part.slice(0, index).replace(/\+/g, ' '));
+        const value = decodeURIComponent(part.slice(index + 1).replace(/\+/g, ' '));
+        acc[key] = value;
+        return acc;
+      }, {});
+
+      if (parsed.data) {
+        return JSON.parse(parsed.data);
+      }
+
+      throw jsonError;
+    }
   }
 
   throw new Error('Missing request body');
