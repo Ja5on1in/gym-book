@@ -1,7 +1,7 @@
 
 
 import React, { useState, useEffect, useMemo } from 'react';
-import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard, TrendingUp, Dumbbell, ChevronDown, Activity } from 'lucide-react';
+import { User, Calendar, Clock, AlertTriangle, User as UserIcon, CheckCircle, Info, Timer, CreditCard, TrendingUp, Dumbbell, ChevronDown, Activity, ChevronLeft, ChevronRight } from 'lucide-react';
 import { Appointment, Coach, UserInventory, WorkoutPlan } from '../types';
 
 interface MyBookingsProps {
@@ -89,6 +89,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
   const [selectedExercise, setSelectedExercise] = useState<string>('');
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
   const [checkInConfirmApp, setCheckInConfirmApp] = useState<Appointment | null>(null);
+  const [bookingPage, setBookingPage] = useState(1);
 
   const [, setTick] = useState(0);
   useEffect(() => {
@@ -176,6 +177,23 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
       })
       .sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime());
 
+  const bookingPageSize = 6;
+  const bookingTotalPages = Math.max(1, Math.ceil(myApps.length / bookingPageSize));
+  const paginatedMyApps = useMemo(() => {
+    const start = (bookingPage - 1) * bookingPageSize;
+    return myApps.slice(start, start + bookingPageSize);
+  }, [myApps, bookingPage]);
+
+  useEffect(() => {
+    setBookingPage(1);
+  }, [liffProfile?.userId]);
+
+  useEffect(() => {
+    if (bookingPage > bookingTotalPages) {
+      setBookingPage(bookingTotalPages);
+    }
+  }, [bookingPage, bookingTotalPages]);
+
   return (
     <div className="max-w-2xl mx-auto animate-slideUp pb-24 px-4">
       {/* Profile Header */}
@@ -223,7 +241,8 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                 <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">快去預約您的第一堂課程吧！</p>
             </div>
           ) : (
-            myApps.map(app => {
+            <>
+            {paginatedMyApps.map(app => {
               const coach = coaches.find(c => c.id === app.coachId);
               const isCancelled = app.status === 'cancelled';
               const isCompleted = app.status === 'completed';
@@ -277,7 +296,34 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                   {isCancelled && <div className="text-xs text-red-400">取消原因：{app.cancelReason}</div>}
                 </div>
               );
-            })
+            })}
+            {myApps.length > bookingPageSize && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <div className="text-sm text-slate-500 dark:text-slate-400">
+                  顯示 {Math.min((bookingPage - 1) * bookingPageSize + 1, myApps.length)} - {Math.min(bookingPage * bookingPageSize, myApps.length)} 筆，共 {myApps.length} 筆
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setBookingPage(p => Math.max(1, p - 1))}
+                    disabled={bookingPage === 1}
+                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1"
+                  >
+                    <ChevronLeft size={16}/> 上一頁
+                  </button>
+                  <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                    {bookingPage} / {bookingTotalPages}
+                  </span>
+                  <button
+                    onClick={() => setBookingPage(p => Math.min(bookingTotalPages, p + 1))}
+                    disabled={bookingPage === bookingTotalPages}
+                    className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800 flex items-center gap-1"
+                  >
+                    下一頁 <ChevronRight size={16}/>
+                  </button>
+                </div>
+              </div>
+            )}
+            </>
           )}
         </div>
       ) : (

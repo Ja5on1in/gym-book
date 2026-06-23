@@ -85,20 +85,22 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       setIsVerifying(true);
       setAuthError(null);
       
-      if (liffProfile) {
-          try {
-              const userInv = inventories.find(i => i.lineUserId === liffProfile.userId);
-              
-              if (!userInv) {
-                  await onRegisterUser({ userId: liffProfile.userId, displayName: liffProfile.displayName });
-              }
-              await onSubmit(e, { userId: liffProfile.userId, displayName: liffProfile.displayName });
-          } catch (err) {
-              console.error("LIFF Error", err);
-              await onSubmit(e); 
+      if (!liffProfile) {
+          setAuthError('請先登入 LINE 以完成預約');
+          setIsVerifying(false);
+          return;
+      }
+
+      try {
+          const userInv = inventories.find(i => i.lineUserId === liffProfile.userId);
+          
+          if (!userInv) {
+              await onRegisterUser({ userId: liffProfile.userId, displayName: liffProfile.displayName });
           }
-      } else {
-           setAuthError('請先登入 LINE 以完成預約');
+          await onSubmit(e, { userId: liffProfile.userId, displayName: liffProfile.displayName });
+      } catch (err) {
+          console.error("LIFF Error", err);
+          setAuthError('LINE 驗證失敗，請重新登入後再試一次');
       }
       setIsVerifying(false);
   };

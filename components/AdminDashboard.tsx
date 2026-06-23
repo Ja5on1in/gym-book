@@ -67,6 +67,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
 
   // Inventory Management State
   const [searchQuery, setSearchQuery] = useState('');
+  const [inventoryPage, setInventoryPage] = useState(1);
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingInventory, setEditingInventory] = useState<UserInventory | null>(null);
   const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string, lineUserId?: string}>({ private: 0, group: 0, name: '', phone: '' });
@@ -266,6 +267,23 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
     (i.phone && i.phone.includes(searchQuery)) || 
     (i.lineUserId && i.lineUserId.includes(searchQuery))
   );
+
+  const inventoryPageSize = 12;
+  const inventoryTotalPages = Math.max(1, Math.ceil(filteredInventories.length / inventoryPageSize));
+  const paginatedInventories = useMemo(() => {
+    const start = (inventoryPage - 1) * inventoryPageSize;
+    return filteredInventories.slice(start, start + inventoryPageSize);
+  }, [filteredInventories, inventoryPage]);
+
+  useEffect(() => {
+    setInventoryPage(1);
+  }, [searchQuery, adminTab]);
+
+  useEffect(() => {
+    if (inventoryPage > inventoryTotalPages) {
+      setInventoryPage(inventoryTotalPages);
+    }
+  }, [inventoryPage, inventoryTotalPages]);
 
   const handleModalDayConfig = (dayIndex: number, enabled: boolean, start?: string, end?: string) => {
      const currentDays = editingCoach.workDays || [];
@@ -626,7 +644,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                           </div>
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                          {filteredInventories.map(inv => {
+                          {paginatedInventories.map(inv => {
                               const canEdit = ['manager', 'receptionist', 'coach'].includes(currentUser.role);
                               return (
                                   <div key={inv.id} onClick={() => canEdit && handleOpenInventoryModal(inv)} className={`glass-card p-6 rounded-2xl border border-slate-100 dark:border-slate-700 transition-all hover:shadow-lg hover:scale-[1.02] group relative ${canEdit ? 'cursor-pointer' : ''}`}>
@@ -654,6 +672,32 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               )
                           })}
                       </div>
+                      {filteredInventories.length > inventoryPageSize && (
+                        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                            <div className="text-sm text-slate-500 dark:text-slate-400">
+                                顯示 {Math.min((inventoryPage - 1) * inventoryPageSize + 1, filteredInventories.length)} - {Math.min(inventoryPage * inventoryPageSize, filteredInventories.length)} 筆，共 {filteredInventories.length} 筆
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <button
+                                  onClick={() => setInventoryPage(p => Math.max(1, p - 1))}
+                                  disabled={inventoryPage === 1}
+                                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800"
+                                >
+                                  上一頁
+                                </button>
+                                <span className="text-sm font-bold text-slate-600 dark:text-slate-300">
+                                  {inventoryPage} / {inventoryTotalPages}
+                                </span>
+                                <button
+                                  onClick={() => setInventoryPage(p => Math.min(inventoryTotalPages, p + 1))}
+                                  disabled={inventoryPage === inventoryTotalPages}
+                                  className="px-4 py-2 rounded-xl border border-slate-200 dark:border-slate-700 text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 dark:hover:bg-slate-800"
+                                >
+                                  下一頁
+                                </button>
+                            </div>
+                        </div>
+                      )}
                   </div>
                )}
 

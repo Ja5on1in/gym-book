@@ -500,6 +500,10 @@ export default function App() {
 
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
+    if (!lineProfile?.userId) {
+        showNotification('請先登入 LINE 才能預約', 'error');
+        return;
+    }
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
         showNotification('請填寫完整資訊', 'error'); return; 
     }
@@ -512,30 +516,28 @@ export default function App() {
 
     try {
         let inventory: UserInventory | null = null;
-        if (lineProfile) {
-            const invByPhone = inventories.find(i => i.phone === formData.phone) || null;
-            const invByLine = inventories.find(i => i.lineUserId === lineProfile.userId) || null;
+        const invByPhone = inventories.find(i => i.phone === formData.phone) || null;
+        const invByLine = inventories.find(i => i.lineUserId === lineProfile.userId) || null;
 
-            if (invByPhone) {
-                inventory = invByPhone;
-                if (!invByPhone.lineUserId) {
-                    await saveToFirestore('user_inventory', invByPhone.id, { ...invByPhone, lineUserId: lineProfile.userId, lastUpdated: new Date().toISOString() });
-                    inventory = { ...invByPhone, lineUserId: lineProfile.userId };
-                }
-            } else if (invByLine) {
-                inventory = invByLine;
-            } else {
-                const newInventory: UserInventory = {
-                    id: lineProfile.userId,
-                    lineUserId: lineProfile.userId,
-                    name: formData.name,
-                    phone: formData.phone || '',
-                    credits: { private: 0, group: 0 },
-                    lastUpdated: new Date().toISOString()
-                };
-                await saveToFirestore('user_inventory', newInventory.id, newInventory);
-                inventory = newInventory;
+        if (invByPhone) {
+            inventory = invByPhone;
+            if (!invByPhone.lineUserId) {
+                await saveToFirestore('user_inventory', invByPhone.id, { ...invByPhone, lineUserId: lineProfile.userId, lastUpdated: new Date().toISOString() });
+                inventory = { ...invByPhone, lineUserId: lineProfile.userId };
             }
+        } else if (invByLine) {
+            inventory = invByLine;
+        } else {
+            const newInventory: UserInventory = {
+                id: lineProfile.userId,
+                lineUserId: lineProfile.userId,
+                name: formData.name,
+                phone: formData.phone || '',
+                credits: { private: 0, group: 0 },
+                lastUpdated: new Date().toISOString()
+            };
+            await saveToFirestore('user_inventory', newInventory.id, newInventory);
+            inventory = newInventory;
         }
         
         if (inventory && selectedService?.id === 'coaching' && inventory.credits.private <= 0) {
@@ -548,18 +550,18 @@ export default function App() {
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
             customer: { name: formData.name, phone: formData.phone || "", email: formData.email || "" }, 
             status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId || '',
-            lineName: lineProfile?.displayName || '',
-            customerInventoryId: inventory?.id || lineProfile?.userId || ''
+            lineUserId: lineProfile.userId,
+            lineName: lineProfile.displayName,
+            customerInventoryId: inventory?.id || lineProfile.userId
         };
         
         await saveToFirestore('appointments', id, newApp);
         addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name}`);
         
-        sendToGoogleScript({ action: 'create_booking', ...newApp, lineUserId: lineProfile?.userId || '', coachName: selectedCoach.name, title: selectedCoach.title || '教練', type: 'private' }).catch(err => console.warn("Webhook failed silently", err));
+        sendToGoogleScript({ action: 'create_booking', ...newApp, lineUserId: lineProfile.userId, coachName: selectedCoach.name, title: selectedCoach.title || '教練', type: 'private' }).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
-        showNotification(lineProfile?.userId ? '預約成功！LINE 通知將同步發送' : '預約成功！若要接收 LINE 通知，下次請用 LINE 登入', 'success');
+        showNotification('預約成功！LINE 通知將同步發送', 'success');
         
     } catch (error: any) {
         console.error("Booking Error:", error);
