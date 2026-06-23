@@ -42,7 +42,7 @@ import {
     batchWriteWithDeletes
 } from './services/firebase';
 import { onAuthStateChanged, EmailAuthProvider, reauthenticateWithCredential } from 'firebase/auth';
-import { writeBatch, doc, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
+import { writeBatch, doc, getDoc, updateDoc, increment } from 'firebase/firestore';
 
 
 import { INITIAL_COACHES, ALL_TIME_SLOTS, BLOCK_REASONS, GOOGLE_SCRIPT_URL, SERVICES } from './constants';
@@ -138,24 +138,15 @@ export default function App() {
   // Renamed and updated function as per request
   const checkAndCreateUser = async (profile: { userId: string, displayName: string }) => {
       if (!db) {
-        console.warn("Firestore is not available. Skipping user creation.");
-        return;
+          console.warn("Firestore is not available. Skipping user creation.");
+          return;
       }
       try {
           const userDocRef = doc(db, 'user_inventory', profile.userId);
           const docSnap = await getDoc(userDocRef);
 
           if (!docSnap.exists()) {
-              const newInventory: UserInventory = {
-                  id: profile.userId,
-                  lineUserId: profile.userId,
-                  name: profile.displayName,
-                  phone: '',
-                  credits: { private: 0, group: 0 },
-                  lastUpdated: new Date().toISOString(),
-              };
-              await setDoc(userDocRef, newInventory);
-              addLog('新戶自動註冊', `LIFF 登入時自動建立學員資料: ${profile.displayName}`);
+              console.log(`LIFF 已登入，但尚未建立學員資料：${profile.displayName}`);
           }
       } catch (e) {
           console.error("Error during user auto-registration:", e);
@@ -522,13 +513,28 @@ export default function App() {
     try {
         let inventory: UserInventory | null = null;
         if (lineProfile) {
-            inventory = inventories.find(i => i.lineUserId === lineProfile.userId) || null;
-            if (!inventory) {
-                const invByPhone = inventories.find(i => i.phone === formData.phone);
-                if (invByPhone && !invByPhone.lineUserId) {
+            const invByPhone = inventories.find(i => i.phone === formData.phone) || null;
+            const invByLine = inventories.find(i => i.lineUserId === lineProfile.userId) || null;
+
+            if (invByPhone) {
+                inventory = invByPhone;
+                if (!invByPhone.lineUserId) {
                     await saveToFirestore('user_inventory', invByPhone.id, { ...invByPhone, lineUserId: lineProfile.userId, lastUpdated: new Date().toISOString() });
                     inventory = { ...invByPhone, lineUserId: lineProfile.userId };
                 }
+            } else if (invByLine) {
+                inventory = invByLine;
+            } else {
+                const newInventory: UserInventory = {
+                    id: lineProfile.userId,
+                    lineUserId: lineProfile.userId,
+                    name: formData.name,
+                    phone: formData.phone || '',
+                    credits: { private: 0, group: 0 },
+                    lastUpdated: new Date().toISOString()
+                };
+                await saveToFirestore('user_inventory', newInventory.id, newInventory);
+                inventory = newInventory;
             }
         }
         
@@ -542,7 +548,9 @@ export default function App() {
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
             customer: { name: formData.name, phone: formData.phone || "", email: formData.email || "" }, 
             status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile?.userId || '', lineName: lineProfile?.displayName || ''
+            lineUserId: lineProfile?.userId || '',
+            lineName: lineProfile?.displayName || '',
+            customerInventoryId: inventory?.id || lineProfile?.userId || ''
         };
         
         await saveToFirestore('appointments', id, newApp);
@@ -563,46 +571,7 @@ export default function App() {
     if (isProcessing) return;
     setIsProcessing(true);
     try {
-        if (app.type === 'group' && customerId) {
-            const currentAttendees = app.attendees?.filter(a => a.status === 'joined') || [];
-            if (currentAttendees.length <= 1) {
-                // Last person, cancel the whole class
-                const updated = { ...app, status: 'cancelled' as const, cancelReason: `最後一位學員 ${currentAttendees[0]?.name || ''} 取消` };
-                await saveToFirestore('appointments', app.id, updated);
-                addLog('團課取消', `課程 ${app.reason} 因最後一位學員取消而關閉`);
-            } else {
-                // Not the last person, just remove them
-                const updatedAttendees = app.attendees?.map(a => a.customerId === customerId ? { ...a, status: 'cancelled' as const } : a);
-                await saveToFirestore('appointments', app.id, { attendees: updatedAttendees });
-                const student = app.attendees?.find(a=>a.customerId === customerId);
-                addLog('團課學員取消', `學員 ${student?.name || customerId} 取消課程 ${app.reason}`);
-            }
-        } else {
-            // Private class cancellation logic (original)
-            const originalStatus = app.status;
-            const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
-            await saveToFirestore('appointments', app.id, updated);
-            addLog('客戶取消', `取消 ${app.customer?.name} (${originalStatus}) - ${reason}`);
-    
-            if ((app.type === 'private' || (app.type as string) === 'client') && originalStatus === 'completed') {
-                let inventory: UserInventory | undefined;
-                if (app.lineUserId) {
-                    inventory = inventories.find(i => i.lineUserId === app.lineUserId);
-                }
-                if (!inventory && app.customer?.phone) {
-                    inventory = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
-                }
-                if (!inventory && app.customer?.name) {
-                    inventory = inventories.find(i => i.name === app.customer.name);
-                }
-    
-                if (inventory && db) {
-                    const invRef = doc(db, 'user_inventory', inventory.id);
-                    await updateDoc(invRef, { 'credits.private': increment(1) });
-                    addLog('庫存調整', `因取消已完課預約，返還 ${inventory.name} 1 點私人課。`);
-                }
-            }
-        }
+        await cancelAppointmentCore(app, reason, customerId);
 
         const coach = coaches.find(c => c.id === app.coachId);
         sendToGoogleScript({ action: 'cancel_booking', id: app.id, reason, lineUserId: app.lineUserId || "", coachName: app.coachName, title: coach?.title || '教練', date: app.date, time: app.time }).catch(e => console.warn("Cancel webhook failed", e));
@@ -615,6 +584,56 @@ export default function App() {
         setIsProcessing(false);
     }
 };
+
+  const cancelAppointmentCore = async (app: Appointment, reason: string, customerId?: string) => {
+    if (app.type === 'group' && customerId) {
+        const currentAttendees = app.attendees?.filter(a => a.status === 'joined') || [];
+        if (currentAttendees.length <= 1) {
+            const updated = { ...app, status: 'cancelled' as const, cancelReason: `最後一位學員 ${currentAttendees[0]?.name || ''} 取消` };
+            await saveToFirestore('appointments', app.id, updated);
+            addLog('團課取消', `課程 ${app.reason} 因最後一位學員取消而關閉`);
+        } else {
+            const updatedAttendees = app.attendees?.map(a => a.customerId === customerId ? { ...a, status: 'cancelled' as const } : a);
+            await saveToFirestore('appointments', app.id, { attendees: updatedAttendees });
+            const student = app.attendees?.find(a=>a.customerId === customerId);
+            addLog('團課學員取消', `學員 ${student?.name || customerId} 取消課程 ${app.reason}`);
+        }
+        return;
+    }
+
+    const originalStatus = app.status;
+    const updated = { ...app, status: 'cancelled' as const, cancelReason: reason };
+    await saveToFirestore('appointments', app.id, updated);
+    addLog('客戶取消', `取消 ${app.customer?.name} (${originalStatus}) - ${reason}`);
+
+    if ((app.type === 'private' || (app.type as string) === 'client') && originalStatus === 'completed') {
+        const inventory = findInventoryForAppointment(app);
+        if (inventory && db) {
+            const invRef = doc(db, 'user_inventory', inventory.id);
+            await updateDoc(invRef, { 'credits.private': increment(1) });
+            addLog('庫存調整', `因取消已完課預約，返還 ${inventory.name} 1 點私人課。`);
+        }
+    }
+  };
+
+  const findInventoryForAppointment = (app: Appointment) => {
+      if (app.customerInventoryId) {
+          const byId = inventories.find(i => i.id === app.customerInventoryId);
+          if (byId) return byId;
+      }
+      if (app.lineUserId) {
+          const byLine = inventories.find(i => i.lineUserId === app.lineUserId);
+          if (byLine) return byLine;
+      }
+      if (app.customer?.phone) {
+          const byPhone = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
+          if (byPhone) return byPhone;
+      }
+      if (app.customer?.name) {
+          return inventories.find(i => i.name === app.customer.name);
+      }
+      return undefined;
+  };
 
   const resetBooking = () => {
     setBookingStep(1); setSelectedService(null); setSelectedCoach(null); setSelectedSlot(null); setFormData({ name: '', phone: '', email: '' });
@@ -697,6 +716,7 @@ export default function App() {
                  if (isPrivate) {
                      appointmentData.customer = blockForm.customer ? { ...blockForm.customer } : null;
                      appointmentData.lineUserId = targetInventory?.lineUserId || "";
+                     appointmentData.customerInventoryId = targetInventory?.id || "";
                  }
                  if (isGroup) {
                      appointmentData.attendees = blockForm.attendees;
@@ -849,9 +869,15 @@ export default function App() {
 
   const handleUserCheckIn = async (app: Appointment) => {
       try {
-          if (liffProfile && app.lineUserId !== liffProfile.userId) {
-              showNotification('身份驗證失敗：此預約不屬於您', 'error');
-              return;
+          if (liffProfile) {
+              const currentInventory = inventories.find(i => i.lineUserId === liffProfile.userId) || null;
+              const ownsByLine = app.lineUserId && app.lineUserId === liffProfile.userId;
+              const ownsByInventory = currentInventory && app.customerInventoryId && app.customerInventoryId === currentInventory.id;
+              const ownsByLegacyMatch = currentInventory && app.customer?.phone === currentInventory.phone && app.customer?.name === currentInventory.name;
+              if (!(ownsByLine || ownsByInventory || ownsByLegacyMatch)) {
+                  showNotification('身份驗證失敗：此預約不屬於您', 'error');
+                  return;
+              }
           }
           await saveToFirestore('appointments', app.id, { ...app, status: 'checked_in' });
           addLog('學員簽到', `學員 ${app.customer?.name} 已簽到，等待教練確認`);
@@ -896,10 +922,7 @@ export default function App() {
                 logDetail = `管理員 ${currentUser.name} 確認團課 ${app.reason} 完課，為 ${attendeeNames.length} 位學員扣點: ${attendeeNames.join(', ')}`;
             
             } else { // Private lesson
-                let inventoryToUpdate: UserInventory | undefined;
-                if (app.lineUserId) inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
-                if (!inventoryToUpdate && app.customer?.phone) inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
-                if (!inventoryToUpdate && app.customer?.name) inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
+                const inventoryToUpdate = findInventoryForAppointment(app);
 
                 logDetail = `教練 ${currentUser.name} 確認 ${app.customer?.name} 完課`;
                 if (inventoryToUpdate && inventoryToUpdate.credits.private > 0) {
@@ -951,10 +974,7 @@ export default function App() {
                 logDetail = `管理員 ${currentUser.name} 撤銷團課 ${app.reason}，返還 ${attendeeNames.length} 位學員點數: ${attendeeNames.join(', ')}`;
 
             } else { // Private lesson
-                let inventoryToUpdate: UserInventory | undefined;
-                if (app.lineUserId) inventoryToUpdate = inventories.find(i => i.lineUserId === app.lineUserId);
-                if (!inventoryToUpdate && app.customer?.phone) inventoryToUpdate = inventories.find(i => i.phone === app.customer.phone && i.name === app.customer.name);
-                if (!inventoryToUpdate && app.customer?.name) inventoryToUpdate = inventories.find(i => i.name === app.customer.name);
+                const inventoryToUpdate = findInventoryForAppointment(app);
                 
                 logDetail = `管理員 ${currentUser.name} 撤銷完課`;
                 if (inventoryToUpdate) {
@@ -1000,9 +1020,9 @@ export default function App() {
       if(!window.confirm(`確定取消選取的 ${selectedBatch.size} 筆預約嗎？`)) return;
 
       try {
-          await Promise.all(selectedApps.map(async (app) => {
-              await handleCustomerCancel(app, '管理員批次取消'); 
-          }));
+          for (const app of selectedApps) {
+              await cancelAppointmentCore(app, '管理員批次取消');
+          }
           addLog('批次取消', `取消 ${selectedBatch.size} 筆預約`);
           setSelectedBatch(new Set());
           showNotification(`成功取消 ${selectedBatch.size} 筆`, 'success');

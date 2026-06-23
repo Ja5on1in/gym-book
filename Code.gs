@@ -37,7 +37,62 @@ function doPost(e) {
 }
 
 function doGet() {
-  return jsonResponse_({ ok: true, service: 'gym-book-line-notification' });
+  const check = checkLineBotHealth_();
+  return jsonResponse_({
+    ok: true,
+    service: 'gym-book-line-notification',
+    lineTokenConfigured: check.configured,
+    lineTokenValid: check.valid,
+    lineBotInfo: check.botInfo || null,
+    lineError: check.error || null
+  });
+}
+
+function checkLineBotHealth_() {
+  const accessToken = PropertiesService.getScriptProperties()
+    .getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+
+  if (!accessToken) {
+    return {
+      configured: false,
+      valid: false,
+      error: 'LINE_CHANNEL_ACCESS_TOKEN is not configured'
+    };
+  }
+
+  const response = UrlFetchApp.fetch('https://api.line.me/v2/bot/info', {
+    method: 'get',
+    headers: {
+      Authorization: 'Bearer ' + accessToken
+    },
+    muteHttpExceptions: true
+  });
+
+  const responseCode = response.getResponseCode();
+  const responseText = response.getContentText();
+
+  if (responseCode >= 200 && responseCode < 300) {
+    try {
+      return {
+        configured: true,
+        valid: true,
+        botInfo: JSON.parse(responseText)
+      };
+    } catch (parseError) {
+      return {
+        configured: true,
+        valid: true,
+        botInfoRaw: responseText,
+        error: 'LINE bot info response could not be parsed'
+      };
+    }
+  }
+
+  return {
+    configured: true,
+    valid: false,
+    error: 'LINE bot info request failed ' + responseCode + ': ' + responseText
+  };
 }
 
 function parseRequestData_(e) {

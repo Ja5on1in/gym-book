@@ -168,6 +168,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
         if (!liffProfile || !myInventory) return false;
         // Is it a private class for me?
         if (a.lineUserId === liffProfile.userId) return true;
+        if (a.customerInventoryId && a.customerInventoryId === myInventory.id) return true;
         if (myInventory && myInventory.phone && a.customer?.phone === myInventory.phone && a.customer?.name === myInventory.name) return true;
         // Is it a group class I'm part of?
         if (a.type === 'group' && a.attendees?.some(att => att.customerId === myInventory.id && att.status === 'joined')) return true;
