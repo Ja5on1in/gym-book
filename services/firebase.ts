@@ -2,6 +2,7 @@ import { initializeApp, getApp, getApps, deleteApp } from 'firebase/app';
 import { 
   getAuth, 
   signInWithEmailAndPassword,
+  signInAnonymously,
   signInWithPopup, 
   createUserWithEmailAndPassword,
   GoogleAuthProvider,
@@ -12,14 +13,14 @@ import {
 import { getFirestore, doc, setDoc, deleteDoc, collection, onSnapshot, getDoc, updateDoc, query, where, writeBatch } from 'firebase/firestore';
 import { User } from '../types';
 
-// Your web app's Firebase configuration
+// Firebase configuration can come from Vite env vars or fall back to the demo project.
 const firebaseConfig = {
-  apiKey: "AIzaSyCsVDhrTe8KoDh8BM1tBkyztDpggJ1cROA",
-  authDomain: "gympohai.firebaseapp.com",
-  projectId: "gympohai",
-  storageBucket: "gympohai.firebasestorage.app",
-  messagingSenderId: "847545608993",
-  appId: "1:847545608993:web:358cccf2857c9f2550ec60"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY ?? "AIzaSyCsVDhrTe8KoDh8BM1tBkyztDpggJ1cROA",
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN ?? "gympohai.firebaseapp.com",
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID ?? "gympohai",
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET ?? "gympohai.firebasestorage.app",
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID ?? "847545608993",
+  appId: import.meta.env.VITE_FIREBASE_APP_ID ?? "1:847545608993:web:358cccf2857c9f2550ec60"
 };
 
 let auth: any = null;
@@ -73,6 +74,17 @@ export const loginWithGoogle = async () => {
     return result.user;
   } catch (error) {
     console.error("Google Login failed", error);
+    throw error;
+  }
+};
+
+export const loginAnonymously = async () => {
+  if (!isFirebaseAvailable || !auth) return null;
+  try {
+    const result = await signInAnonymously(auth);
+    return result.user;
+  } catch (error) {
+    console.error("Anonymous login failed", error);
     throw error;
   }
 };

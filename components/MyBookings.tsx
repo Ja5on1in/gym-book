@@ -6,6 +6,8 @@ import { Appointment, Coach, UserInventory, WorkoutPlan } from '../types';
 
 interface MyBookingsProps {
   liffProfile: { userId: string; displayName: string } | null;
+  sessionUserId?: string | null;
+  currentInventory: UserInventory | null;
   appointments: Appointment[];
   coaches: Coach[];
   onCancel: (app: Appointment, reason: string, customerId?: string) => void;
@@ -84,7 +86,7 @@ const ProgressChart: React.FC<{ data: { date: string, weight: number }[] }> = ({
   );
 };
 
-const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coaches, onCancel, onCheckIn, inventories, workoutPlans, liffError }) => {
+const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, sessionUserId, currentInventory, appointments, coaches, onCancel, onCheckIn, inventories, workoutPlans, liffError }) => {
   const [activeTab, setActiveTab] = useState<'bookings' | 'progress'>('bookings');
   const [selectedExercise, setSelectedExercise] = useState<string>('');
   const [selectedApp, setSelectedApp] = useState<Appointment | null>(null);
@@ -97,11 +99,17 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     return () => clearInterval(timer);
   }, []);
 
-  const myInventory = liffProfile ? inventories.find(i => i.lineUserId === liffProfile.userId) : null;
+  const sessionOwnerKey = liffProfile?.userId || sessionUserId || null;
+  const myInventory = liffProfile
+    ? inventories.find(i => i.lineUserId === liffProfile.userId)
+    : sessionOwnerKey
+      ? inventories.find(i => i.id === sessionOwnerKey)
+      : null;
+  const effectiveInventory = currentInventory || myInventory;
   const myPlans = useMemo(() => {
-    if (!liffProfile || !myInventory) return [];
-    return workoutPlans.filter(p => p.userId === myInventory.id).sort((a,b) => a.date.localeCompare(b.date));
-  }, [liffProfile, myInventory, workoutPlans]);
+    if (!sessionOwnerKey || !effectiveInventory) return [];
+    return workoutPlans.filter(p => p.userId === effectiveInventory.id).sort((a,b) => a.date.localeCompare(b.date));
+  }, [sessionOwnerKey, effectiveInventory, workoutPlans]);
 
   const exerciseOptions = useMemo(() => {
     const exercises = new Set<string>();
@@ -152,27 +160,52 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     );
   }
 
-  if (!liffProfile) {
+  if (!liffProfile && !sessionUserId) {
     return (
       <div className="max-w-md mx-auto mt-20 text-center">
         <div className="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
             <UserIcon size={32} className="text-gray-400"/>
         </div>
         <h2 className="text-xl font-bold dark:text-white">正在載入使用者資料...</h2>
-        <p className="text-gray-500 mt-2 text-sm">請稍候，正在確認您的 LINE 身份</p>
+        <p className="text-gray-500 mt-2 text-sm">請稍候，正在確認您的登入狀態</p>
+      </div>
+    );
+  }
+
+  const displayName = liffProfile?.displayName || '訪客會員';
+  const needsApproval = !!effectiveInventory && effectiveInventory.status !== 'active';
+
+  if (needsApproval) {
+    return (
+      <div className="max-w-2xl mx-auto mt-12 px-4">
+        <div className="glass-panel p-8 rounded-3xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-900/10 text-amber-800 dark:text-amber-200">
+          <div className="flex items-start gap-4">
+            <AlertTriangle size={28} className="mt-1 shrink-0" />
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 dark:text-white">會員審核中</h2>
+              <p className="mt-2 leading-relaxed">
+                你的 LINE 會員資料已建立，但還需要管理員核准後才能查看預約或進行新預約。
+              </p>
+              <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
+                如果你認為已經等待很久，請直接聯絡現場管理員確認審核狀態。
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
 
   const myApps = appointments
       .filter(a => {
-        if (!liffProfile || !myInventory) return false;
+        if (!sessionOwnerKey || !effectiveInventory) return false;
         // Is it a private class for me?
-        if (a.lineUserId === liffProfile.userId) return true;
-        if (a.customerInventoryId && a.customerInventoryId === myInventory.id) return true;
-        if (myInventory && myInventory.phone && a.customer?.phone === myInventory.phone && a.customer?.name === myInventory.name) return true;
+        if (liffProfile?.userId && a.lineUserId === liffProfile.userId) return true;
+        if (sessionOwnerKey && a.bookingOwnerId === sessionOwnerKey) return true;
+        if (a.customerInventoryId && a.customerInventoryId === effectiveInventory.id) return true;
+        if (effectiveInventory && effectiveInventory.phone && a.customer?.phone === effectiveInventory.phone && a.customer?.name === effectiveInventory.name) return true;
         // Is it a group class I'm part of?
-        if (a.type === 'group' && a.attendees?.some(att => att.customerId === myInventory.id && att.status === 'joined')) return true;
+        if (a.type === 'group' && a.attendees?.some(att => att.customerId === effectiveInventory.id && att.status === 'joined')) return true;
         return false;
       })
       .sort((a, b) => new Date(b.date + ' ' + b.time).getTime() - new Date(a.date + ' ' + a.time).getTime());
@@ -186,7 +219,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
 
   useEffect(() => {
     setBookingPage(1);
-  }, [liffProfile?.userId]);
+  }, [liffProfile?.userId, sessionUserId]);
 
   useEffect(() => {
     if (bookingPage > bookingTotalPages) {
@@ -198,16 +231,16 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
     <div className="max-w-2xl mx-auto animate-slideUp pb-24 px-4">
       {/* Profile Header */}
       <div className="flex items-start gap-4 mb-6">
-        <img src={`https://ui-avatars.com/api/?name=${liffProfile.displayName}&background=6366f1&color=fff&size=128`} className="w-16 h-16 rounded-2xl border-4 border-white dark:border-gray-800 shadow-lg"/>
+        <img src={`https://ui-avatars.com/api/?name=${displayName}&background=6366f1&color=fff&size=128`} className="w-16 h-16 rounded-2xl border-4 border-white dark:border-gray-800 shadow-lg"/>
         <div className="flex-1">
-          <h1 className="text-2xl font-bold dark:text-white">{liffProfile.displayName}</h1>
-           {myInventory && (
+          <h1 className="text-2xl font-bold dark:text-white">{displayName}</h1>
+           {effectiveInventory && (
                 <div className="mt-2 text-[10px] font-bold flex flex-wrap gap-2 text-slate-500 dark:text-slate-400">
                     <div className="bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded-md border border-indigo-100 dark:border-indigo-800 flex items-center gap-1">
-                        <CreditCard size={12} className="text-indigo-500"/> 私人：<span className="text-indigo-600 dark:text-indigo-400">{myInventory.credits.private}</span> 堂
+                        <CreditCard size={12} className="text-indigo-500"/> 私人：<span className="text-indigo-600 dark:text-indigo-400">{effectiveInventory.credits.private}</span> 堂
                     </div>
                     <div className="bg-orange-50 dark:bg-orange-900/30 px-2 py-1 rounded-md border border-orange-100 dark:border-orange-800 flex items-center gap-1">
-                        <CreditCard size={12} className="text-orange-500"/> 團課：<span className="text-orange-600 dark:text-orange-400">{myInventory.credits.group}</span> 堂
+                        <CreditCard size={12} className="text-orange-500"/> 團課：<span className="text-orange-600 dark:text-orange-400">{effectiveInventory.credits.group}</span> 堂
                     </div>
                 </div>
             )}
@@ -386,7 +419,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, appointments, coac
                  <p className="text-sm text-gray-500 text-center mb-6">您確定要取消 {selectedApp.date} {selectedApp.time} 的課程嗎？</p>
                  <div className="flex gap-3">
                      <button onClick={() => { setSelectedApp(null); }} className="flex-1 py-2.5 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold text-gray-600 dark:text-gray-300">保留</button>
-                     <button onClick={() => { onCancel(selectedApp, '用戶自行取消', myInventory?.id); setSelectedApp(null); }} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">確認取消</button>
+                     <button onClick={() => { onCancel(selectedApp, '用戶自行取消', effectiveInventory?.id || sessionOwnerKey || undefined); setSelectedApp(null); }} className="flex-1 py-2.5 bg-red-500 text-white rounded-xl font-bold shadow-lg shadow-red-500/30">確認取消</button>
                  </div>
              </div>
         </div>

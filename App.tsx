@@ -6,6 +6,7 @@ import {
   Settings, 
   Sun, 
   Moon, 
+  Home,
   RefreshCw,
   AlertTriangle,
   Info,
@@ -33,6 +34,7 @@ import {
     disableUserInFirestore, 
     isFirebaseAvailable, 
     loginWithEmail, 
+    loginAnonymously,
     logout,
     auth,
     db,
@@ -53,19 +55,21 @@ import BookingWizard from './components/BookingWizard';
 import AdminDashboard from './components/AdminDashboard';
 import WeeklyCalendar from './components/WeeklyCalendar';
 import MyBookings from './components/MyBookings';
+import HomeLanding from './components/HomeLanding';
 
 // Updated LIFF ID
-const LIFF_ID = '2008923061-bPeQysat';
+const LIFF_ID = import.meta.env.VITE_LIFF_ID || '2008923061-bPeQysat';
 
 export default function App() {
   // --- STATE ---
-  const [view, setView] = useState<'booking' | 'admin' | 'my-bookings'>('booking');
+  const [view, setView] = useState<'home' | 'booking' | 'admin' | 'my-bookings'>('home');
   const [adminTab, setAdminTab] = useState('calendar');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [notification, setNotification] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
 
   const [dbStatus, setDbStatus] = useState('connecting');
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false); // Bugfix: State to prevent double actions
   
@@ -128,6 +132,13 @@ export default function App() {
 
   const [cancelReason, setCancelReason] = useState('');
 
+  const currentInventory = liffProfile
+    ? inventories.find(i => i.lineUserId === liffProfile.userId) || null
+    : sessionUserId
+      ? inventories.find(i => i.id === sessionUserId) || null
+      : null;
+  const hasCustomerAccess = !!liffProfile && currentInventory?.status === 'active';
+
   // --- EFFECTS ---
 
   useEffect(() => {
@@ -146,7 +157,24 @@ export default function App() {
           const docSnap = await getDoc(userDocRef);
 
           if (!docSnap.exists()) {
-              console.log(`LIFF 已登入，但尚未建立學員資料：${profile.displayName}`);
+              const pendingProfile: UserInventory = {
+                  id: profile.userId,
+                  lineUserId: profile.userId,
+                  name: profile.displayName,
+                  phone: '',
+                  email: '',
+                  status: 'pending',
+                  credits: { private: 0, group: 0 },
+                  lastUpdated: new Date().toISOString()
+              };
+              await saveToFirestore('user_inventory', profile.userId, pendingProfile);
+              showNotification('已建立 LINE 會員申請，請等待管理員審核', 'info');
+              return;
+          }
+
+          const currentStatus = docSnap.data()?.status;
+          if (currentStatus === 'pending') {
+              showNotification('您的 LINE 會員仍在審核中，核准後即可預約', 'info');
           }
       } catch (e) {
           console.error("Error during user auto-registration:", e);
@@ -157,6 +185,13 @@ export default function App() {
   useEffect(() => {
     const start = async () => {
         await initAuth();
+        if (auth && !auth.currentUser) {
+            try {
+                await loginAnonymously();
+            } catch (e) {
+                console.warn('Anonymous auth fallback failed', e);
+            }
+        }
         const liff = (window as any).liff;
         if (liff) {
             try {
@@ -200,6 +235,7 @@ export default function App() {
       }
       const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
           setIsAuthLoading(true);
+          setSessionUserId(firebaseUser?.uid || null);
           if (firebaseUser) {
               let userProfile = await getUserProfile(firebaseUser.uid);
               let retries = 3;
@@ -221,7 +257,9 @@ export default function App() {
                       }
                   }
               } else {
-                  showNotification("無法取得使用者權限，請確認帳號是否已建立", "error");
+                  if (!firebaseUser.isAnonymous) {
+                      showNotification("無法取得使用者權限，請確認帳號是否已建立", "error");
+                  }
                   setCurrentUser(null);
               }
           } else {
@@ -363,7 +401,7 @@ export default function App() {
 
   const handleLogout = async () => {
       await logout();
-      setView('booking');
+      setView('home');
       setAdminTab('calendar');
       setLoginForm({ email: '', password: '' });
       showNotification("已登出", "info");
@@ -380,6 +418,24 @@ export default function App() {
       }
   };
 
+  const openBookingEntry = () => {
+      if (!liffProfile) {
+          handleLiffLogin();
+          showNotification('請先登入 LINE 後再預約', 'info');
+          return;
+      }
+      setView('booking');
+  };
+
+  const openMyBookingsEntry = () => {
+      if (!liffProfile) {
+          handleLiffLogin();
+          showNotification('請先登入 LINE 後查看我的預約', 'info');
+          return;
+      }
+      setView('my-bookings');
+  };
+
   // Inventory Management Actions
   const handleSaveInventory = async (inventory: UserInventory) => {
       try {
@@ -387,8 +443,10 @@ export default function App() {
           
           const oldInv = inventories.find(i => i.id === id);
           const isUpdate = !!oldInv;
+          const nextStatus = inventory.status || oldInv?.status || 'active';
+          const payload = { ...inventory, id, status: nextStatus, lastUpdated: new Date().toISOString() };
 
-          await saveToFirestore('user_inventory', id, { ...inventory, id, lastUpdated: new Date().toISOString() });
+          await saveToFirestore('user_inventory', id, payload);
           
           if (isUpdate && oldInv) {
               const oldPrivate = oldInv.credits.private;
@@ -411,6 +469,22 @@ export default function App() {
       } catch (e) {
           console.error(e);
           showNotification('儲存失敗', 'error');
+      }
+  };
+
+  const handleApproveInventory = async (inventory: UserInventory) => {
+      try {
+          await saveToFirestore('user_inventory', inventory.id, {
+              ...inventory,
+              status: 'active',
+              approvedAt: new Date().toISOString(),
+              approvedBy: currentUser?.id || currentUser?.name || 'manager',
+              lastUpdated: new Date().toISOString()
+          });
+          addLog('會員審核', `核准會員 ${inventory.name} (${inventory.id})`);
+          showNotification(`已核准 ${inventory.name}`, 'success');
+      } catch (e) {
+          showNotification('核准失敗', 'error');
       }
   };
 
@@ -500,8 +574,13 @@ export default function App() {
 
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
-    if (!lineProfile?.userId) {
-        showNotification('請先登入 LINE 才能預約', 'error');
+    const bookingOwnerId = sessionUserId;
+    if (!liffProfile || !bookingOwnerId) {
+        showNotification('請先登入 LINE 再預約', 'error');
+        return;
+    }
+    if (!hasCustomerAccess) {
+        showNotification('您的 LINE 會員仍在審核中，管理員核准後才能預約', 'info');
         return;
     }
     if (!formData.name || !formData.phone || !selectedSlot || !selectedCoach || !selectedService) { 
@@ -516,29 +595,9 @@ export default function App() {
 
     try {
         let inventory: UserInventory | null = null;
-        const invByPhone = inventories.find(i => i.phone === formData.phone) || null;
-        const invByLine = inventories.find(i => i.lineUserId === lineProfile.userId) || null;
-
-        if (invByPhone) {
-            inventory = invByPhone;
-            if (!invByPhone.lineUserId) {
-                await saveToFirestore('user_inventory', invByPhone.id, { ...invByPhone, lineUserId: lineProfile.userId, lastUpdated: new Date().toISOString() });
-                inventory = { ...invByPhone, lineUserId: lineProfile.userId };
-            }
-        } else if (invByLine) {
-            inventory = invByLine;
-        } else {
-            const newInventory: UserInventory = {
-                id: lineProfile.userId,
-                lineUserId: lineProfile.userId,
-                name: formData.name,
-                phone: formData.phone || '',
-                credits: { private: 0, group: 0 },
-                lastUpdated: new Date().toISOString()
-            };
-            await saveToFirestore('user_inventory', newInventory.id, newInventory);
-            inventory = newInventory;
-        }
+        const invByLine = lineProfile?.userId ? inventories.find(i => i.lineUserId === lineProfile.userId) || null : null;
+        const invByOwner = inventories.find(i => i.id === bookingOwnerId) || null;
+        inventory = invByLine || invByOwner || currentInventory;
         
         if (inventory && selectedService?.id === 'coaching' && inventory.credits.private <= 0) {
             showNotification('提醒：您的點數不足，仍可預約，請記得在上課前補足點數', 'info');
@@ -550,15 +609,16 @@ export default function App() {
             service: selectedService, coachId: selectedCoach.id, coachName: selectedCoach.name, 
             customer: { name: formData.name, phone: formData.phone || "", email: formData.email || "" }, 
             status: 'confirmed', createdAt: new Date().toISOString(),
-            lineUserId: lineProfile.userId,
-            lineName: lineProfile.displayName,
-            customerInventoryId: inventory?.id || lineProfile.userId
+            lineUserId: lineProfile?.userId,
+            lineName: lineProfile?.displayName,
+            bookingOwnerId,
+            customerInventoryId: inventory?.id || bookingOwnerId
         };
         
         await saveToFirestore('appointments', id, newApp);
         addLog('前台預約', `客戶 ${formData.name} 預約 ${selectedCoach.name}`);
         
-        sendToGoogleScript({ action: 'create_booking', ...newApp, lineUserId: lineProfile.userId, coachName: selectedCoach.name, title: selectedCoach.title || '教練', type: 'private' }).catch(err => console.warn("Webhook failed silently", err));
+        sendToGoogleScript({ action: 'create_booking', ...newApp, lineUserId: lineProfile?.userId || "", coachName: selectedCoach.name, title: selectedCoach.title || '教練', type: 'private' }).catch(err => console.warn("Webhook failed silently", err));
         
         setBookingStep(5);
         showNotification('預約成功！LINE 通知將同步發送', 'success');
@@ -1144,10 +1204,32 @@ export default function App() {
   };
 
   const renderContent = () => {
+      if (view === 'home') {
+          return (
+              <HomeLanding
+                  appointments={appointments}
+                  coaches={coaches}
+                  inventories={inventories}
+                  onStartBooking={openBookingEntry}
+                  onOpenAdmin={() => {
+                      setAdminTab('calendar');
+                      setView('admin');
+                  }}
+                  onOpenMyBookings={openMyBookingsEntry}
+                  onOpenSchedule={() => {
+                      setAdminTab('calendar');
+                      setView('admin');
+                  }}
+              />
+          );
+      }
+
       if (view === 'my-bookings') {
           return (
               <MyBookings 
                   liffProfile={liffProfile}
+                  sessionUserId={sessionUserId}
+                  currentInventory={currentInventory}
                   appointments={appointments}
                   coaches={coaches}
                   onCancel={handleCustomerCancel}
@@ -1174,6 +1256,8 @@ export default function App() {
                 handlePrevMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1))}
                 handleNextMonth={() => setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1))}
                 inventories={inventories}
+                currentInventory={currentInventory}
+                hasCustomerAccess={hasCustomerAccess}
                 onRegisterUser={checkAndCreateUser}
                 liffProfile={liffProfile}
                 onLogin={handleLiffLogin}
@@ -1232,7 +1316,7 @@ export default function App() {
             toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
             handleBatchDelete={handleBatchDelete}
             onOpenBatchBlock={handleOpenBatchBlock}
-            onGoToBooking={() => setView('booking')}
+            onGoToBooking={() => setView('home')}
             onToggleComplete={handleToggleComplete}
             onCancelAppointment={(app) => {
                 setConfirmModal({
@@ -1260,6 +1344,7 @@ export default function App() {
             inventories={inventories}
             onSaveInventory={handleSaveInventory}
             onDeleteInventory={handleDeleteInventory}
+            onApproveInventory={handleApproveInventory}
             workoutPlans={workoutPlans}
             onSavePlan={handleSaveWorkoutPlan}
             onDeletePlan={handleDeleteWorkoutPlan}
@@ -1277,25 +1362,28 @@ export default function App() {
     <div className="min-h-screen text-slate-800 dark:text-slate-100 transition-colors duration-300 font-sans selection:bg-indigo-500 selection:text-white">
       {/* Dynamic Background */}
       <div className="fixed top-0 left-0 w-full h-full overflow-hidden -z-10 pointer-events-none">
-          <div className="absolute -top-40 -left-40 w-96 h-96 bg-indigo-300/20 dark:bg-indigo-900/10 rounded-full blur-3xl animate-float"></div>
-          <div className="absolute top-1/2 -right-20 w-80 h-80 bg-blue-300/20 dark:bg-blue-900/10 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
-          <div className="absolute -bottom-20 left-1/3 w-96 h-96 bg-purple-300/20 dark:bg-purple-900/10 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
+          <div className="absolute -top-40 -left-40 w-96 h-96 bg-orange-300/20 dark:bg-orange-900/10 rounded-full blur-3xl animate-float"></div>
+          <div className="absolute top-1/2 -right-20 w-80 h-80 bg-indigo-300/20 dark:bg-indigo-900/10 rounded-full blur-3xl animate-float" style={{animationDelay: '1s'}}></div>
+          <div className="absolute -bottom-20 left-1/3 w-96 h-96 bg-amber-300/20 dark:bg-amber-900/10 rounded-full blur-3xl animate-float" style={{animationDelay: '2s'}}></div>
       </div>
 
-      {view !== 'admin' && (
+      {(view !== 'admin' || !currentUser) && (
         <nav className="fixed w-full z-50 glass-panel border-b border-white/20 dark:border-slate-800 shadow-sm backdrop-blur-md">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
-                <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('booking'); resetBooking(); }}>
-                <div className="w-10 h-10 bg-gradient-to-tr from-indigo-600 to-violet-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-indigo-500/30">
+                <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('home'); resetBooking(); }}>
+                <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-500/30">
                     <CalendarIcon size={22} className="stroke-[2.5px]"/>
                 </div>
                 <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-slate-700 to-slate-900 dark:from-white dark:to-slate-300">
-                    活力學苑預約系統
+                    會員預約營運系統
                 </span>
                 </div>
                 <div className="flex items-center gap-4">
-                <button onClick={() => setView('my-bookings')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+                <button onClick={() => setView('home')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'home' ? 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-300' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+                    <Home size={18}/> 首頁
+                </button>
+                <button onClick={openMyBookingsEntry} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
                     <UserIcon size={18}/> 我的預約
                 </button>
                 <button onClick={() => setIsDarkMode(!isDarkMode)} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-colors text-slate-500 dark:text-slate-300">
@@ -1332,11 +1420,15 @@ export default function App() {
       {/* Dynamic Modals Container */}
       {view !== 'admin' && (
         <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-slate-800 flex justify-around p-3 z-50 backdrop-blur-xl">
-            <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+            <button onClick={() => setView('home')} className={`flex flex-col items-center gap-1 ${view === 'home' ? 'text-orange-600 dark:text-orange-300' : 'text-slate-400'}`}>
+                <Home size={24}/>
+                <span className="text-[10px] font-bold">首頁</span>
+            </button>
+            <button onClick={openBookingEntry} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
                 <CalendarIcon size={24}/>
                 <span className="text-[10px] font-bold">預約</span>
             </button>
-            <button onClick={() => setView('my-bookings')} className={`flex flex-col items-center gap-1 ${view === 'my-bookings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
+            <button onClick={openMyBookingsEntry} className={`flex flex-col items-center gap-1 ${view === 'my-bookings' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
                 <UserIcon size={24}/>
                 <span className="text-[10px] font-bold">我的</span>
             </button>

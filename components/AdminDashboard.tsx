@@ -30,6 +30,7 @@ interface AdminDashboardProps {
   inventories: UserInventory[];
   onSaveInventory: (inv: UserInventory) => void;
   onDeleteInventory: (inv: UserInventory) => void;
+  onApproveInventory: (inv: UserInventory) => void;
   workoutPlans: WorkoutPlan[];
   onSavePlan: (plan: WorkoutPlan) => void;
   onDeletePlan: (id: string) => void;
@@ -44,7 +45,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   analysis: globalAnalysis, handleExportStatsCsv: globalExportCsv, handleExportJson, triggerImport, handleFileImport,
   coaches, updateCoachWorkDays, logs, onSaveCoach, onDeleteCoach, onOpenBatchBlock,
   inventories, onSaveInventory, onDeleteInventory,
-  workoutPlans, onSavePlan, onDeletePlan, onGoToBooking, onToggleComplete, onCancelAppointment
+  workoutPlans, onSavePlan, onDeletePlan, onGoToBooking, onToggleComplete, onCancelAppointment, onApproveInventory
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -623,7 +624,7 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   />
                )}
 
-               {adminTab === 'inventory' && (
+              {adminTab === 'inventory' && (
                   <div className="space-y-6">
                       <div className="flex flex-col md:flex-row justify-between items-center gap-4">
                           <h2 className="text-2xl font-bold text-slate-800 dark:text-white flex items-center gap-3"><CreditCard className="text-indigo-500"/> 庫存管理</h2>
@@ -643,12 +644,31 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                               </button>
                           </div>
                       </div>
+                      {inventories.some(inv => inv.status === 'pending') && (
+                          <div className="glass-panel p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-900/10 text-amber-800 dark:text-amber-200 flex items-center justify-between gap-3">
+                              <div>
+                                  <div className="font-bold">有待審核會員</div>
+                                  <div className="text-sm opacity-80">先核准 LINE 綁定會員，才能讓對方進行預約。</div>
+                              </div>
+                          </div>
+                      )}
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                           {paginatedInventories.map(inv => {
                               const canEdit = ['manager', 'receptionist', 'coach'].includes(currentUser.role);
                               return (
                                   <div key={inv.id} onClick={() => canEdit && handleOpenInventoryModal(inv)} className={`glass-card p-6 rounded-2xl border border-slate-100 dark:border-slate-700 transition-all hover:shadow-lg hover:scale-[1.02] group relative ${canEdit ? 'cursor-pointer' : ''}`}>
                                       {inv.lineUserId && <div className="absolute top-4 right-4 w-2.5 h-2.5 bg-green-500 rounded-full ring-2 ring-white dark:ring-slate-800" title="已綁定LINE"></div>}
+                                      <div className="absolute top-4 left-4">
+                                          <span className={`text-[10px] font-bold px-2 py-1 rounded-full border ${
+                                              inv.status === 'pending'
+                                                ? 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-200 dark:border-amber-700'
+                                                : inv.status === 'disabled'
+                                                  ? 'bg-slate-100 text-slate-500 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700'
+                                                  : 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-200 dark:border-emerald-700'
+                                          }`}>
+                                              {inv.status === 'pending' ? '待審核' : inv.status === 'disabled' ? '已停用' : '已核准'}
+                                          </span>
+                                      </div>
                                       <div className="flex justify-between items-start mb-4">
                                           <div>
                                               <div className="font-bold text-lg dark:text-white group-hover:text-indigo-600 transition-colors flex items-center gap-2">
@@ -668,6 +688,14 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                               <div className="font-bold text-2xl text-orange-600 dark:text-orange-400">{inv.credits.group}</div>
                                           </div>
                                       </div>
+                                      {inv.status === 'pending' && currentUser.role === 'manager' && (
+                                          <button
+                                              onClick={(e) => { e.stopPropagation(); onApproveInventory(inv); }}
+                                              className="mt-4 w-full py-2 rounded-xl bg-amber-500 text-white text-sm font-bold hover:bg-amber-600 transition-colors"
+                                          >
+                                              核准會員
+                                          </button>
+                                      )}
                                   </div>
                               )
                           })}

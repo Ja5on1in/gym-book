@@ -4,9 +4,11 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-    <title>活力學苑預約系統</title>
+    <meta name="description" content="會員預約營運系統，整合行事曆、預約功能、庫存統計與班表管理。" />
+    <meta name="theme-color" content="#0f172a" />
+    <title>會員預約營運系統</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700;800;900&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
     <script charset="utf-8" src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
     <script>
       tailwind.config = {
@@ -14,7 +16,8 @@
         theme: {
           extend: {
             fontFamily: {
-              sans: ['Inter', 'sans-serif'],
+              sans: ['Noto Sans TC', 'sans-serif'],
+              display: ['Space Grotesk', 'Noto Sans TC', 'sans-serif'],
             },
             colors: {
               slate: {
@@ -77,13 +80,21 @@
     </script>
     <style>
       body {
-        background-color: #f8fafc; /* Slate-50 */
+        background-color: #fffaf2;
         color: #1e293b; /* Slate-800 */
         min-height: 100vh;
+        background-image:
+          radial-gradient(circle at top left, rgba(251, 146, 60, 0.12), transparent 28%),
+          radial-gradient(circle at top right, rgba(79, 70, 229, 0.10), transparent 24%),
+          linear-gradient(180deg, #fffaf2 0%, #fff 58%, #ffffff 100%);
       }
       .dark body {
         background-color: #0f172a; /* Slate-900 */
         color: #f8fafc;
+        background-image:
+          radial-gradient(circle at top left, rgba(251, 146, 60, 0.10), transparent 28%),
+          radial-gradient(circle at top right, rgba(79, 70, 229, 0.10), transparent 24%),
+          linear-gradient(180deg, #0f172a 0%, #111827 100%);
       }
       
       /* Enhanced Glassmorphism Utilities */

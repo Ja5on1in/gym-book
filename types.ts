@@ -43,6 +43,7 @@ export interface Appointment {
   cancelReason?: string;
   lineUserId?: string; // LINE LIFF Integration
   lineName?: string;   // LINE LIFF Integration
+  bookingOwnerId?: string; // Firebase auth uid for customer ownership
   customerInventoryId?: string; // Stable link to user_inventory
   attendees?: { customerId: string; name: string; status: 'joined' | 'cancelled' }[]; // New field for group class attendees
   maxAttendees?: number; // New field for group class capacity
@@ -94,6 +95,9 @@ export interface UserInventory {
   lineUserId?: string;
   email?: string;
   phone?: string;
+  status?: 'pending' | 'active' | 'disabled';
+  approvedAt?: string;
+  approvedBy?: string;
   credits: {
       private: number;
       group: number;

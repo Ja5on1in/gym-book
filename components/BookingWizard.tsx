@@ -47,6 +47,8 @@ interface BookingWizardProps {
   handlePrevMonth: () => void;
   handleNextMonth: () => void;
   inventories: UserInventory[];
+  currentInventory: UserInventory | null;
+  hasCustomerAccess: boolean;
   onRegisterUser: (profile: {userId: string, displayName: string}) => Promise<void>;
   liffProfile: { userId: string; displayName: string } | null;
   onLogin: () => void;
@@ -58,7 +60,7 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
   selectedCoach, setSelectedCoach, selectedDate, setSelectedDate,
   selectedSlot, setSelectedSlot, formData, setFormData,
   coaches, appointments, onSubmit, reset, currentDate, handlePrevMonth, handleNextMonth,
-  inventories, onRegisterUser, liffProfile, onLogin, liffError
+  inventories, currentInventory, hasCustomerAccess, onRegisterUser, liffProfile, onLogin, liffError
 }) => {
   const [isVerifying, setIsVerifying] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -94,6 +96,11 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
               
               if (!userInv) {
                   await onRegisterUser({ userId: liffProfile.userId, displayName: liffProfile.displayName });
+              }
+              if (!hasCustomerAccess) {
+                  setAuthError('您的 LINE 會員尚在審核中，無法預約');
+                  setIsVerifying(false);
+                  return;
               }
               await onSubmit(e, { userId: liffProfile.userId, displayName: liffProfile.displayName });
           } catch (err) {
@@ -215,6 +222,17 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
   return (
     <div className="max-w-3xl mx-auto pb-12">
+      {liffProfile && !hasCustomerAccess && (
+        <div className="mb-6 glass-panel p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-900/10 text-amber-800 dark:text-amber-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <div className="text-sm leading-relaxed">
+              你的 LINE 會員目前仍在審核中，請先等待管理員核准後再進行預約。
+            </div>
+          </div>
+        </div>
+      )}
+
       {(liffError || !liffProfile) && (
         <div className="mb-6 glass-panel p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-900/10 text-amber-800 dark:text-amber-200">
           <div className="flex items-start gap-3">
@@ -420,10 +438,10 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                    </div>
                 </div>
                 
-                <div className="mt-6 pt-4 border-t border-indigo-100 dark:border-indigo-900/30 text-xs text-indigo-600 dark:text-indigo-400 flex items-start gap-2 bg-white/60 dark:bg-slate-900/30 p-4 rounded-xl">
-                    <Info size={16} className="mt-0.5 shrink-0"/>
-                    <span className="leading-relaxed">注意：預約完成後不會立即扣點。請在上課當天透過「我的預約」進行簽到，經教練核實後才會扣除點數。</span>
-                </div>
+              <div className="mt-6 pt-4 border-t border-indigo-100 dark:border-indigo-900/30 text-xs text-indigo-600 dark:text-indigo-400 flex items-start gap-2 bg-white/60 dark:bg-slate-900/30 p-4 rounded-xl">
+                <Info size={16} className="mt-0.5 shrink-0"/>
+                <span className="leading-relaxed">注意：預約完成後不會立即扣點。請在上課當天透過「我的預約」進行簽到，經教練核實後才會扣除點數。</span>
+            </div>
                 <div className="mt-4 text-xs text-orange-600 dark:text-orange-400 flex items-start gap-2 bg-orange-50/60 dark:bg-orange-900/30 p-4 rounded-xl border border-orange-100 dark:border-orange-900/30">
                     <AlertTriangle size={16} className="mt-0.5 shrink-0"/>
                     <span className="leading-relaxed">重要提醒：為保障所有學員權益，課程開始前 24 小時內將無法線上取消預約。</span>
@@ -464,9 +482,9 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                  </div>
              )}
 
-             <button type="submit" disabled={isVerifying || !!authError} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-6 flex items-center justify-center gap-2
-                 ${!!authError ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
-                {isVerifying ? '確認中...' : !!authError ? '無法預約' : (liffProfile ? '確認預約' : '確認預約')} <MessageCircle size={18}/>
+             <button type="submit" disabled={isVerifying || !!authError || !hasCustomerAccess} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-6 flex items-center justify-center gap-2
+                 ${!!authError || !hasCustomerAccess ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
+                {isVerifying ? '確認中...' : !!authError ? '無法預約' : !hasCustomerAccess ? '等待審核' : '確認預約'} <MessageCircle size={18}/>
              </button>
           </form>
         </div>

@@ -1,0 +1,61 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isStaff() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['manager', 'coach', 'staff', 'receptionist'];
+    }
+
+    function hasActiveInventory(uid) {
+      return exists(/databases/$(database)/documents/user_inventory/$(uid))
+        && get(/databases/$(database)/documents/user_inventory/$(uid)).data.status == 'active';
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    match /appointments/{id} {
+      allow read: if signedIn();
+      allow create: if isStaff() || (isOwner(request.resource.data.bookingOwnerId) && hasActiveInventory(request.auth.uid));
+      allow update, delete: if isStaff()
+        || (resource.data.bookingOwnerId == request.auth.uid && hasActiveInventory(request.auth.uid));
+    }
+
+    match /user_inventory/{id} {
+      allow read: if signedIn();
+      allow create: if isOwner(id) && request.resource.data.status == 'pending';
+      allow update: if isStaff()
+        || (isOwner(id) && resource.data.status == 'pending' && request.resource.data.status == 'pending');
+      allow delete: if isStaff();
+    }
+
+    match /workout_plans/{id} {
+      allow read, create, update, delete: if signedIn();
+    }
+
+    match /coaches/{id} {
+      allow read: if signedIn();
+      allow create, update, delete: if isStaff();
+    }
+
+    match /logs/{id} {
+      allow read, create, update, delete: if isStaff();
+    }
+
+    match /users/{id} {
+      allow read: if (signedIn() && request.auth.uid == id) || isStaff();
+      allow create, update, delete: if isStaff() || request.auth.uid == id;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
