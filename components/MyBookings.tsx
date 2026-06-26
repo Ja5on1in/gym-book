@@ -106,6 +106,7 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, sessionUserId, cur
       ? inventories.find(i => i.id === sessionOwnerKey)
       : null;
   const effectiveInventory = currentInventory || myInventory;
+  const isBlockedMember = !!effectiveInventory && effectiveInventory.blacklistStatus === 'blocked';
   const myPlans = useMemo(() => {
     if (!sessionOwnerKey || !effectiveInventory) return [];
     return workoutPlans.filter(p => p.userId === effectiveInventory.id).sort((a,b) => a.date.localeCompare(b.date));
@@ -189,6 +190,24 @@ const MyBookings: React.FC<MyBookingsProps> = ({ liffProfile, sessionUserId, cur
               <div className="mt-4 text-sm text-slate-600 dark:text-slate-300">
                 如果你認為已經等待很久，請直接聯絡現場管理員確認審核狀態。
               </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (isBlockedMember) {
+    return (
+      <div className="max-w-2xl mx-auto mt-12 px-4">
+        <div className="glass-panel p-8 rounded-3xl border border-red-200 dark:border-red-900/40 bg-red-50/70 dark:bg-red-900/10 text-red-800 dark:text-red-200">
+          <div className="flex items-start gap-4">
+            <AlertTriangle size={28} className="mt-1 shrink-0" />
+            <div>
+              <h2 className="text-2xl font-bold text-slate-800 dark:text-white">會員限制中</h2>
+              <p className="mt-2 leading-relaxed">
+                你的會員目前被列入限制名單，暫時無法查看或使用預約服務。
+              </p>
             </div>
           </div>
         </div>

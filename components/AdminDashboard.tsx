@@ -71,9 +71,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
   const [inventoryPage, setInventoryPage] = useState(1);
   const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false);
   const [editingInventory, setEditingInventory] = useState<UserInventory | null>(null);
-  const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string, lineUserId?: string}>({ private: 0, group: 0, name: '', phone: '' });
+  const [inventoryForm, setInventoryForm] = useState<{private: number, group: number, name: string, phone: string, lineUserId?: string, status?: UserInventory['status'], blacklistStatus?: UserInventory['blacklistStatus'], tagsText?: string, notes?: string}>({ private: 0, group: 0, name: '', phone: '', status: 'active', blacklistStatus: 'none', tagsText: '', notes: '' });
   const [isNewInventoryModalOpen, setIsNewInventoryModalOpen] = useState(false);
-  const [newInventoryForm, setNewInventoryForm] = useState<Partial<UserInventory>>({ name: '', phone: '', email: '', credits: { private: 0, group: 0 } });
+  const [newInventoryForm, setNewInventoryForm] = useState<Partial<UserInventory>>({ name: '', phone: '', email: '', credits: { private: 0, group: 0 }, status: 'active', blacklistStatus: 'none', tags: [] });
 
   // Advanced Export State
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
@@ -355,7 +355,11 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           group: inv.credits.group,
           name: inv.name,
           phone: inv.phone || '',
-          lineUserId: inv.lineUserId
+          lineUserId: inv.lineUserId,
+          status: inv.status || 'active',
+          blacklistStatus: inv.blacklistStatus || 'none',
+          tagsText: (inv.tags || []).join(', '),
+          notes: inv.notes || ''
       });
       setIsInventoryModalOpen(true);
   };
@@ -367,6 +371,10 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
           credits: { private: Number(inventoryForm.private), group: Number(inventoryForm.group) },
           name: inventoryForm.name,
           phone: inventoryForm.phone,
+          status: inventoryForm.status || editingInventory.status,
+          blacklistStatus: inventoryForm.blacklistStatus || editingInventory.blacklistStatus,
+          tags: inventoryForm.tagsText ? inventoryForm.tagsText.split(',').map(t => t.trim()).filter(Boolean) : editingInventory.tags,
+          notes: inventoryForm.notes || '',
           lastUpdated: new Date().toISOString()
       });
       setIsInventoryModalOpen(false);
@@ -385,6 +393,9 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                   ...existingByPhone,
                   name: newInventoryForm.name, // Update name
                   email: newInventoryForm.email || existingByPhone.email,
+                  status: newInventoryForm.status || existingByPhone.status,
+                  blacklistStatus: newInventoryForm.blacklistStatus || existingByPhone.blacklistStatus,
+                  tags: newInventoryForm.tags || existingByPhone.tags,
                   credits: {
                       private: existingByPhone.credits.private + (newInventoryForm.credits?.private || 0),
                       group: existingByPhone.credits.group + (newInventoryForm.credits?.group || 0)
@@ -676,6 +687,13 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                                   {canEdit && <Edit2 size={14} className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400"/>}
                                               </div>
                                               <div className="text-xs text-slate-500">{inv.phone || '無電話'}</div>
+                                              <div className="mt-2 flex flex-wrap gap-1.5">
+                                                {(inv.tags || []).slice(0, 3).map(tag => (
+                                                  <span key={tag} className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300">
+                                                    {tag}
+                                                  </span>
+                                                ))}
+                                              </div>
                                           </div>
                                       </div>
                                       <div className="grid grid-cols-2 gap-4">
@@ -1035,11 +1053,54 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                        <label className="text-xs font-bold text-slate-500 uppercase">姓名</label>
                                        <input type="text" className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.name} onChange={e => setInventoryForm({...inventoryForm, name: e.target.value})}/>
                                    </div>
-                                   <div>
-                                       <label className="text-xs font-bold text-slate-500 uppercase">電話</label>
-                                       <input type="tel" className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.phone} onChange={e => setInventoryForm({...inventoryForm, phone: e.target.value})}/>
-                                   </div>
-                               </div>
+                                  <div>
+                                      <label className="text-xs font-bold text-slate-500 uppercase">電話</label>
+                                      <input type="tel" className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white disabled:opacity-70 disabled:cursor-not-allowed" value={inventoryForm.phone} onChange={e => setInventoryForm({...inventoryForm, phone: e.target.value})}/>
+                                  </div>
+                                  <div>
+                                      <label className="text-xs font-bold text-slate-500 uppercase">會員狀態</label>
+                                      <select
+                                        value={inventoryForm.status || 'active'}
+                                        onChange={e => setInventoryForm({...inventoryForm, status: e.target.value as UserInventory['status']})}
+                                        className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                                      >
+                                        <option value="pending">待審核</option>
+                                        <option value="active">已核准</option>
+                                        <option value="disabled">已停用</option>
+                                      </select>
+                                  </div>
+                                  <div>
+                                      <label className="text-xs font-bold text-slate-500 uppercase">名單狀態</label>
+                                      <select
+                                        value={inventoryForm.blacklistStatus || 'none'}
+                                        onChange={e => setInventoryForm({...inventoryForm, blacklistStatus: e.target.value as UserInventory['blacklistStatus']})}
+                                        className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                                      >
+                                        <option value="none">正常</option>
+                                        <option value="watch">觀察名單</option>
+                                        <option value="blocked">黑名單</option>
+                                      </select>
+                                  </div>
+                                  <div className="md:col-span-2">
+                                      <label className="text-xs font-bold text-slate-500 uppercase">會員標籤</label>
+                                      <input
+                                        type="text"
+                                        className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                                        value={inventoryForm.tagsText || ''}
+                                        onChange={e => setInventoryForm({...inventoryForm, tagsText: e.target.value})}
+                                        placeholder="例如：新客, 高回訪, 需追蹤"
+                                      />
+                                  </div>
+                                  <div className="md:col-span-2">
+                                      <label className="text-xs font-bold text-slate-500 uppercase">備註</label>
+                                      <textarea
+                                        className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white min-h-[90px]"
+                                        value={inventoryForm.notes || ''}
+                                        onChange={e => setInventoryForm({...inventoryForm, notes: e.target.value})}
+                                        placeholder="例如：膝蓋舊傷、偏好晚上、需要短信提醒"
+                                      />
+                                  </div>
+                              </div>
 
                                <div className="grid grid-cols-2 gap-4 mb-4">
                                    <div>
@@ -1114,6 +1175,34 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                    <label className="text-xs font-bold text-slate-500 uppercase">電話*</label>
                                    <input type="tel" value={newInventoryForm.phone} onChange={e => setNewInventoryForm({...newInventoryForm, phone: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1"/>
                                </div>
+                               <div>
+                                   <label className="text-xs font-bold text-slate-500 uppercase">會員狀態</label>
+                                   <select
+                                     value={newInventoryForm.status || 'active'}
+                                     onChange={e => setNewInventoryForm({...newInventoryForm, status: e.target.value as UserInventory['status']})}
+                                     className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                                   >
+                                     <option value="active">已核准</option>
+                                     <option value="pending">待審核</option>
+                                     <option value="disabled">已停用</option>
+                                   </select>
+                               </div>
+                               <div>
+                                   <label className="text-xs font-bold text-slate-500 uppercase">名單狀態</label>
+                                   <select
+                                     value={newInventoryForm.blacklistStatus || 'none'}
+                                     onChange={e => setNewInventoryForm({...newInventoryForm, blacklistStatus: e.target.value as UserInventory['blacklistStatus']})}
+                                     className="w-full glass-input rounded-xl p-3 mt-1 dark:text-white"
+                                   >
+                                     <option value="none">正常</option>
+                                     <option value="watch">觀察名單</option>
+                                     <option value="blocked">黑名單</option>
+                                   </select>
+                               </div>
+                               <div>
+                                   <label className="text-xs font-bold text-slate-500 uppercase">會員標籤</label>
+                                   <input type="text" value={(newInventoryForm.tags || []).join(', ')} onChange={e => setNewInventoryForm({...newInventoryForm, tags: e.target.value.split(',').map(t => t.trim()).filter(Boolean)})} className="w-full glass-input rounded-xl p-3 mt-1" placeholder="例如：新客, 高回訪"/>
+                               </div>
                                 <div className="grid grid-cols-2 gap-4">
                                    <div>
                                        <label className="text-xs font-bold text-slate-500 uppercase">私人課</label>
@@ -1124,11 +1213,15 @@ const AdminDashboard: React.FC<AdminDashboardProps> = ({
                                        <input type="number" value={newInventoryForm.credits?.group} onChange={e => setNewInventoryForm({...newInventoryForm, credits: {...newInventoryForm.credits, group: Number(e.target.value)}})} className="w-full glass-input rounded-xl p-3 mt-1"/>
                                    </div>
                                </div>
+                               <div>
+                                   <label className="text-xs font-bold text-slate-500 uppercase">備註</label>
+                                   <textarea value={newInventoryForm.notes || ''} onChange={e => setNewInventoryForm({...newInventoryForm, notes: e.target.value})} className="w-full glass-input rounded-xl p-3 mt-1 min-h-[84px]" placeholder="例如：膝蓋舊傷、偏好晚上、需要短信提醒"/>
+                               </div>
                                 <div className="pt-2">
                                    <button onClick={handleAddNewInventory} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-colors">
                                        確認新增
                                    </button>
-                               </div>
+                                </div>
                            </div>
                        </div>
                    </div>

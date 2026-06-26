@@ -98,6 +98,9 @@ export interface UserInventory {
   status?: 'pending' | 'active' | 'disabled';
   approvedAt?: string;
   approvedBy?: string;
+  tags?: string[];
+  blacklistStatus?: 'none' | 'watch' | 'blocked';
+  notes?: string;
   credits: {
       private: number;
       group: number;

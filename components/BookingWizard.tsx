@@ -67,10 +67,12 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
   
   const dateKey = formatDateKey(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate());
   const isDayOff = selectedCoach ? isCoachDayOff(dateKey, selectedCoach) : false;
+  const isBlockedMember = !!currentInventory && currentInventory.blacklistStatus === 'blocked';
+  const isPendingMember = !!currentInventory && currentInventory.status !== 'active';
 
   useEffect(() => {
     if (liffProfile) {
-        const userInventory = inventories.find(i => i.lineUserId === liffProfile.userId);
+        const userInventory = currentInventory || inventories.find(i => i.lineUserId === liffProfile.userId);
         if (userInventory) {
             // Found user in DB, use their details
             setFormData(prev => ({
@@ -92,10 +94,15 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
       
       if (liffProfile) {
           try {
-              const userInv = inventories.find(i => i.lineUserId === liffProfile.userId);
+              const userInv = currentInventory || inventories.find(i => i.lineUserId === liffProfile.userId);
               
               if (!userInv) {
                   await onRegisterUser({ userId: liffProfile.userId, displayName: liffProfile.displayName });
+              }
+              if (isBlockedMember) {
+                  setAuthError('您的會員目前被列入限制名單，請聯絡店家處理');
+                  setIsVerifying(false);
+                  return;
               }
               if (!hasCustomerAccess) {
                   setAuthError('您的 LINE 會員尚在審核中，無法預約');
@@ -222,6 +229,16 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
 
   return (
     <div className="max-w-3xl mx-auto pb-12">
+      {isBlockedMember && (
+        <div className="mb-6 glass-panel p-4 rounded-2xl border border-red-200 dark:border-red-900/40 bg-red-50/70 dark:bg-red-900/10 text-red-800 dark:text-red-200">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0" />
+            <div className="text-sm leading-relaxed">
+              你的會員目前在限制名單中，暫時無法預約。請聯絡店家確認狀態。
+            </div>
+          </div>
+        </div>
+      )}
       {liffProfile && !hasCustomerAccess && (
         <div className="mb-6 glass-panel p-4 rounded-2xl border border-amber-200 dark:border-amber-900/40 bg-amber-50/70 dark:bg-amber-900/10 text-amber-800 dark:text-amber-200">
           <div className="flex items-start gap-3">
@@ -482,9 +499,9 @@ const BookingWizard: React.FC<BookingWizardProps> = ({
                  </div>
              )}
 
-             <button type="submit" disabled={isVerifying || !!authError || !hasCustomerAccess} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-6 flex items-center justify-center gap-2
-                 ${!!authError || !hasCustomerAccess ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
-                {isVerifying ? '確認中...' : !!authError ? '無法預約' : !hasCustomerAccess ? '等待審核' : '確認預約'} <MessageCircle size={18}/>
+             <button type="submit" disabled={isVerifying || !!authError || !hasCustomerAccess || isBlockedMember} className={`w-full py-4 rounded-xl font-bold shadow-lg transition-all transform hover:scale-[1.02] mt-6 flex items-center justify-center gap-2
+                 ${!!authError || !hasCustomerAccess || isBlockedMember ? 'bg-slate-400 text-white cursor-not-allowed shadow-none' : 'bg-[#06C755] hover:bg-[#05b34c] text-white shadow-green-500/30'}`}>
+                {isVerifying ? '確認中...' : isBlockedMember ? '限制中' : !!authError ? '無法預約' : !hasCustomerAccess ? '等待審核' : '確認預約'} <MessageCircle size={18}/>
              </button>
           </form>
         </div>

@@ -133,11 +133,11 @@ export default function App() {
   const [cancelReason, setCancelReason] = useState('');
 
   const currentInventory = liffProfile
-    ? inventories.find(i => i.lineUserId === liffProfile.userId) || null
+    ? inventories.find(i => i.id === sessionUserId || i.lineUserId === liffProfile.userId) || null
     : sessionUserId
       ? inventories.find(i => i.id === sessionUserId) || null
       : null;
-  const hasCustomerAccess = !!liffProfile && currentInventory?.status === 'active';
+  const hasCustomerAccess = !!liffProfile && currentInventory?.status === 'active' && currentInventory?.blacklistStatus !== 'blocked';
 
   // --- EFFECTS ---
 
@@ -148,26 +148,30 @@ export default function App() {
 
   // Renamed and updated function as per request
   const checkAndCreateUser = async (profile: { userId: string, displayName: string }) => {
-      if (!db) {
+      const ownerId = auth?.currentUser?.uid || sessionUserId;
+      if (!db || !ownerId) {
           console.warn("Firestore is not available. Skipping user creation.");
           return;
       }
       try {
-          const userDocRef = doc(db, 'user_inventory', profile.userId);
+          const userDocRef = doc(db, 'user_inventory', ownerId);
           const docSnap = await getDoc(userDocRef);
 
           if (!docSnap.exists()) {
               const pendingProfile: UserInventory = {
-                  id: profile.userId,
+                  id: ownerId,
                   lineUserId: profile.userId,
                   name: profile.displayName,
                   phone: '',
                   email: '',
                   status: 'pending',
+                  blacklistStatus: 'none',
+                  tags: ['LINE新會員'],
+                  notes: '待管理員審核',
                   credits: { private: 0, group: 0 },
                   lastUpdated: new Date().toISOString()
               };
-              await saveToFirestore('user_inventory', profile.userId, pendingProfile);
+              await saveToFirestore('user_inventory', ownerId, pendingProfile);
               showNotification('已建立 LINE 會員申請，請等待管理員審核', 'info');
               return;
           }
@@ -444,7 +448,15 @@ export default function App() {
           const oldInv = inventories.find(i => i.id === id);
           const isUpdate = !!oldInv;
           const nextStatus = inventory.status || oldInv?.status || 'active';
-          const payload = { ...inventory, id, status: nextStatus, lastUpdated: new Date().toISOString() };
+          const payload = {
+              ...inventory,
+              id,
+              status: nextStatus,
+              tags: inventory.tags || oldInv?.tags || [],
+              blacklistStatus: inventory.blacklistStatus || oldInv?.blacklistStatus || 'none',
+              notes: inventory.notes ?? oldInv?.notes ?? '',
+              lastUpdated: new Date().toISOString()
+          };
 
           await saveToFirestore('user_inventory', id, payload);
           
@@ -574,8 +586,8 @@ export default function App() {
 
   const handleSubmitBooking = async (e: React.FormEvent, lineProfile?: { userId: string, displayName: string }) => {
     if (e) e.preventDefault();
-    const bookingOwnerId = sessionUserId;
-    if (!liffProfile || !bookingOwnerId) {
+    const bookingOwnerId = sessionUserId || auth?.currentUser?.uid || null;
+    if (!liffProfile || (!bookingOwnerId && !auth?.currentUser?.uid)) {
         showNotification('請先登入 LINE 再預約', 'error');
         return;
     }
@@ -595,9 +607,7 @@ export default function App() {
 
     try {
         let inventory: UserInventory | null = null;
-        const invByLine = lineProfile?.userId ? inventories.find(i => i.lineUserId === lineProfile.userId) || null : null;
-        const invByOwner = inventories.find(i => i.id === bookingOwnerId) || null;
-        inventory = invByLine || invByOwner || currentInventory;
+        inventory = currentInventory;
         
         if (inventory && selectedService?.id === 'coaching' && inventory.credits.private <= 0) {
             showNotification('提醒：您的點數不足，仍可預約，請記得在上課前補足點數', 'info');
