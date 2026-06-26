@@ -55,14 +55,13 @@ import BookingWizard from './components/BookingWizard';
 import AdminDashboard from './components/AdminDashboard';
 import WeeklyCalendar from './components/WeeklyCalendar';
 import MyBookings from './components/MyBookings';
-import HomeLanding from './components/HomeLanding';
 
 // Updated LIFF ID
 const LIFF_ID = import.meta.env.VITE_LIFF_ID || '2008923061-bPeQysat';
 
 export default function App() {
   // --- STATE ---
-  const [view, setView] = useState<'home' | 'booking' | 'admin' | 'my-bookings'>('home');
+  const [view, setView] = useState<'booking' | 'admin' | 'my-bookings'>('booking');
   const [adminTab, setAdminTab] = useState('calendar');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [notification, setNotification] = useState<{msg: string, type: 'success' | 'error' | 'info'} | null>(null);
@@ -405,7 +404,7 @@ export default function App() {
 
   const handleLogout = async () => {
       await logout();
-      setView('home');
+      setView('booking');
       setAdminTab('calendar');
       setLoginForm({ email: '', password: '' });
       showNotification("已登出", "info");
@@ -1214,26 +1213,6 @@ export default function App() {
   };
 
   const renderContent = () => {
-      if (view === 'home') {
-          return (
-              <HomeLanding
-                  appointments={appointments}
-                  coaches={coaches}
-                  inventories={inventories}
-                  onStartBooking={openBookingEntry}
-                  onOpenAdmin={() => {
-                      setAdminTab('calendar');
-                      setView('admin');
-                  }}
-                  onOpenMyBookings={openMyBookingsEntry}
-                  onOpenSchedule={() => {
-                      setAdminTab('calendar');
-                      setView('admin');
-                  }}
-              />
-          );
-      }
-
       if (view === 'my-bookings') {
           return (
               <MyBookings 
@@ -1326,7 +1305,7 @@ export default function App() {
             toggleBatchSelect={(id: string) => { const n = new Set(selectedBatch); if(n.has(id)) n.delete(id); else n.add(id); setSelectedBatch(n); }}
             handleBatchDelete={handleBatchDelete}
             onOpenBatchBlock={handleOpenBatchBlock}
-            onGoToBooking={() => setView('home')}
+            onGoToBooking={() => setView('booking')}
             onToggleComplete={handleToggleComplete}
             onCancelAppointment={(app) => {
                 setConfirmModal({
@@ -1381,7 +1360,7 @@ export default function App() {
         <nav className="fixed w-full z-50 glass-panel border-b border-white/20 dark:border-slate-800 shadow-sm backdrop-blur-md">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex items-center justify-between h-16">
-                <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('home'); resetBooking(); }}>
+                <div className="flex items-center gap-3 cursor-pointer" onClick={() => { setView('booking'); resetBooking(); }}>
                 <div className="w-10 h-10 bg-gradient-to-tr from-orange-500 to-indigo-600 rounded-xl flex items-center justify-center text-white shadow-lg shadow-orange-500/30">
                     <CalendarIcon size={22} className="stroke-[2.5px]"/>
                 </div>
@@ -1390,8 +1369,8 @@ export default function App() {
                 </span>
                 </div>
                 <div className="flex items-center gap-4">
-                <button onClick={() => setView('home')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'home' ? 'text-orange-600 bg-orange-50 dark:bg-orange-900/30 dark:text-orange-300' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
-                    <Home size={18}/> 首頁
+                <button onClick={() => setView('booking')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'booking' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
+                    <Home size={18}/> 預約入口
                 </button>
                 <button onClick={openMyBookingsEntry} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
                     <UserIcon size={18}/> 我的預約
@@ -1430,9 +1409,9 @@ export default function App() {
       {/* Dynamic Modals Container */}
       {view !== 'admin' && (
         <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-slate-800 flex justify-around p-3 z-50 backdrop-blur-xl">
-            <button onClick={() => setView('home')} className={`flex flex-col items-center gap-1 ${view === 'home' ? 'text-orange-600 dark:text-orange-300' : 'text-slate-400'}`}>
+            <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
                 <Home size={24}/>
-                <span className="text-[10px] font-bold">首頁</span>
+                <span className="text-[10px] font-bold">預約</span>
             </button>
             <button onClick={openBookingEntry} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
                 <CalendarIcon size={24}/>
