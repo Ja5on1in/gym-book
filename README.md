@@ -21,7 +21,7 @@ View your app in AI Studio: https://ai.studio/apps/drive/1kKpav0grTQxBUUmBS0oACL
 ## Notes
 
 - If you do not provide Firebase values, the app falls back to the demo project already wired into the code.
-- The app includes a home/booking/admin flow, plus calendar, booking, inventory statistics, and schedule management.
+- The app includes booking, my bookings, and admin flows, plus calendar, booking, inventory statistics, and schedule management.
 
 ## Production Deploy
 

@@ -1370,7 +1370,7 @@ export default function App() {
                 </div>
                 <div className="flex items-center gap-4">
                 <button onClick={() => setView('booking')} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'booking' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
-                    <Home size={18}/> 預約入口
+                    <Home size={18}/> 首頁
                 </button>
                 <button onClick={openMyBookingsEntry} className={`hidden md:flex items-center gap-2 px-3 py-2 rounded-lg transition-colors font-bold text-sm ${view === 'my-bookings' ? 'text-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400' : 'text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200'}`}>
                     <UserIcon size={18}/> 我的預約
@@ -1411,7 +1411,7 @@ export default function App() {
         <div className="md:hidden fixed bottom-0 w-full glass-panel border-t border-white/20 dark:border-slate-800 flex justify-around p-3 z-50 backdrop-blur-xl">
             <button onClick={() => setView('booking')} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
                 <Home size={24}/>
-                <span className="text-[10px] font-bold">預約</span>
+                <span className="text-[10px] font-bold">首頁</span>
             </button>
             <button onClick={openBookingEntry} className={`flex flex-col items-center gap-1 ${view === 'booking' ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400'}`}>
                 <CalendarIcon size={24}/>
